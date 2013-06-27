@@ -25,7 +25,7 @@ import org.apache.cassandra.exceptions.RequestValidationException;
 
 public abstract class ParsedStatement
 {
-    private int boundTerms;
+    private int boundTerms; //prepared语句中?号的个数
 
     public int getBoundsTerms()
     {
