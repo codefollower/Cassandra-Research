@@ -1244,7 +1244,8 @@
   <target name="generate-eclipse-files" depends="build" description="Generate eclipse files">
     <echo file=".project"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-  <name>${eclipse.project.name}</name>
+  <!--<name>${eclipse.project.name}</name>-->
+  <name>cassandra-1.2.5-research</name>
   <comment></comment>
   <projects>
   </projects>
@@ -1260,7 +1261,9 @@
     </echo>
 	<echo file=".classpath"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
 <classpath>
+  <classpathentry kind="src" path="my-test"/>
   <classpathentry kind="src" path="src/java"/>
+  <classpathentry kind="src" path="src-java-driver"/>
   <classpathentry kind="src" path="src/gen-java"/>
   <classpathentry kind="src" path="interface/thrift/gen-java"/>
   <classpathentry kind="src" path="test/unit"/>

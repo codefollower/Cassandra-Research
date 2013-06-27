@@ -6,3 +6,5 @@
 .project
 target
 build
+my-test-data
+src/gen-java
