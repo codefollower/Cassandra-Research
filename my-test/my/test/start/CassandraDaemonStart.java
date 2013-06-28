@@ -32,9 +32,9 @@ public class CassandraDaemonStart {
 
         System.setProperty("log4j.defaultInitOverride", "true");
         System.setProperty("log4j.configuration", "my-log4j-server.properties");
-        
+
         System.setProperty("cassandra.start_rpc", "false"); //不启用thrift server
-        
+
         CassandraDaemon.main(new String[] {});
     }
 

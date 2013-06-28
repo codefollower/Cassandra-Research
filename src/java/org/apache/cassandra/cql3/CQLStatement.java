@@ -26,6 +26,8 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.exceptions.*;
 
+//通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
+//调用顺序validate->checkAccess->execute
 public interface CQLStatement
 {
     /**
