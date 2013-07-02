@@ -30,6 +30,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang.builder.ToStringStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,6 +91,8 @@ public final class CFMetaData
     @Deprecated
     public static final CFMetaData OldSchemaCf = newSystemMetadata(Table.SYSTEM_KS, DefsTable.OLD_SCHEMA_CF, 3, "unused", UTF8Type.instance, null);
 
+    //compile方法第一个参数是数字的会存入org.apache.cassandra.config.Schema.oldCfIdMap
+    //oldCfIdMap是<Integer, UUID>
     public static final CFMetaData IndexCf = compile(5, "CREATE TABLE \"" + SystemTable.INDEX_CF + "\" ("
                                                         + "table_name text,"
                                                         + "index_name text,"
@@ -383,7 +386,7 @@ public final class CFMetaData
         return newCFMD.comment(comment)
                 .readRepairChance(0)
                 .dcLocalReadRepairChance(0)
-                .gcGraceSeconds(0);
+                .gcGraceSeconds(0);        
     }
 
     public static CFMetaData newIndexMetadata(CFMetaData parent, ColumnDefinition info, AbstractType<?> columnComparator)
@@ -1554,6 +1557,7 @@ public final class CFMetaData
     @Override
     public String toString()
     {
+        ToStringBuilder.setDefaultStyle(ToStringStyle.MULTI_LINE_STYLE); //我加上的
         return new ToStringBuilder(this)
             .append("cfId", cfId)
             .append("ksName", ksName)

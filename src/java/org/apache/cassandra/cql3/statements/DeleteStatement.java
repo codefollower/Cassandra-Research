@@ -33,6 +33,7 @@ import org.apache.cassandra.thrift.ThriftValidation;
 /**
  * A <code>DELETE</code> parsed from a CQL query statement.
  */
+//必须指定where并且条件字段必须是primary key
 public class DeleteStatement extends ModificationStatement
 {
     private CFDefinition cfDef;
@@ -42,6 +43,7 @@ public class DeleteStatement extends ModificationStatement
     private final List<Operation> toRemove;
     private final Map<ColumnIdentifier, List<Term>> processedKeys = new HashMap<ColumnIdentifier, List<Term>>();
 
+    //对于delete语句，Attributes只支持USING TIMESTAMP，不支持TTL
     public DeleteStatement(CFName name, List<Operation.RawDeletion> deletions, List<Relation> whereClause, Attributes attrs)
     {
         super(name, attrs);

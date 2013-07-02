@@ -19,7 +19,10 @@ public abstract class TestBase {
         //        }
 
         session = cluster.connect();
-
+        cql = "CREATE KEYSPACE myks " + //
+                "WITH replication = {'class':'SimpleStrategy', 'replication_factor':1}";
+        tryExecute();
+        cql = null;
     }
 
     public void init() throws Exception {

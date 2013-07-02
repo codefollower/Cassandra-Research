@@ -145,16 +145,63 @@ public class SimpleClient {
               "Bye Bye Blackbird",
               "Joséphine Baker") );
      }
+    public void testInsert()  {
+        session.execute(
+                "INSERT INTO simplex.songs (id, title, album, artist, tags) " +
+                "VALUES (" +
+                    "756716f7-2e54-4715-9f00-91dcbea6cf50," +
+                    "'La Petite Tonkinoise'," +
+                    "'Bye Bye Blackbird'," +
+                    "'Joséphine Baker'," +
+                    "{'jazz', '2013'})" +
+                    " USING TTL 86400"+
+                    " and TIMESTAMP 1318452291034"+
+                    ";");
+    }
+    
+    public void testDelete() {
+        //session.execute("delete from simplex.playlists where id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d");
+        
+//        PreparedStatement statement = getSession().prepare("delete from simplex.playlists where id=?");
+//          BoundStatement boundStatement = new BoundStatement(statement);
+//          getSession().execute(boundStatement.bind(
+//                UUID.fromString("2cc9ccb7-6221-4ccb-8387-f22b6a1b354d")) );
+//          
+          session.execute("delete from simplex.playlists  USING TIMESTAMP 1318452291034  where id in(2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, 756716f7-2e54-4715-9f00-91dcbea6cf50)");
+    }
 
+    public void testUpdate() {
+
+          session.execute("update simplex.songs  USING TTL 86400 and TIMESTAMP 1318452291034 set title = 'abc' where id in(2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, 756716f7-2e54-4715-9f00-91dcbea6cf50)");
+    }
+    
+    public void run() {
+        connect("127.0.0.1");
+
+        //      createSchema();
+        //      loadData();
+        //      loadDataUsingBoundStatements();
+        //      querySchema();
+
+        testInsert();
+        //testUpdate();
+        //testDelete();
+
+        close();
+    }
+    
     public static void main(String[] args) {
         SimpleClient client = new SimpleClient();
-        client.connect("127.0.0.1");
+        client.run();
+        //client.connect("127.0.0.1");
 
-        client.createSchema();
-        client.loadData();
-        client.loadDataUsingBoundStatements();
-        client.querySchema();
+//        client.createSchema();
+//        client.loadData();
+//        client.loadDataUsingBoundStatements();
+//        client.querySchema();
+        
+        //client.testDelete();
 
-        client.close();
+        //client.close();
     }
 }

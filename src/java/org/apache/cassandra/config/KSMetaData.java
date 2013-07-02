@@ -54,6 +54,10 @@ public final class KSMetaData
             cfmap.put(cfm.cfName, cfm);
         this.cfMetaData = Collections.unmodifiableMap(cfmap);
         this.durableWrites = durableWrites;
+        
+        //我加上的
+        //for (CFMetaData cfm : cfDefs)
+        //    System.out.println(cfm);
     }
 
     // For new user created keyspaces (through CQL)
@@ -78,6 +82,8 @@ public final class KSMetaData
 
     public static KSMetaData systemKeyspace()
     {
+        //15个加下面CFMetaData.TraceSessionsCf, CFMetaData.TraceEventsCf总共17个
+        //CFMetaData默认定义了17个
         List<CFMetaData> cfDefs = Arrays.asList(CFMetaData.BatchlogCf,
                                                 CFMetaData.RangeXfersCf,
                                                 CFMetaData.LocalCf,

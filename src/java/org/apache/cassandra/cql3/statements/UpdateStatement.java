@@ -35,6 +35,7 @@ import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
  * An <code>UPDATE</code> statement parsed from a CQL query statement.
  *
  */
+//insert和update语句都使用这个类
 public class UpdateStatement extends ModificationStatement
 {
     private CFDefinition cfDef;
@@ -61,6 +62,7 @@ public class UpdateStatement extends ModificationStatement
      * @param whereClause the where clause
      * @param attrs additional attributes for statement (CL, timestamp, timeToLive)
      */
+    //update语句使用这个构造函数
     public UpdateStatement(CFName name,
                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> operations,
                            List<Relation> whereClause,
@@ -83,11 +85,14 @@ public class UpdateStatement extends ModificationStatement
      * @param columnValues list of column values (corresponds to names)
      * @param attrs additional attributes for statement (CL, timestamp, timeToLive)
      */
+    //insert语句使用这个构造函数
     public UpdateStatement(CFName name,
                            Attributes attrs,
                            List<ColumnIdentifier> columnNames,
                            List<Term.Raw> columnValues)
     {
+        //如指定 USING TTL 86400 AND TIMESTAMP 1318452291034"时
+        //attrs.timestamp = 1318452291034 timeToLive = 86400
         super(name, attrs);
         this.columnNames = columnNames;
         this.columnValues = columnValues;

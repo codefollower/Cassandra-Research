@@ -57,6 +57,7 @@ import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
 
+//重点关注loadYaml、loadSchemas两个方法
 public class DatabaseDescriptor
 {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseDescriptor.class);
@@ -94,6 +95,7 @@ public class DatabaseDescriptor
     /**
      * Inspect the classpath to find storage configuration file
      */
+    //读取cassandra.yaml文件，可通过System.setProperty("cassandra.config", "xxx")来设置
     static URL getStorageConfigURL() throws ConfigurationException
     {
         String configUrl = System.getProperty("cassandra.config");
@@ -145,11 +147,12 @@ public class DatabaseDescriptor
             seedDesc.putMapPropertyType("parameters", String.class, String.class);
             constructor.addTypeDescription(seedDesc);
             Yaml yaml = new Yaml(new Loader(constructor));
-            conf = (Config)yaml.load(input);
+            conf = (Config)yaml.load(input); //会根据cassandra.yaml文件自动为Config中的public变量赋值
 
             logger.info("Data files directories: " + Arrays.toString(conf.data_file_directories));
             logger.info("Commit log directory: " + conf.commitlog_directory);
 
+            //必须配置commitlog_sync参数
             if (conf.commitlog_sync == null)
             {
                 throw new ConfigurationException("Missing required directive CommitLogSync");
@@ -157,6 +160,7 @@ public class DatabaseDescriptor
 
             if (conf.commitlog_sync == Config.CommitLogSync.batch)
             {
+                //commitlog_sync_batch_window_in_ms与commitlog_sync_period_in_ms二选一
                 if (conf.commitlog_sync_batch_window_in_ms == null)
                 {
                     throw new ConfigurationException("Missing value for commitlog_sync_batch_window_in_ms: Double expected.");
@@ -342,7 +346,7 @@ public class DatabaseDescriptor
                 throw new ConfigurationException("Missing endpoint_snitch directive");
             }
             snitch = createEndpointSnitch(conf.endpoint_snitch);
-            EndpointSnitchInfo.create();
+            EndpointSnitchInfo.create(); //注册MBean
 
             localDC = snitch.getDatacenter(FBUtilities.getBroadcastAddress());
             localComparator = new Comparator<InetAddress>()

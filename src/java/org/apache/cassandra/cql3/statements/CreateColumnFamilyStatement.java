@@ -40,6 +40,8 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /** A <code>CREATE COLUMNFAMILY</code> parsed from a CQL query statement. */
+//对于CREATE TABLE语句，在Parser时是构造CreateColumnFamilyStatement.RawStatement对象
+//而不是构造CreateColumnFamilyStatement对象
 public class CreateColumnFamilyStatement extends SchemaAlteringStatement
 {
     public AbstractType<?> comparator;

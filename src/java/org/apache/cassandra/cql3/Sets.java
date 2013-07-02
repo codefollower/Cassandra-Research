@@ -141,7 +141,8 @@ public abstract class Sets
         {
             this.elements = elements;
         }
-
+        
+        //value是Set中的各个元素序列化后的结果，这里先把value反序列化回来然后再重新组成Sets.Value
         public static Value fromSerialized(ByteBuffer value, SetType type) throws InvalidRequestException
         {
             try
@@ -160,7 +161,7 @@ public abstract class Sets
             }
         }
 
-        public ByteBuffer get()
+        public ByteBuffer get() //重新按CollectionType进行序列化
         {
             return CollectionType.pack(new ArrayList<ByteBuffer>(elements), elements.size());
         }

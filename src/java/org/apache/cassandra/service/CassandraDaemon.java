@@ -63,6 +63,9 @@ public class CassandraDaemon
      */
     public static void initLog4j()
     {
+        //可以通过下面两行指定日志配置文件:
+        //    System.setProperty("log4j.defaultInitOverride", "true");
+        //    System.setProperty("log4j.configuration", "my-log4j-server.properties");
         if (System.getProperty("log4j.defaultInitOverride","false").equalsIgnoreCase("true"))
         {
             String config = System.getProperty("log4j.configuration", "log4j-server.properties");
@@ -137,7 +140,7 @@ public class CassandraDaemon
             logger.warn("Non-Oracle JVM detected.  Some features, such as immediate unmap of compacted SSTables, may not work as intended");
         }
         else
-        {
+        {   //如1.6.0_29，java_major=1.6.0，java_minor=29
             String[] java_version = javaVersion.split("_");
             String java_major = java_version[0];
             int java_minor;
@@ -165,7 +168,7 @@ public class CassandraDaemon
 
         logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
         logger.info("Classpath: {}", System.getProperty("java.class.path"));
-        CLibrary.tryMlockall();
+        CLibrary.tryMlockall(); //看一下本地库是否可用
 
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
         {
@@ -204,7 +207,7 @@ public class CassandraDaemon
         }
 
         // Migrate sstables from pre-#2749 to the correct location
-        if (Directories.sstablesNeedsMigration())
+        if (Directories.sstablesNeedsMigration()) //默认不需要，只要看到system\schema_keyspaces目录就不需要
             Directories.migrateSSTables();
 
         if (CacheService.instance == null) // should never happen
