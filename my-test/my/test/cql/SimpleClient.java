@@ -24,6 +24,8 @@ import java.util.UUID;
 
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.ColumnDefinitions;
+import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.Host;
 import com.datastax.driver.core.Metadata;
 import com.datastax.driver.core.PreparedStatement;
@@ -100,9 +102,7 @@ public class SimpleClient {
    }
 
     public void querySchema() {
-        //ResultSet results = session.execute("SELECT * FROM simplex.playlists " + "WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d;");
-        
-        ResultSet results = session.execute("SELECT * FROM simplex.playlists;");
+        ResultSet results = session.execute("SELECT * FROM simplex.playlists " + "WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d;");
         
         
         System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "title", "album", "artist",
@@ -114,8 +114,228 @@ public class SimpleClient {
         System.out.println();
     }
     
+    public void testSelect() {
+        //session.execute("DROP TABLE simplex.test;");
+//                session.execute(
+//                        "CREATE TABLE simplex.test (" +
+//                              "k int PRIMARY KEY," + 
+//                              "v1 int," + 
+//                              "v2 int);");
+
+                
+//      session.execute(
+//                        "CREATE TABLE simplex.test (" +
+//                              "k0 int," + 
+//                              "k int," + 
+//                              "v1 int," + 
+//                              "v2 int," +
+//                              " PRIMARY KEY(k0,k)"+
+//                              ");");
+             
+        
+//      session.execute(
+//      "CREATE TABLE simplex.test (" +
+//            "k0 int," + 
+//            "k int," + 
+//            "v1 int," + 
+//            "v2 int," +
+//            " PRIMARY KEY(k0)"+
+//            ");");
+                //session.execute("DROP INDEX myindex;");
+                //session.execute("CREATE INDEX myindex on simplex.test(k);");
+        
+        
+//        session.execute("INSERT INTO simplex.test (k, v1, v2) VALUES (1, 2, 3);");
+//        session.execute("INSERT INTO simplex.test (k, v1, v2) VALUES (4, 5, 6);");
+//        session.execute("INSERT INTO simplex.test (k, v1, v2) VALUES (7, 8, 9);");
+//        
+        session.execute("INSERT INTO simplex.test (k0, k, v1, v2) VALUES (1, 1, 2, 3);");
+        session.execute("INSERT INTO simplex.test (k0, k, v1, v2) VALUES (4, 4, 5, 6);");
+        session.execute("INSERT INTO simplex.test (k0, k, v1, v2) VALUES (7, 7, 8, 9);");
+        
+        String sql = "SELECT * FROM simplex.test WHERE k > 3  ALLOW FILTERING";
+        sql = "SELECT token(k0), k, v1, v2 FROM simplex.test WHERE k > 3  ALLOW FILTERING";
+//        sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE token(k) > token(3);";
+//        
+//        sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE token(k) > 3";
+//        sql = "SELECT token(k), k, v1, v2 FROM simplex.test";
+        
+        sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE k > 3"; //不支持范围查询
+        //sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE k = 7";
+        sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE k in(7, 4)";
+        
+        //sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE k0> 3 AND k > 3";
+        
+        sql = "SELECT token(k), k, v1, v2 FROM simplex.test WHERE k > 3";
+        ResultSet results = session.execute(sql);
+
+        System.out.println(String.format("%-30s\t%-20s\t%-20s\t%-20s\n%s", "token(k)", "k", "v1", "v2",
+                "-------------------------------+-----------------------+--------------------+--------------------"));
+        for (Row row : results) {
+            System.out.println(String.format("%-30s\t%-20s\t%-20s\t%-20s", row.getLong(0), row.getInt(1),//
+                    row.getInt("v1"), row.getInt("v2")));
+        }
+        System.out.println();
+
+    }
+    
+    
+    public void testCounterColumn() {
+        //session.execute("DROP TABLE simplex.page_view_counts;");
+//        session.execute("CREATE TABLE simplex.page_view_counts (" + //
+//                "counter_value counter," + //
+//                "url_name varchar," + //
+//                "page_name varchar," + //
+//                "PRIMARY KEY (url_name, page_name)" + //
+//                ");");
+
+        session.execute("UPDATE simplex.page_view_counts SET counter_value = counter_value + 1" +
+        		"WHERE url_name='www.datastax.com' AND page_name='home';");
+        String sql = "SELECT url_name,page_name,counter_value FROM simplex.page_view_counts";
+        ResultSet results = session.execute(sql);
+
+        System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "url_name", "page_name", "counter_value counter",
+                "-------------------------------+-----------------------+--------------------"));
+        for (Row row : results) {
+            System.out.println(String.format("%-30s\t%-20s\t%-20s", row.getString(0), row.getString(1),//
+                    row.getLong(2)));
+        }
+        System.out.println();
+
+    }
+
+    private void printResultSet(ResultSet results) {
+        ColumnDefinitions cd = results.getColumnDefinitions();
+        int size = cd.size();
+
+        for (Row row : results) {
+            for (int i = 0; i < size; i++) {
+                System.out.print(" ");
+                DataType dt = cd.getType(i);
+                switch (dt.getName()) {
+                case TEXT:
+                    System.out.print(row.getString(i));
+                    break;
+                case INT:
+                    System.out.print(row.getInt(i));
+                    break;
+                case BIGINT:
+                    System.out.print(row.getLong(i));
+                    break;
+                case UUID:
+                    System.out.print(row.getUUID(i));
+                    break;
+                case SET:
+                    System.out.print(row.getSet(i, String.class));
+                    break;
+                case LIST:
+                    System.out.print(row.getList(i, String.class));
+                    break;
+                case MAP:
+                    System.out.print(row.getMap(i, java.util.Date.class, String.class));
+                    break;
+                default:
+                    System.out.print(row.getString(i));
+                    break;
+                }
+            }
+            System.out.println();
+        }
+        System.out.println();
+    }
+
+    public void testSetCollectionType() {
+        session.execute("USE simplex");
+        //session.execute("DROP TABLE simplex.users;");
+        //session.execute("CREATE TABLE users (user_id text PRIMARY KEY,first_name text,last_name text,emails set<text>);");
+
+        session.execute("INSERT INTO users (user_id, first_name, last_name, emails) VALUES('frodo', 'Frodo', 'Baggins', {'f@baggins.com','baggins@gmail.com'});");
+
+        session.execute("UPDATE users SET emails = emails + {'fb@friendsofmordor.org'} WHERE user_id = 'frodo';");
+
+        String sql = "SELECT user_id, emails FROM users WHERE user_id = 'frodo';";
+        ResultSet results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users SET emails = emails - {'fb@friendsofmordor.org'} WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, emails FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+        
+        
+        session.execute("UPDATE users SET emails = {} WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, emails FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("DELETE emails FROM users WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, emails FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+    }
+    
+    public void testListCollectionType() {
+        session.execute("USE simplex");
+        //session.execute("ALTER TABLE users ADD top_places list<text>;");
+        session.execute("INSERT INTO users (user_id) VALUES('frodo');");
+        session.execute("UPDATE users SET top_places = [ 'rivendell', 'rohan' ] WHERE user_id = 'frodo';");
+        String sql = "SELECT user_id, top_places FROM users WHERE user_id = 'frodo';";
+        ResultSet results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users SET top_places = [ 'the shire' ] + top_places WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, top_places FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users SET top_places = top_places + [ 'mordor' ] WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, top_places FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users SET top_places[2] = 'riddermark' WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, top_places FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("DELETE top_places[3] FROM users WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, top_places FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users SET top_places = top_places - ['riddermark'] WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, top_places FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+    }
+
+    public void testMapCollectionType() {
+        session.execute("USE simplex");
+        //session.execute("ALTER TABLE users ADD todo map<timestamp, text>;");
+        session.execute("INSERT INTO users (user_id) VALUES('frodo');");
+        session.execute("UPDATE users SET todo ={ '2012-9-24' : 'enter mordor','2012-10-2 12:00' : 'throw ring into mount doom' } WHERE user_id = 'frodo';");
+        String sql = "SELECT user_id, todo FROM users WHERE user_id = 'frodo';";
+        ResultSet results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users SET todo['2012-10-2 12:00'] = 'throw my precious into mountdoom' WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, todo FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("DELETE todo['2012-9-24'] FROM users WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, todo FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+
+        session.execute("UPDATE users USING TTL 6000 SET todo['2012-10-1'] = 'find water' WHERE user_id = 'frodo';");
+        sql = "SELECT user_id, todo FROM users WHERE user_id = 'frodo';";
+        results = session.execute(sql);
+        printResultSet(results);
+    }
+    
     Session getSession() {
-       return session;
+        return session;
     }
     
     public void loadDataUsingBoundStatements() {
@@ -145,6 +365,7 @@ public class SimpleClient {
               "Bye Bye Blackbird",
               "Joséphine Baker") );
      }
+    
     public void testInsert()  {
         session.execute(
                 "INSERT INTO simplex.songs (id, title, album, artist, tags) " +
@@ -171,8 +392,8 @@ public class SimpleClient {
     }
 
     public void testUpdate() {
-
-          session.execute("update simplex.songs  USING TTL 86400 and TIMESTAMP 1318452291034 set title = 'abc' where id in(2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, 756716f7-2e54-4715-9f00-91dcbea6cf50)");
+        session.execute("update simplex.songs  USING TTL 86400 and TIMESTAMP 1318452291034 set title = 'abc' " + //
+                "where id in(2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, 756716f7-2e54-4715-9f00-91dcbea6cf50)");
     }
     
     public void run() {
@@ -183,9 +404,14 @@ public class SimpleClient {
         //      loadDataUsingBoundStatements();
         //      querySchema();
 
-        testInsert();
+        //testInsert();
         //testUpdate();
         //testDelete();
+        //testSelect();
+        //testCounterColumn();
+        //testSetCollectionType();
+        //testListCollectionType();
+        testMapCollectionType();
 
         close();
     }
@@ -193,15 +419,5 @@ public class SimpleClient {
     public static void main(String[] args) {
         SimpleClient client = new SimpleClient();
         client.run();
-        //client.connect("127.0.0.1");
-
-//        client.createSchema();
-//        client.loadData();
-//        client.loadDataUsingBoundStatements();
-//        client.querySchema();
-        
-        //client.testDelete();
-
-        //client.close();
     }
 }

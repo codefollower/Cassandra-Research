@@ -216,7 +216,7 @@ public class UpdateStatement extends ModificationStatement
     {
         validateKey(key);
 
-        QueryProcessor.validateKey(key);
+        QueryProcessor.validateKey(key); //重复了
         RowMutation rm = new RowMutation(cfDef.cfm.ksName, key);
         ColumnFamily cf = rm.addOrGet(cfDef.cfm.cfName);
 
