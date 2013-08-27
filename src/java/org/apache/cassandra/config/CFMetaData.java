@@ -96,8 +96,10 @@ public final class CFMetaData
     public static final CFMetaData IndexCf = compile(5, "CREATE TABLE \"" + SystemTable.INDEX_CF + "\" ("
                                                         + "table_name text,"
                                                         + "index_name text,"
+                                                        + "index_name2 text,"
+                                                        //+ "index_name2 text,"
                                                         + "PRIMARY KEY (table_name, index_name)"
-                                                        + ") WITH COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+                                                        + ")WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
 
     public static final CFMetaData CounterIdCf = compile(6, "CREATE TABLE \"" + SystemTable.COUNTER_ID_CF + "\" ("
                                                             + "key text,"

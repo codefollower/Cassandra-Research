@@ -81,6 +81,25 @@ public class SimpleClient {
    }
    
    public void loadData()  {
+//       session.execute(
+//               "CREATE TABLE simplex.soNgs2 (" +
+//                     "id uuid PRIMARY KEY," + 
+//                     "title text," + 
+//                     "alBum text," + 
+//                     "artist text," + 
+//                     "tags set<text>," + 
+//                     "data blob" + 
+//                     ");");
+//       session.execute(
+//               "INSERT INTO simplex.songs2 (id, title, ALBUM, artist, tags) " +
+//               "VALUES (" +
+//                   "756716f7-2e54-4715-9f00-91dcbea6cf50," +
+//                   "'La Petite Tonkinoise'," +
+//                   "'Bye Bye Blackbird'," +
+//                   "'Joséphine Baker'," +
+//                   "{'jazz', '2013'})" +
+//                   ";");
+       
        session.execute(
                "INSERT INTO simplex.songs (id, title, album, artist, tags) " +
                "VALUES (" +
@@ -90,15 +109,15 @@ public class SimpleClient {
                    "'Joséphine Baker'," +
                    "{'jazz', '2013'})" +
                    ";");
-         session.execute(
-               "INSERT INTO simplex.playlists (id, song_id, title, album, artist) " +
-               "VALUES (" +
-                   "2cc9ccb7-6221-4ccb-8387-f22b6a1b354d," +
-                   "756716f7-2e54-4715-9f00-91dcbea6cf50," +
-                   "'La Petite Tonkinoise'," +
-                   "'Bye Bye Blackbird'," +
-                   "'Joséphine Baker'" +
-                   ");");
+//         session.execute(
+//               "INSERT INTO simplex.playlists (id, song_id, title, album, artist) " +
+//               "VALUES (" +
+//                   "2cc9ccb7-6221-4ccb-8387-f22b6a1b354d," +
+//                   "756716f7-2e54-4715-9f00-91dcbea6cf50," +
+//                   "'La Petite Tonkinoise'," +
+//                   "'Bye Bye Blackbird'," +
+//                   "'Joséphine Baker'" +
+//                   ");");
    }
 
     public void querySchema() {
@@ -148,7 +167,8 @@ public class SimpleClient {
 //        session.execute("INSERT INTO simplex.test (k, v1, v2) VALUES (1, 2, 3);");
 //        session.execute("INSERT INTO simplex.test (k, v1, v2) VALUES (4, 5, 6);");
 //        session.execute("INSERT INTO simplex.test (k, v1, v2) VALUES (7, 8, 9);");
-//        
+//      
+        //session.execute("SELECT * FROM system.HintsColumnFamily");
         session.execute("INSERT INTO simplex.test (k0, k, v1, v2) VALUES (1, 1, 2, 3);");
         session.execute("INSERT INTO simplex.test (k0, k, v1, v2) VALUES (4, 4, 5, 6);");
         session.execute("INSERT INTO simplex.test (k0, k, v1, v2) VALUES (7, 7, 8, 9);");
@@ -261,8 +281,7 @@ public class SimpleClient {
         sql = "SELECT user_id, emails FROM users WHERE user_id = 'frodo';";
         results = session.execute(sql);
         printResultSet(results);
-        
-        
+
         session.execute("UPDATE users SET emails = {} WHERE user_id = 'frodo';");
         sql = "SELECT user_id, emails FROM users WHERE user_id = 'frodo';";
         results = session.execute(sql);
@@ -407,11 +426,11 @@ public class SimpleClient {
         //testInsert();
         //testUpdate();
         //testDelete();
-        //testSelect();
+        testSelect();
         //testCounterColumn();
         //testSetCollectionType();
         //testListCollectionType();
-        testMapCollectionType();
+        //testMapCollectionType();
 
         close();
     }

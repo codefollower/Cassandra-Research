@@ -24,7 +24,7 @@ public abstract class AbstractJdbcType<T>
     public abstract boolean isCaseSensitive();
     public abstract int getScale(T obj);
     public abstract int getPrecision(T obj);
-    public abstract boolean isCurrency();
+    public abstract boolean isCurrency(); //所有的子类都返回false
     public abstract boolean isSigned();
     public abstract String toString(T obj);
     public abstract boolean needsQuotes();

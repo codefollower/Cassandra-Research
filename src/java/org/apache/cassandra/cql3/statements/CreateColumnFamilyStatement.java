@@ -31,6 +31,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.ColumnFamilyType;
+import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.service.ClientState;
@@ -144,6 +145,22 @@ public class CreateColumnFamilyStatement extends SchemaAlteringStatement
 
     public static class RawStatement extends CFStatement
     {
+        /*对于这样的sql:
+         *     public static final CFMetaData IndexCf = compile(5, "CREATE TABLE \"" + SystemTable.INDEX_CF + "\" ("
+                                                        + "table_name text,"
+                                                        + "index_name text,"
+                                                        + "index_name2 text,"
+                                                        //+ "index_name2 text,"
+                                                        + "PRIMARY KEY (table_name, index_name)"
+                                                        + ")WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+
+        keyAliases是table_name
+        columnAliases是index_name
+        definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
+        properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
+                    如果PRIMARY KEY是PRIMARY KEY ((table_name,index_name2), index_name)
+                    则keyAliases是(table_name,index_name2)
+         */
         private final Map<ColumnIdentifier, CQL3Type> definitions = new HashMap<ColumnIdentifier, CQL3Type>();
         public final CFPropDefs properties = new CFPropDefs();
 

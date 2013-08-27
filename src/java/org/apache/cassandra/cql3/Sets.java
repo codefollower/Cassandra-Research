@@ -48,6 +48,7 @@ public abstract class Sets
         return new ColumnSpecification(column.ksName, column.cfName, new ColumnIdentifier("value(" + column.name + ")", true), ((SetType)column.type).elements);
     }
 
+    //用于非BoundStatement的场合
     public static class Literal implements Term.Raw
     {
         private final List<Term.Raw> elements;
@@ -132,7 +133,8 @@ public abstract class Sets
             return "{" + Joiner.on(", ").join(elements) + "}";
         }
     }
-
+    
+    //BoundStatement和非BoundStatement的场合都使用这个类
     public static class Value extends Term.Terminal
     {
         public final Set<ByteBuffer> elements;
@@ -167,6 +169,7 @@ public abstract class Sets
         }
     }
 
+    //用于BoundStatement的场合
     public static class Marker extends AbstractMarker
     {
         protected Marker(int bindIndex, ColumnSpecification receiver)
@@ -181,7 +184,8 @@ public abstract class Sets
             return value == null ? null : Value.fromSerialized(value, (SetType)receiver.type);
         }
     }
-
+    
+    //例如: INSERT INTO users (..., emails) VALUES(..., {'f@baggins.com','baggins@gmail.com'})
     public static class Setter extends Operation
     {
         public Setter(ColumnIdentifier column, Term t)
@@ -198,6 +202,7 @@ public abstract class Sets
         }
     }
 
+    //例如: UPDATE users SET emails = emails + {'fb@friendsofmordor.org'}
     public static class Adder extends Operation
     {
         public Adder(ColumnIdentifier column, Term t)
@@ -227,6 +232,7 @@ public abstract class Sets
         }
     }
 
+    //例如: UPDATE users SET emails = emails - {'fb@friendsofmordor.org'}
     public static class Discarder extends Operation
     {
         public Discarder(ColumnIdentifier column, Term t)

@@ -57,6 +57,7 @@ public class Schema
     /* Table objects, one per keyspace. Only one instance should ever exist for any given keyspace. */
     private final Map<String, Table> tableInstances = new NonBlockingHashMap<String, Table>();
 
+    //BiMap是双向的通过key和value都可找到彼此
     /* metadata map for faster ColumnFamily lookup */
     private final BiMap<Pair<String, String>, UUID> cfIdMap = HashBiMap.create();
     // mapping from old ColumnFamily Id (Integer) to a new version which is UUID

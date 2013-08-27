@@ -217,6 +217,8 @@ public class UpdateStatement extends ModificationStatement
         validateKey(key);
 
         QueryProcessor.validateKey(key); //重复了
+        //如果PK是UUID类型，用JdbcUUID.instance.getString(key)可以看key的原始值
+        //System.out.println(org.apache.cassandra.cql.jdbc.JdbcUUID.instance.getString(key));
         RowMutation rm = new RowMutation(cfDef.cfm.ksName, key);
         ColumnFamily cf = rm.addOrGet(cfDef.cfm.cfName);
 

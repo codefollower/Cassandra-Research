@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 
+//只看到测试代码在用
 public interface IMessageSink
 {
     public MessageOut handleMessage(MessageOut message, String id, InetAddress to);

@@ -182,7 +182,7 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         return builder.toString();
     }
 
-    public boolean isCommutative()
+    public boolean isCommutative() //只有AbstractCommutativeType是true，包含它的子类CounterColumnType
     {
         return false;
     }
