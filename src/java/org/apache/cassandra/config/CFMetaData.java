@@ -29,14 +29,15 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
+
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang.builder.ToStringStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.cql3.CFDefinition;
 import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.cql3.QueryProcessor;
@@ -89,12 +90,20 @@ public final class CFMetaData
 
     // Note that this is the default only for user created tables
     public final static String DEFAULT_COMPRESSOR = LZ4Compressor.class.getCanonicalName();
-
+    //compile方法第一个参数是数字的会存入org.apache.cassandra.config.Schema.oldCfIdMap
+    //oldCfIdMap是<Integer, UUID>
     public static final CFMetaData IndexCf = compile("CREATE TABLE \"" + SystemKeyspace.INDEX_CF + "\" ("
                                                      + "table_name text,"
                                                      + "index_name text,"
                                                      + "PRIMARY KEY (table_name, index_name)"
                                                      + ") WITH COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+//    "CREATE TABLE \"" + SystemTable.INDEX_CF + "\" ("
+//    + "table_name text,"
+//    + "index_name text,"
+//    + "index_name2 text,"
+//    //+ "index_name2 text,"
+//    + "PRIMARY KEY (table_name, index_name)"
+//    + ")WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
 
     public static final CFMetaData CounterIdCf = compile("CREATE TABLE \"" + SystemKeyspace.COUNTER_ID_CF + "\" ("
                                                          + "key text,"
@@ -2040,6 +2049,7 @@ public final class CFMetaData
     @Override
     public String toString()
     {
+    	ToStringBuilder.setDefaultStyle(ToStringStyle.MULTI_LINE_STYLE); //我加上的
         return new ToStringBuilder(this)
             .append("cfId", cfId)
             .append("ksName", ksName)

@@ -111,7 +111,7 @@ public class Frame
             {
                 EnumSet<Flag> set = EnumSet.noneOf(Flag.class);
                 Flag[] values = Flag.values();
-                for (int n = 0; n < 8; n++)
+                for (int n = 0; n < 8; n++) //Flag在Frame.Header中占用一个字节，一个字节有8位，每一位都可代表一种Flag
                 {
                     if ((flags & (1 << n)) != 0)
                         set.add(values[n]);
@@ -158,6 +158,7 @@ public class Frame
                 if (buffer.readableBytes() == 0)
                     return null;
 
+                //使用的是getByte，并不会改变内部的readerIndex
                 int firstByte = buffer.getByte(0);
                 Message.Direction direction = Message.Direction.extractFromVersion(firstByte);
                 int version = firstByte & 0x7F;

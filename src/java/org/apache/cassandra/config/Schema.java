@@ -57,6 +57,7 @@ public class Schema
     /* Keyspace objects, one per keyspace. Only one instance should ever exist for any given keyspace. */
     private final Map<String, Keyspace> keyspaceInstances = new NonBlockingHashMap<String, Keyspace>();
 
+    //BiMap是双向的通过key和value都可找到彼此
     /* metadata map for faster ColumnFamily lookup */
     private final BiMap<Pair<String, String>, UUID> cfIdMap = HashBiMap.create();
 

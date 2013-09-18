@@ -84,6 +84,9 @@ public class CassandraDaemon
      */
     public static void initLog4j()
     {
+    	//可以通过下面两行指定日志配置文件:
+        //    System.setProperty("log4j.defaultInitOverride", "true");
+        //    System.setProperty("log4j.configuration", "my-log4j-server.properties");
         if (System.getProperty("log4j.defaultInitOverride","false").equalsIgnoreCase("true"))
         {
             String config = System.getProperty("log4j.configuration", "log4j-server.properties");
@@ -159,6 +162,7 @@ public class CassandraDaemon
         }
      /*   else
         {
+            //如1.6.0_29，java_major=1.6.0，java_minor=29
             String[] java_version = javaVersion.split("_");
             String java_major = java_version[0];
             int java_minor;
@@ -176,7 +180,7 @@ public class CassandraDaemon
      */
         logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
         logger.info("Classpath: {}", System.getProperty("java.class.path"));
-        CLibrary.tryMlockall();
+        CLibrary.tryMlockall();//看一下本地库是否可用
 
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
         {

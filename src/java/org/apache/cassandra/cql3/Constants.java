@@ -78,6 +78,7 @@ public abstract class Constants
         }
     };
 
+    //非prepared语句的情况
     public static class Literal implements Term.Raw
     {
         private final Type type;
@@ -287,6 +288,7 @@ public abstract class Constants
         }
     }
 
+    //相当于赋值操作，字段ColumnIdentifier column的值是Term t
     public static class Setter extends Operation
     {
         public Setter(ColumnIdentifier column, Term t)
@@ -298,6 +300,7 @@ public abstract class Constants
         {
             ByteBuffer cname = columnName == null ? prefix.build() : prefix.add(columnName.key).build();
             ByteBuffer value = t.bindAndGet(params.variables);
+            //生成一个org.apache.cassandra.db.Column或其子类的实例
             cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
         }
     }

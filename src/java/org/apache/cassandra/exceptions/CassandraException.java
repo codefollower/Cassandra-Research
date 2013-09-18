@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.exceptions;
 
+//分了RequestExecutionException和RequestValidationException两大类
 public abstract class CassandraException extends Exception implements TransportException
 {
     private final ExceptionCode code;

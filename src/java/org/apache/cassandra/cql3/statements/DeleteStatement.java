@@ -29,8 +29,11 @@ import org.apache.cassandra.utils.Pair;
 /**
  * A <code>DELETE</code> parsed from a CQL query statement.
  */
+//必须指定where并且条件字段必须是primary key
 public class DeleteStatement extends ModificationStatement
 {
+    
+	//对于delete语句，Attributes只支持USING TIMESTAMP，不支持TTL
     private DeleteStatement(int boundTerms, CFMetaData cfm, Attributes attrs)
     {
         super(boundTerms, cfm, attrs);

@@ -275,7 +275,7 @@ public class CompositeType extends AbstractCompositeType
 
         private final List<ByteBuffer> components;
         private final byte[] endOfComponents;
-        private int serializedSize;
+        private int serializedSize; //没有地方赋值，就是0
 
         public Builder(CompositeType composite)
         {

@@ -47,6 +47,9 @@ public class TokenMetadataTest
     {
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
         tmd.updateNormalToken(token(ONE), InetAddress.getByName("127.0.0.1"));
+        //tmd.updateNormalToken(token("2"), InetAddress.getByName("127.0.0.1"));
+        //tmd.updateNormalToken(token("3"), InetAddress.getByName("127.0.0.1"));
+        
         tmd.updateNormalToken(token(SIX), InetAddress.getByName("127.0.0.6"));
         RING = tmd.sortedTokens();
     }
@@ -63,7 +66,9 @@ public class TokenMetadataTest
     @Test
     public void testRingIterator()
     {
+    	//因为RING是1和6，因为2在1和6之间，所以先碰到6，往回循环再到1
         testRingIterator("2", false, "6", "1");
+        //因为RING是1和6，因为7在1和6之后，往回循环先碰到1，再到6
         testRingIterator("7", false, "1", "6");
         testRingIterator("0", false, "1", "6");
         testRingIterator("", false, "1", "6");
@@ -72,6 +77,8 @@ public class TokenMetadataTest
     @Test
     public void testRingIteratorIncludeMin()
     {
+    	//同上，includeMin是true，所以要包含最小值
+        //通常是调用org.apache.cassandra.dht.IPartitioner.getMinimumToken()取最小值
         testRingIterator("2", true, "6", "", "1");
         testRingIterator("7", true, "", "1", "6");
         testRingIterator("0", true, "1", "6", "");

@@ -107,7 +107,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *  => (column=cf:c:name, value="aGVsbG8=", timestamp=1327061105833119000)
  *  => (column=cf:c:validation_class, value="org.apache.cassandra.db.marshal.AsciiType", timestamp=1327061105833119000)
  */
-public class DefsTables
+public class DefsTables //都是static方法
 {
     private static final Logger logger = LoggerFactory.getLogger(DefsTables.class);
 

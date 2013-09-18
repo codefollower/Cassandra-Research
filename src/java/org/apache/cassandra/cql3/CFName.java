@@ -20,7 +20,12 @@ package org.apache.cassandra.cql3;
 import java.util.Locale;
 
 public class CFName
-{
+{    
+	//对于CREATE TABLE simplex.songs这样的sql，
+    //ksName = simplex
+    //cfName = songs
+    //按RDBMS来看，ksName就是模式名，cfName就是表名，
+    //Cassandra的CQL只支持单个ColumnFamily，而HBase支持多个ColumnFamily
     private String ksName;
     private String cfName;
 

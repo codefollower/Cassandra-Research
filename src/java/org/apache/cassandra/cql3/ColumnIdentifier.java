@@ -27,12 +27,14 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /**
  * Represents an identifer for a CQL column definition.
  */
+//表示一个列名
+//RawSelector是一个标记接口
 public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier>
 {
     public final ByteBuffer key;
     private final String text;
 
-    public ColumnIdentifier(String rawText, boolean keepCase)
+    public ColumnIdentifier(String rawText, boolean keepCase) //keepCase为true时保留原始名称，否则全转成小写
     {
         this.text = keepCase ? rawText : rawText.toLowerCase(Locale.US);
         this.key = ByteBufferUtil.bytes(this.text);

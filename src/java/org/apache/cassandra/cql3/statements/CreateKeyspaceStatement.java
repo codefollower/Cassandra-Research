@@ -80,7 +80,7 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
         // keyspace name
         if (!name.matches("\\w+"))
             throw new InvalidRequestException(String.format("\"%s\" is not a valid keyspace name", name));
-        if (name.length() > Schema.NAME_LENGTH)
+        if (name.length() > Schema.NAME_LENGTH) //Keyspace的名称长度不能大于48
             throw new InvalidRequestException(String.format("Keyspace names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, name));
 
         attrs.validate();

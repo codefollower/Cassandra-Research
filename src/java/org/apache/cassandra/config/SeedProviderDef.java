@@ -29,7 +29,14 @@ public class SeedProviderDef
 
     public SeedProviderDef(LinkedHashMap<String, ?> p)
     {
+    	//例如在cassandra.yaml中定义
+        //seed_provider:
+        //    - class_name: org.apache.cassandra.locator.SimpleSeedProvider
+        //      parameters:
+        //          - seeds: "127.0.0.1"
         class_name = (String)p.get("class_name");
+        
+        //p.get("parameters")是一个List，List.get(0)才是Map<String, String>
         parameters = (Map<String, String>)((List)p.get("parameters")).get(0);
     }
 }

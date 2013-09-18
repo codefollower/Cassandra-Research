@@ -199,6 +199,7 @@ public abstract class Message
 
     public static class ProtocolDecoder extends OneToOneDecoder
     {
+    	//注意: 这个方法不单纯只负责Request，还负责Response的解码
         public Object decode(ChannelHandlerContext ctx, Channel channel, Object msg)
         {
             assert msg instanceof Frame : "Expecting frame, got " + msg;
@@ -207,11 +208,14 @@ public abstract class Message
             boolean isRequest = frame.header.type.direction == Direction.REQUEST;
             boolean isTracing = frame.header.flags.contains(Frame.Header.Flag.TRACING);
 
+            //只有Response并且有Flag.TRACING时才有tracingId
             UUID tracingId = isRequest || !isTracing ? null : CBUtil.readUuid(frame.body);
 
             try
             {
+            	//解码消息体
                 Message message = frame.header.type.codec.decode(frame.body, frame.header.version);
+                System.out.println(message); //我加上的
                 message.setStreamId(frame.header.streamId);
 
                 if (isRequest)

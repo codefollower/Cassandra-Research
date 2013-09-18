@@ -51,6 +51,7 @@ import org.apache.cassandra.scheduler.NoScheduler;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.utils.FBUtilities;
 
+//重点关注loadYaml、loadSchemas两个方法
 public class DatabaseDescriptor
 {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseDescriptor.class);
@@ -118,6 +119,7 @@ public class DatabaseDescriptor
     @VisibleForTesting
     static Config loadConfig() throws ConfigurationException
     {
+    	//读取cassandra.yaml文件，可通过System.setProperty("cassandra.config", "xxx")来设置
         String loaderClass = System.getProperty("cassandra.config.loader");
         ConfigurationLoader loader = loaderClass == null
                                    ? new YamlConfigurationLoader()
@@ -131,7 +133,7 @@ public class DatabaseDescriptor
 
         logger.info("Data files directories: " + Arrays.toString(conf.data_file_directories));
         logger.info("Commit log directory: " + conf.commitlog_directory);
-
+        //必须配置commitlog_sync参数
         if (conf.commitlog_sync == null)
         {
             throw new ConfigurationException("Missing required directive CommitLogSync");
@@ -139,6 +141,7 @@ public class DatabaseDescriptor
 
         if (conf.commitlog_sync == Config.CommitLogSync.batch)
         {
+        	//commitlog_sync_batch_window_in_ms与commitlog_sync_period_in_ms二选一
             if (conf.commitlog_sync_batch_window_in_ms == null)
             {
                 throw new ConfigurationException("Missing value for commitlog_sync_batch_window_in_ms: Double expected.");
@@ -315,7 +318,7 @@ public class DatabaseDescriptor
             throw new ConfigurationException("Missing endpoint_snitch directive");
         }
         snitch = createEndpointSnitch(conf.endpoint_snitch);
-        EndpointSnitchInfo.create();
+        EndpointSnitchInfo.create();//注册MBean
 
         localDC = snitch.getDatacenter(FBUtilities.getBroadcastAddress());
         localComparator = new Comparator<InetAddress>()

@@ -29,12 +29,14 @@ public abstract class AbstractMarker extends Term.NonTerminal
     protected final int bindIndex;
     protected final ColumnSpecification receiver;
 
+    //对应prepared语句中的每个?号，bindIndex是?号的位置(从0开始)，receiver是?号对应的字段
     protected AbstractMarker(int bindIndex, ColumnSpecification receiver)
     {
         this.bindIndex = bindIndex;
         this.receiver = receiver;
     }
 
+    //boundNames数组一开始每个元素都是null，这里相当于按bindIndex、receiver填充boundNames
     public void collectMarkerSpecification(ColumnSpecification[] boundNames)
     {
         boundNames[bindIndex] = receiver;
@@ -48,6 +50,7 @@ public abstract class AbstractMarker extends Term.NonTerminal
     /**
      * A parsed, but non prepared, bind marker.
      */
+    //对应prepared语句中的每个?号，非prepared语句就不用此类，而是用Constants、Lists、Maps、Sets中的Literal类
     public static class Raw implements Term.Raw
     {
         protected final int bindIndex;

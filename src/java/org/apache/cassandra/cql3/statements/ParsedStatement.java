@@ -25,7 +25,7 @@ import org.apache.cassandra.exceptions.RequestValidationException;
 
 public abstract class ParsedStatement
 {
-    private int boundTerms;
+    private int boundTerms; //prepared语句中?号的个数
 
     public int getBoundsTerms()
     {
@@ -33,7 +33,7 @@ public abstract class ParsedStatement
     }
 
     // Used by the parser and preparable statement
-    public void setBoundTerms(int boundTerms)
+    public void setBoundTerms(int boundTerms) //先触发setBoundTerms，再到Prepared(CQLStatement, List<ColumnSpecification>)
     {
         this.boundTerms = boundTerms;
     }
@@ -45,6 +45,9 @@ public abstract class ParsedStatement
         public final CQLStatement statement;
         public final List<ColumnSpecification> boundNames;
 
+        //如，对于SELECT title,album,artist FROM playlists WHERE id = ?
+        //boundTerms是1，boundNames就是id
+        //statement是org.apache.cassandra.cql3.statements.SelectStatement
         public Prepared(CQLStatement statement, List<ColumnSpecification> boundNames)
         {
             this.statement = statement;
