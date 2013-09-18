@@ -29,7 +29,6 @@
 
   <modules>
     <module>driver-core</module>
-    <module>driver-examples</module>
   </modules>
 
   <properties>

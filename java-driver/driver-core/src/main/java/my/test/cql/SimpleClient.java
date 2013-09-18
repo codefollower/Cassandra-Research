@@ -78,7 +78,7 @@ public class SimpleClient {
     }
 
     public void createSchema() {
-        session.execute("CREATE KEYSPACE IF NOT EXISTS esimplex WITH replication "
+        session.execute("CREATE KEYSPACE IF NOT EXISTS simplex WITH replication "
                 + "= {'class':'SimpleStrategy', 'replication_factor':3};");
 
         session.execute("CREATE TABLE IF NOT EXISTS simplex.songs (" + "id uuid PRIMARY KEY," + "title text," + "album text,"
@@ -409,16 +409,15 @@ public class SimpleClient {
 
     public void run() {
         connect("127.0.0.1");
-
+        createSchema();
         //session.execute("USE simplex");
 
         SimpleStatement stmt = new SimpleStatement("USE simplex");
         stmt.enableTracing();
         session.execute(stmt);
 
-        // createSchema();
         // loadData();
-        // loadDataUsingBoundStatements();
+        loadDataUsingBoundStatements();
         // querySchema();
         queryUsingPreparedStatement();
 
