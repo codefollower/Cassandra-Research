@@ -21,10 +21,10 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
@@ -61,7 +61,8 @@ public class Auth
                                                                 USERS_CF,
                                                                 90 * 24 * 60 * 60); // 3 months.
 
-    private static SelectStatement selectUserStatement;
+    //SELECT * FROM system_auth.users WHERE name = ?
+    private static SelectStatement selectUserStatement; //在setup中初始化，使用prepare的方式
 
     /**
      * Checks if the username is stored in AUTH_KS.USERS_CF.
@@ -126,8 +127,8 @@ public class Auth
         if (DatabaseDescriptor.getAuthenticator() instanceof AllowAllAuthenticator)
             return;
 
-        setupAuthKeyspace();
-        setupUsersTable();
+        setupAuthKeyspace(); //创建system_auth表空间
+        setupUsersTable(); //创建users表
 
         DatabaseDescriptor.getAuthenticator().setup();
         DatabaseDescriptor.getAuthorizer().setup();
@@ -144,7 +145,7 @@ public class Auth
                                           {
                                               public void run()
                                               {
-                                                  setupDefaultSuperuser();
+                                                  setupDefaultSuperuser(); //插入cassandra这个默认的超级用户
                                               }
                                           },
                                           SUPERUSER_SETUP_DELAY,
@@ -234,6 +235,7 @@ public class Auth
     {
         try
         {
+        	//QueryOptions中的List<ByteBuffer> values相当于prepare语句的参数值
             ResultMessage.Rows rows = selectUserStatement.execute(new QueryState(new ClientState(true)),
                                                                   new QueryOptions(consistencyForUser(username), Lists.newArrayList(ByteBufferUtil.bytes(username))));
             return new UntypedResultSet(rows.result);
@@ -255,11 +257,13 @@ public class Auth
     {
         public void onDropKeyspace(String ksName)
         {
+        	//删除与ksName相关的所有权限
             DatabaseDescriptor.getAuthorizer().revokeAll(DataResource.keyspace(ksName));
         }
 
         public void onDropColumnFamily(String ksName, String cfName)
         {
+        	//删除与ksName、cfName相关的所有权限
             DatabaseDescriptor.getAuthorizer().revokeAll(DataResource.columnFamily(ksName, cfName));
         }
 

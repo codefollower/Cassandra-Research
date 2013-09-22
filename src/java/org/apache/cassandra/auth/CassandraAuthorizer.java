@@ -61,9 +61,11 @@ public class CassandraAuthorizer implements IAuthorizer
                                                                       PERMISSIONS_CF,
                                                                       90 * 24 * 60 * 60); // 3 months.
 
-    private SelectStatement authorizeStatement;
+    //SELECT permissions FROM system_auth.permissions WHERE username = ? AND resource = ?
+    private SelectStatement authorizeStatement; //在setup中初始化，使用prepare的方式
 
     // Returns every permission on the resource granted to the user.
+    //看看user在resource上有什么权限(Permission)，这是一个查询操作，并不是GRANT或REVOKE
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)
     {
         if (user.isSuper())
@@ -97,6 +99,7 @@ public class CassandraAuthorizer implements IAuthorizer
         return permissions;
     }
 
+    //performer参数未使用
     public void grant(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String to)
     throws RequestExecutionException
     {
@@ -128,6 +131,7 @@ public class CassandraAuthorizer implements IAuthorizer
     public Set<PermissionDetails> list(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String of)
     throws RequestValidationException, RequestExecutionException
     {
+    	//不能看己的权限，想看别人的自己必须是超级用户
         if (!performer.isSuper() && !performer.getName().equals(of))
             throw new UnauthorizedException(String.format("You are not authorized to view %s's permissions",
                                                           of == null ? "everyone" : of));

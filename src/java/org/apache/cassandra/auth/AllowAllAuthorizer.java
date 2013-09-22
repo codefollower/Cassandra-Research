@@ -22,6 +22,7 @@ import java.util.Set;
 
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
+//配置使用AllowAllAuthorizer时，不支持GRANT/REVOKE/LIST PERMISSIONS语句
 public class AllowAllAuthorizer implements IAuthorizer
 {
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)

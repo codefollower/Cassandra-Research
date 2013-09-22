@@ -35,7 +35,7 @@ public abstract class CFStatement extends ParsedStatement
 
     public void prepareKeyspace(ClientState state) throws InvalidRequestException
     {
-        if (!cfName.hasKeyspace())
+        if (!cfName.hasKeyspace()) //如果未指定kesspace，看看前面是否调用过USE语句(没调用过kesspace还是null，然后会在别处报错)
         {
             // XXX: We explicitely only want to call state.getKeyspace() in this case, don't move it outside the if.
             cfName.setKeyspace(state.getKeyspace(), true);

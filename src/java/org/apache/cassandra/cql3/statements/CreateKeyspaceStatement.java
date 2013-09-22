@@ -37,6 +37,8 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 public class CreateKeyspaceStatement extends SchemaAlteringStatement
 {
     private final String name;
+    //org.apache.cassandra.cql3.CqlParser中会先new出一个KSPropDefs实例，然后解析CREATE KEYSPACE时
+    //碰到属性相关的配置则调用KSPropDefs的方法，最后再构造CreateKeyspaceStatement实例
     private final KSPropDefs attrs;
     private final boolean ifNotExists;
 
@@ -75,7 +77,7 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
      */
     public void validate(ClientState state) throws RequestValidationException
     {
-        ThriftValidation.validateKeyspaceNotSystem(name);
+        ThriftValidation.validateKeyspaceNotSystem(name); //不能使用"system"作为Keyspace名
 
         // keyspace name
         if (!name.matches("\\w+"))
@@ -91,6 +93,7 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
         // The strategy is validated through KSMetaData.validate() in announceNewKeyspace below.
         // However, for backward compatibility with thrift, this doesn't validate unexpected options yet,
         // so doing proper validation here.
+        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
         AbstractReplicationStrategy.validateReplicationStrategy(name,
                                                                 AbstractReplicationStrategy.getClass(attrs.getReplicationStrategyClass()),
                                                                 StorageService.instance.getTokenMetadata(),
