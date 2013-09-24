@@ -53,6 +53,9 @@ public class CFPropDefs extends PropertyDefinitions
 
     static
     {
+    	//不包含上面的KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD和COMPACTION_STRATEGY_CLASS_KEY
+    	//所以这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
+    	//可能是个bug
         keywords.add(KW_COMMENT);
         keywords.add(KW_READREPAIRCHANCE);
         keywords.add(KW_DCLOCALREADREPAIRCHANCE);

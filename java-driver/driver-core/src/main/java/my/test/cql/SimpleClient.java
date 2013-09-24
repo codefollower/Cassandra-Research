@@ -261,7 +261,7 @@ public class SimpleClient {
     public void testSetCollectionType() {
         session.execute("USE simplex");
         // session.execute("DROP TABLE simplex.users;");
-        // session.execute("CREATE TABLE users (user_id text PRIMARY KEY,first_name text,last_name text,emails set<text>);");
+        session.execute("CREATE TABLE IF NOT EXISTS users (user_id text PRIMARY KEY,first_name text,last_name text,emails set<text>);");
 
         session.execute("INSERT INTO users (user_id, first_name, last_name, emails) VALUES('frodo', 'Frodo', 'Baggins', {'f@baggins.com','baggins@gmail.com'});");
 
@@ -409,7 +409,7 @@ public class SimpleClient {
 
     public void run() {
         connect("127.0.0.1");
-        createSchema();
+        //createSchema();
         //session.execute("USE simplex");
 
         SimpleStatement stmt = new SimpleStatement("USE simplex");
@@ -417,18 +417,19 @@ public class SimpleClient {
         session.execute(stmt);
 
         // loadData();
-        loadDataUsingBoundStatements();
+        //loadDataUsingBoundStatements();
         // querySchema();
-        queryUsingPreparedStatement();
+        //queryUsingPreparedStatement();
 
         // testInsert();
         // testUpdate();
         // testDelete();
         // testSelect();
         // testCounterColumn();
-        // testSetCollectionType();
+        //testSetCollectionType();
         // testListCollectionType();
         // testMapCollectionType();
+        
 
         close();
     }

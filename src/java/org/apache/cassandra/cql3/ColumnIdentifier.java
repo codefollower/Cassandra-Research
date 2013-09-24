@@ -28,7 +28,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * Represents an identifer for a CQL column definition.
  */
 //表示一个列名
-//RawSelector是一个标记接口
+//Selectable是一个标记接口
 public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier>
 {
     public final ByteBuffer key;

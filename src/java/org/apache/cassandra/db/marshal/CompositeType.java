@@ -374,7 +374,7 @@ public class CompositeType extends AbstractCompositeType
                 return ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
             ByteBuffer bb = build();
-            bb.put(bb.remaining() - 1, (byte)1);
+            bb.put(bb.remaining() - 1, (byte)1); //相当于<或<=，正如方法名buildAsEndOfRange，意思就是把最后一项用end
             return bb;
         }
 

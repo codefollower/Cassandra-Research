@@ -43,9 +43,9 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /** A <code>CREATE TABLE</code> parsed from a CQL query statement. */
 public class CreateTableStatement extends SchemaAlteringStatement
 {
-    public AbstractType<?> comparator;
+    public AbstractType<?> comparator; //用于clustering key
     private AbstractType<?> defaultValidator;
-    private AbstractType<?> keyValidator;
+    private AbstractType<?> keyValidator; //用于partition key
 
     private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
     private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
@@ -63,8 +63,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
         try
         {
+        	//如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
             if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
-                this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
+                //注意compression属性对应的是一个Map不是一个字符串
+            	this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
                                             new HashMap<String, String>()
                                             {{
                                                 put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
@@ -178,11 +180,22 @@ public class CreateTableStatement extends SchemaAlteringStatement
         private final Map<ColumnIdentifier, CQL3Type> definitions = new HashMap<ColumnIdentifier, CQL3Type>();
         public final CFPropDefs properties = new CFPropDefs();
 
+        //如CREATE TABLE IF NOT EXISTS Cats0 ( block_id uuid PRIMARY KEY, breed text, color text, short_hair boolean,"
+        //+ "PRIMARY KEY ((block_id, breed), color, short_hair))
+        //此时keyAliases.size是2，
+        //其中keyAliases[0]是block_id
+        //keyAliases[1]是(block_id, breed)
+        //这在语法解析阶段是允许的，但是在CreateTableStatement.RawStatement.prepare()中才抛错，只需要keyAliases.size是1
+        
+        //每个表必须有主键，并且只能有一个
+        //这个是错误的: CREATE TABLE IF NOT EXISTS Cats00 ( block_id uuid, breed text, color text, short_hair boolean)
         private final List<List<ColumnIdentifier>> keyAliases = new ArrayList<List<ColumnIdentifier>>();
         private final List<ColumnIdentifier> columnAliases = new ArrayList<ColumnIdentifier>();
         private final Map<ColumnIdentifier, Boolean> definedOrdering = new LinkedHashMap<ColumnIdentifier, Boolean>(); // Insertion ordering is important
 
         private boolean useCompactStorage;
+        //允许相同的元素出现多个(按元素的hash值确定)
+        //用来检查是否定义了多个同名的字段
         private final Multiset<ColumnIdentifier> definedNames = HashMultiset.create(1);
 
         private final boolean ifNotExists;
@@ -196,22 +209,27 @@ public class CreateTableStatement extends SchemaAlteringStatement
         /**
          * Transform this raw statement into a CreateTableStatement.
          */
+        //参见my.test.cql3.statements.CreateTableStatementTest的测试
         public ParsedStatement.Prepared prepare() throws RequestValidationException
         {
             // Column family name
             if (!columnFamily().matches("\\w+"))
                 throw new InvalidRequestException(String.format("\"%s\" is not a valid column family name (must be alphanumeric character only: [0-9A-Za-z]+)", columnFamily()));
+            //列族名就是表名，不能超过48个字符
             if (columnFamily().length() > Schema.NAME_LENGTH)
                 throw new InvalidRequestException(String.format("Column family names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, columnFamily()));
 
+            //定义了重复的字段
             for (Multiset.Entry<ColumnIdentifier> entry : definedNames.entrySet())
                 if (entry.getCount() > 1)
                     throw new InvalidRequestException(String.format("Multiple definition of identifier %s", entry.getElement()));
 
+            //验证是否是支持的属性
+            //这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
             properties.validate();
 
             CreateTableStatement stmt = new CreateTableStatement(cfName, properties, ifNotExists);
-            stmt.setBoundTerms(getBoundsTerms());
+            stmt.setBoundTerms(getBoundsTerms()); //反正都是0，多余的，Create Table语句不能使用占位符
 
             Map<ByteBuffer, CollectionType> definedCollections = null;
             for (Map.Entry<ColumnIdentifier, CQL3Type> entry : definitions.entrySet())
@@ -227,6 +245,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 stmt.columns.put(id, pt.getType()); // we'll remove what is not a column below
             }
 
+            //每个表必须有主键，并且只能有一个
             if (keyAliases.size() != 1)
                 throw new InvalidRequestException("You must specify one and only one PRIMARY KEY");
 
@@ -236,7 +255,17 @@ public class CreateTableStatement extends SchemaAlteringStatement
             for (ColumnIdentifier alias : kAliases)
             {
                 stmt.keyAliases.add(alias.key);
+                //通过PRIMARY KEY定义的部分，
+                //例如: PRIMARY KEY ((block_id, breed), color, short_hair)
+                //PRIMARY KEY由partition key和clustering key组成，
+                //其中(block_id, breed)是partition key，而(color, short_hair)是clustering key
+                //因为(block_id, breed)由大于1个字段组成，所以又叫composite partition key
+                //getTypeAndRemove就是用来检查partition key和clustering key的，这两种key中的字段类型不能是CollectionType
+                
+                //另外，些类的keyAliases对应partition key，而columnAliases对应clustering key
                 AbstractType<?> t = getTypeAndRemove(stmt.columns, alias);
+                //主键字段不能是counter类型
+                //例如这样是不行的: block_id counter PRIMARY KEY
                 if (t instanceof CounterColumnType)
                     throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", alias));
                 keyTypes.add(t);
@@ -255,7 +284,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     if (definedCollections != null)
                         throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
 
-                    stmt.comparator = CFDefinition.definitionType;
+                    stmt.comparator = CFDefinition.definitionType; //默认使用UTF8Type
                 }
                 else
                 {
