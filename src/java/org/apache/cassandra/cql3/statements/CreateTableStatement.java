@@ -44,12 +44,12 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class CreateTableStatement extends SchemaAlteringStatement
 {
     public AbstractType<?> comparator; //用于clustering key
-    private AbstractType<?> defaultValidator;
+    private AbstractType<?> defaultValidator; //第一个非partition key和clustering key字段类型(按定义顺序)
     private AbstractType<?> keyValidator; //用于partition key
 
     private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
     private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
-    private ByteBuffer valueAlias;
+    private ByteBuffer valueAlias; //使用CompactStorage时第一个并且只有一个非partition key和clustering key字段名
 
     private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
     private final CFPropDefs properties;
@@ -335,6 +335,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
                             types.add(ColumnToCollectionType.getInstance(definedCollections));
                     }
 
+                    //types不可能为empty
                     if (types.isEmpty())
                         throw new IllegalStateException("Nonsensical empty parameter list for CompositeType");
                     stmt.comparator = CompositeType.getInstance(types);
@@ -358,6 +359,13 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     if (stmt.columns.size() > 1)
                         throw new InvalidRequestException(String.format("COMPACT STORAGE with composite PRIMARY KEY allows no more than one column not part of the PRIMARY KEY (got: %s)", StringUtils.join(stmt.columns.keySet(), ", ")));
 
+                    //使用最后那个字段
+                    //如:
+                    //tryExecute("CREATE TABLE IF NOT EXISTS " + tableName //
+                    //+ " ( block_id uuid, breed text, short_hair boolean, f1 text" //
+                    //+ "PRIMARY KEY ((block_id, breed), short_hair)) WITH COMPACT STORAGE");
+                    //则defaultValidator是text
+                    //valueAlias是f1
                     Map.Entry<ColumnIdentifier, AbstractType> lastEntry = stmt.columns.entrySet().iterator().next();
                     stmt.defaultValidator = lastEntry.getValue();
                     stmt.valueAlias = lastEntry.getKey().key;
@@ -368,6 +376,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
             {
                 // For compact, we are in the "static" case, so we need at least one column defined. For non-compact however, having
                 // just the PK is fine since we have CQL3 row marker.
+            	//不可能出现这个，
+            	//因为前面if (columnAliases.isEmpty())　{　if (useCompactStorage)　{if (stmt.columns.isEmpty())
+            	//如果满足这三个if就抛异常了
                 if (useCompactStorage && stmt.columns.isEmpty())
                     throw new InvalidRequestException("COMPACT STORAGE with non-composite PRIMARY KEY require one column not part of the PRIMARY KEY, none given");
 
