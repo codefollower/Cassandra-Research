@@ -305,6 +305,7 @@ public final class CFMetaData
             String name = retry.toUpperCase();
             try
             {
+            	//例如: WITH speculative_retry = '90percentile'
                 if (name.endsWith(RetryType.PERCENTILE.toString()))
                 {
                     double value = Double.parseDouble(name.substring(0, name.length() - 10));
@@ -314,16 +315,21 @@ public final class CFMetaData
                 }
                 else if (name.endsWith("MS"))
                 {
+                	//例如: WITH speculative_retry = '60ms'
                     double value = Double.parseDouble(name.substring(0, name.length() - 2));
                     return new SpeculativeRetry(RetryType.CUSTOM, value);
                 }
                 else
                 {
+                	//例如: WITH speculative_retry = 'ALWAYS'
+                	//或 WITH speculative_retry = 'NONE'
                     return new SpeculativeRetry(RetryType.valueOf(name), 0);
                 }
             }
             catch (IllegalArgumentException e)
             {
+            	//执行RetryType.valueOf(name)时，如果name无效，那么会抛出IllegalArgumentException
+            	//如: WITH speculative_retry = 'invalid speculative_retry type'
                 // ignore to throw the below exception.
             }
             throw new ConfigurationException("invalid speculative_retry type: " + retry);

@@ -387,7 +387,7 @@ public class FBUtilities
         }
     }
 
-    public static long timestampMicros()
+    public static long timestampMicros() //获得当前时间，按微妙算，System.currentTimeMillis()是毫秒，所以要乘以1000
     {
         // we use microsecond resolution for compatibility with other client libraries, even though
         // we can't actually get microsecond precision.

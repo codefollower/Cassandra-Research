@@ -688,6 +688,7 @@ public class SystemKeyspace
      * @param schemaCfName The name of the ColumnFamily responsible for part of the schema (keyspace, ColumnFamily, columns)
      * @return low-level schema representation (each row represents individual Keyspace or ColumnFamily)
      */
+    //相录于查询schemaCfName对应的ColumnFamilyStore中的记录
     public static List<Row> serializedSchema(String schemaCfName)
     {
         Token minToken = StorageService.getPartitioner().getMinimumToken();
@@ -741,7 +742,7 @@ public class SystemKeyspace
 
     public static ByteBuffer getSchemaKSKey(String ksName)
     {
-        return AsciiType.instance.fromString(ksName);
+        return AsciiType.instance.fromString(ksName); //以US-ASCII编码把String类型的ksName转成ByteBuffer
     }
 
     public static Row readSchemaRow(String ksName)

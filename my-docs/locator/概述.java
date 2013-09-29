@@ -1,0 +1,14 @@
+核心是
+IEndpointSnitch
+AbstractReplicationStrategy
+TokenMetadata
+
+AbstractReplicationStrategy有三个子类:
+org.apache.cassandra.locator.SimpleStrategy
+org.apache.cassandra.locator.OldNetworkTopologyStrategy
+org.apache.cassandra.locator.NetworkTopologyStrategy
+
+SimpleStrategy只支持replication_factor这个选项
+OldNetworkTopologyStrategy已不使用，也只支持replication_factor这个选项
+NetworkTopologyStrategy支持<数据中心名称，int值>这样的选项值对，但是不允许出现replication_factor
+

@@ -355,6 +355,8 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
 
         uncheckedOptions.remove(SSTABLE_SIZE_OPTION);
 
+        //注意这里是用SizeTieredCompactionStrategyOptions验证，
+        //所以出现SizeTieredCompactionStrategy的选项也是允许的,但是被忽略
         uncheckedOptions = SizeTieredCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
         return uncheckedOptions;

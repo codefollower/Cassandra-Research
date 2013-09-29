@@ -137,12 +137,14 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         };
     }
 
-    public T compose(ByteBuffer bytes)
+    //每一个AbstractType子类都对应org.apache.cassandra.serializers模块中的一个TypeSerializer接口实现
+    //下面两个方法的名字有点晦涩
+    public T compose(ByteBuffer bytes) //由字节构造出类型，所以要反序列化
     {
         return getSerializer().deserialize(bytes);
     }
 
-    public ByteBuffer decompose(T value)
+    public ByteBuffer decompose(T value) //把类型分解成字节，所以要序列化
     {
         return getSerializer().serialize(value);
     }

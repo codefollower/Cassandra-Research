@@ -166,14 +166,16 @@ public class DefsTables //都是static方法
     public static synchronized void mergeSchema(Collection<RowMutation> mutations) throws ConfigurationException, IOException
     {
         // current state of the schema
+    	//获得schema_keyspaces表中的记录
         Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
+        //获得schema_columnfamilies表中的记录
         Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
 
         for (RowMutation mutation : mutations)
             mutation.apply();
 
         if (!StorageService.instance.isClientMode())
-            flushSchemaCFs();
+            flushSchemaCFs(); //会强制刷新memtable
 
         // with new data applied
         Map<DecoratedKey, ColumnFamily> newKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
@@ -203,6 +205,7 @@ public class DefsTables //都是static方法
 
             // we don't care about nested ColumnFamilies here because those are going to be processed separately
             if (!(ksAttrs.getColumnCount() == 0))
+            	//前面调用mergeSchema时也执行了mutation.apply()，记录也存在system.schema_keyspaces表中了，KSMetaData.fromSchema中再次读出来
                 addKeyspace(KSMetaData.fromSchema(new Row(entry.getKey(), entry.getValue()), Collections.<CFMetaData>emptyList()));
         }
 
@@ -328,6 +331,7 @@ public class DefsTables //都是static方法
         if (!StorageService.instance.isClientMode())
         {
             Keyspace.open(ksm.name);
+            //通知所有IMigrationListener发生了CreateKeyspace事件
             MigrationManager.instance.notifyCreateKeyspace(ksm);
         }
     }

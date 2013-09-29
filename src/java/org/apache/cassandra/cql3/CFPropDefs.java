@@ -109,7 +109,9 @@ public class CFPropDefs extends PropertyDefinitions
             cp.validate();
         }
 
+        //default_time_to_live不能小于最小值0
         validateMinimumInt(KW_DEFAULT_TIME_TO_LIVE, 0, CFMetaData.DEFAULT_DEFAULT_TIME_TO_LIVE);
+        //index_interval不能小于最小值1
         validateMinimumInt(KW_INDEX_INTERVAL, 1, CFMetaData.DEFAULT_INDEX_INTERVAL);
 
         SpeculativeRetry.fromString(getString(KW_SPECULATIVE_RETRY, SpeculativeRetry.RetryType.NONE.name()));

@@ -1,8 +1,12 @@
 package my.test;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.ColumnDefinitions;
+import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.HostDistance;
 import com.datastax.driver.core.PoolingOptions;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.SocketOptions;
 import com.datastax.driver.core.ProtocolOptions.Compression;
@@ -80,5 +84,48 @@ public abstract class TestBase {
         } catch (Exception e) {
             System.out.println(e.getMessage());
         }
+    }
+
+    public void printResultSet(ResultSet results) {
+        ColumnDefinitions cd = results.getColumnDefinitions();
+        int size = cd.size();
+
+        for (Row row : results) {
+            for (int i = 0; i < size; i++) {
+                System.out.print(" ");
+                DataType dt = cd.getType(i);
+                switch (dt.getName()) {
+                case TEXT:
+                    System.out.print(row.getString(i));
+                    break;
+                case INT:
+                    System.out.print(row.getInt(i));
+                    break;
+                case BIGINT:
+                    System.out.print(row.getLong(i));
+                    break;
+                case UUID:
+                    System.out.print(row.getUUID(i));
+                    break;
+                case SET:
+                    System.out.print(row.getSet(i, String.class));
+                    break;
+                case LIST:
+                    System.out.print(row.getList(i, String.class));
+                    break;
+                case MAP:
+                    System.out.print(row.getMap(i, java.util.Date.class, String.class));
+                    break;
+                case COUNTER:
+                    System.out.print(row.getLong(i));
+                    break;
+                default:
+                    System.out.print(row.getString(i));
+                    break;
+                }
+            }
+            System.out.println();
+        }
+        System.out.println();
     }
 }

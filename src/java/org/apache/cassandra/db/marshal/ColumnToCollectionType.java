@@ -37,6 +37,7 @@ public class ColumnToCollectionType extends AbstractType<ByteBuffer>
 
     public final Map<ByteBuffer, CollectionType> defined;
 
+    //未使用
     public static ColumnToCollectionType getInstance(TypeParser parser) throws SyntaxException, ConfigurationException
     {
         return getInstance(parser.getCollectionsParameters());

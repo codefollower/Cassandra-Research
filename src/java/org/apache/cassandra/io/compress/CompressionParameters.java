@@ -239,6 +239,12 @@ public class CompressionParameters
     public void validate() throws ConfigurationException
     {
         // if chunk length was not set (chunkLength == null), this is fine, default will be used
+    	
+    	//chunk_length_kb必须是power of 2
+		// 否则出错: chunk_length_kb must be a power of 2
+    	//例如:
+		// "CREATE TABLE IF NOT EXISTS test (block_id uuid PRIMARY KEY, species text)" + //
+		// "WITH compression = { 'sstable_compression' : 'DeflateCompressor', 'chunk_length_kb' : 3 }";
         if (chunkLength != null)
         {
             if (chunkLength <= 0)

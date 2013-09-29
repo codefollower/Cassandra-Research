@@ -27,6 +27,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.TypeSerializer;
 
+//用于create table语句的CLUSTERING ORDER BY中某个字段为DESC的情况
 public class ReversedType<T> extends AbstractType<T>
 {
     // interning instances

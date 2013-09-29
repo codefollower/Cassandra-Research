@@ -61,6 +61,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             for (Entry<String, String> entry : configOptions.entrySet())
             {
                 String dc = entry.getKey();
+                //支持<数据中心名称，int值>这样的选项值对，但是不允许出现replication_factor
                 if (dc.equalsIgnoreCase("replication_factor"))
                     throw new ConfigurationException("replication_factor is an option for SimpleStrategy, not NetworkTopologyStrategy");
                 Integer replicas = Integer.valueOf(entry.getValue());

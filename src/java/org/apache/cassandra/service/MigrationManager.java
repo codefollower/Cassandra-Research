@@ -199,14 +199,15 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
             listener.onDropColumnFamily(cfm.ksName, cfm.cfName);
     }
 
+    //通告有新的Keyspace了，会更新本地和其它节点
     public static void announceNewKeyspace(KSMetaData ksm) throws ConfigurationException
     {
-        announceNewKeyspace(ksm, FBUtilities.timestampMicros());
+        announceNewKeyspace(ksm, FBUtilities.timestampMicros()); //获得当前时间，按微妙算
     }
 
     public static void announceNewKeyspace(KSMetaData ksm, long timestamp) throws ConfigurationException
     {
-        ksm.validate();
+        ksm.validate(); //检查AbstractReplicationStrategy和CFMetaData
 
         if (Schema.instance.getKSMetaData(ksm.name) != null)
             throw new AlreadyExistsException(ksm.name);
@@ -303,6 +304,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
             }
         });
 
+        //并不需要等待其他节点更新完成
         for (InetAddress endpoint : Gossiper.instance.getLiveMembers())
         {
             if (endpoint.equals(FBUtilities.getBroadcastAddress()))
