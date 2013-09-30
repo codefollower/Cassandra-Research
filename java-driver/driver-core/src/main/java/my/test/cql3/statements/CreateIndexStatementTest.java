@@ -9,9 +9,8 @@ public class CreateIndexStatementTest extends TestBase {
 
     @Override
     public void startInternal() throws Exception {
-        cql = "DROP TABLE myks.CreateIndexStatementTest";
-        tryExecute();
-        cql = "CREATE TABLE myks.CreateIndexStatementTest (" + //
+        tableName = "CreateIndexStatementTest";
+        cql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" + //
                 "block_id uuid," + //
                 "species text," + //
                 "alias text," + //
@@ -22,10 +21,11 @@ public class CreateIndexStatementTest extends TestBase {
                 "AND compaction = { 'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 6 }";
         execute();
 
-        
-        cql = "DROP INDEX CreateIndexStatementIndex";
+        String indexName = tableName + "_index_alias";
+        cql = "DROP INDEX IF EXISTS " + indexName;
         tryExecute();
-        cql = "CREATE INDEX CreateIndexStatementIndex ON myks.CreateIndexStatementTest (alias);";
+
+        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (alias);";
         execute();
     }
 }

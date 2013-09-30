@@ -155,6 +155,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
         cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Type.PARTITION_KEY);
         cfmd.addColumnMetadataFromAliases(columnAliases, comparator, ColumnDefinition.Type.CLUSTERING_KEY);
+        
+        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
         if (valueAlias != null)
             cfmd.addColumnMetadataFromAliases(Collections.<ByteBuffer>singletonList(valueAlias), defaultValidator, ColumnDefinition.Type.COMPACT_VALUE);
 

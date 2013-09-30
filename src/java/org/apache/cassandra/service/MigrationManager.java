@@ -218,7 +218,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
 
     public static void announceNewColumnFamily(CFMetaData cfm) throws ConfigurationException
     {
-        cfm.validate();
+        cfm.validate(); //在里面构建CFDefinition实例
 
         KSMetaData ksm = Schema.instance.getKSMetaData(cfm.ksName);
         if (ksm == null)

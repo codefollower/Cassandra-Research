@@ -11,9 +11,11 @@ public class CreateTableStatementTest extends TestBase {
     public void startInternal() throws Exception {
         tableName = "CreateTableStatementTest";
 
-        //test_RawStatement_prepare();
+        test_RawStatement_prepare();
 
         test_CFPropDefs_validate();
+
+        test_CreateTableStatement_applyPropertiesTo();
     }
 
     //按org.apache.cassandra.cql3.statements.CreateTableStatement.RawStatement.prepare()中的代码测试
@@ -270,5 +272,13 @@ public class CreateTableStatementTest extends TestBase {
         cql = "CREATE TABLE IF NOT EXISTS " + tableName + " (block_id uuid PRIMARY KEY, species text)" + //
                 "WITH speculative_retry = 'invalid speculative_retry type'";
         tryExecute();
+    }
+
+    public void test_CreateTableStatement_applyPropertiesTo() throws Exception {
+        //execute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid PRIMARY KEY, breed text, emails set<text>)");
+        
+        execute("CREATE TABLE IF NOT EXISTS ss" + tableName //
+                + " ( block_id uuid, breed text, short_hair boolean, f1 text, f2 int, " //
+                + "PRIMARY KEY ((block_id, breed), short_hair, f1)) WITH COMPACT STORAGE");
     }
 }

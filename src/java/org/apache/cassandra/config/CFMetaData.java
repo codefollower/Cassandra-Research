@@ -397,6 +397,7 @@ public final class CFMetaData
     public static final String DEFAULT_COLUMN_ALIAS = "column";
     public static final String DEFAULT_VALUE_ALIAS = "value";
 
+    //存放org.apache.cassandra.config.ColumnDefinition.Type中定义的4种类型的字段
     private volatile Map<ByteBuffer, ColumnDefinition> column_metadata = new HashMap<>();
     private volatile List<ColumnDefinition> partitionKeyColumns;  // Always of size keyValidator.componentsCount, null padded if necessary
     private volatile List<ColumnDefinition> clusteringKeyColumns; // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
@@ -1505,7 +1506,9 @@ public final class CFMetaData
         ColumnFamily cf = rm.addOrGet(SchemaColumnFamiliesCf);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
+        //第1列是cfName自身
         cf.addColumn(Column.create("", timestamp, cfName, ""));
+        //第2列是cfName的类型，在Column.create内部会用cfName+"type"组合起来当列名，fType.toString()是列值
         cf.addColumn(Column.create(cfType.toString(), timestamp, cfName, "type"));
 
         if (isSuper())
@@ -1712,7 +1715,9 @@ public final class CFMetaData
      */
     public RowMutation toSchema(long timestamp) throws ConfigurationException
     {
+    	//这个RowMutation的key是此CF对应的Keyspace名，而不是CF自己的名字
         RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(ksName));
+        //RowMutation在里面会得到两个ColumnFamily: schema_columnfamilies和schema_columns
         toSchema(rm, timestamp);
         return rm;
     }
