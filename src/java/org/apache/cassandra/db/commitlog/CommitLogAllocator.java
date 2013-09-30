@@ -98,6 +98,10 @@ public class CommitLogAllocator
                         // no job, so we're clear to check to see if we're out of segments
                         // and ready a new one if needed. has the effect of ensuring there's
                         // almost always a segment available when it's needed.
+                    	//在这里会每隔100毫秒检查一下是否当前日志文件写满了
+                    	//CommitLog.LogRecordAdder.run()=>CommitLog.activateNextSegment()=>CommitLogAllocator.fetchSegment()
+                    	//在CommitLogAllocator.fetchSegment()调用availableSegments.take()会阻塞，
+                    	//所以必须由此COMMIT-LOG-ALLOCATOR线程生成新的日志文件(即CommitLogSegment)
                         if (availableSegments.isEmpty() && (activeSegments.isEmpty() || createReserveSegments))
                         {
                             logger.debug("No segments in reserve; creating a fresh one");
@@ -131,8 +135,8 @@ public class CommitLogAllocator
 
         assert !activeSegments.contains(next);
         activeSegments.add(next);
-        if (isCapExceeded())
-            flushOldestKeyspaces();
+        if (isCapExceeded()) //检查一下是否超过总的日志大小
+            flushOldestKeyspaces(); //强制刷新Keyspace中所有修改过的CF
 
         return next;
     }
@@ -273,6 +277,8 @@ public class CommitLogAllocator
     {
         long currentSize = size.get();
         logger.debug("Total active commitlog segment space used is {}", currentSize);
+        //64位系统默认是1024M，而32位系统默认是32M(见org.apache.cassandra.config.DatabaseDescriptor.applyConfig(Config))
+        //通过commitlog_total_space_in_mb参数可以配置
         return currentSize > DatabaseDescriptor.getTotalCommitlogSpaceInMB() * 1024 * 1024;
     }
 

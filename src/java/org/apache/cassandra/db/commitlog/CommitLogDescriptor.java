@@ -57,6 +57,16 @@ public class CommitLogDescriptor
 
     public static CommitLogDescriptor fromFileName(String name)
     {
+    	//假设name是CommitLog-3-1380548377498.log
+    	//matcher.group(0) = matcher.group() = "CommitLog-3-1380548377498.log"
+    	//matcher.group(1) = "3-1380548377498"
+    	//matcher.group(2) = "3"
+    	//matcher.group(3) = "-1380548377498"
+    	
+    	//其中的PATTERN是"((\\d+)(" + SEPARATOR + "\\d+)?)"
+    	//可以把matcher.group(1)看成整个"((\\d+)(" + SEPARATOR + "\\d+)?)"
+    	//matcher.group(2)看成(\\d+)
+    	//matcher.group(3)看成(" + SEPARATOR + "\\d+)?)
         Matcher matcher;
         if (!(matcher = COMMIT_LOG_FILE_PATTERN.matcher(name)).matches())
             throw new RuntimeException("Cannot parse the version of the file: " + name);
@@ -64,6 +74,7 @@ public class CommitLogDescriptor
         if (matcher.group(3) == null)
             throw new UnsupportedOperationException("Commitlog segment is too old to open; upgrade to 1.2.5+ first");
 
+        //matcher.group(3).split(SEPARATOR) = [, 1380548377498]
         long id = Long.parseLong(matcher.group(3).split(SEPARATOR)[1]);
         return new CommitLogDescriptor(Integer.parseInt(matcher.group(2)), id);
     }
