@@ -277,7 +277,7 @@ public class CreateTableStatementTest extends TestBase {
     public void test_CreateTableStatement_applyPropertiesTo() throws Exception {
         //execute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid PRIMARY KEY, breed text, emails set<text>)");
         
-        execute("CREATE TABLE IF NOT EXISTS ss" + tableName //
+        execute("CREATE TABLE IF NOT EXISTS " + tableName //
                 + " ( block_id uuid, breed text, short_hair boolean, f1 text, f2 int, " //
                 + "PRIMARY KEY ((block_id, breed), short_hair, f1)) WITH COMPACT STORAGE");
     }

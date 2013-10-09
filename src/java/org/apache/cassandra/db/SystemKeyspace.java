@@ -61,6 +61,7 @@ public class SystemKeyspace
 {
     private static final Logger logger = LoggerFactory.getLogger(SystemKeyspace.class);
 
+    //对应system中的14个表(或称列族)
     // see CFMetaData for schema definitions
     public static final String PEERS_CF = "peers";
     public static final String PEER_EVENTS_CF = "peer_events";
@@ -688,7 +689,7 @@ public class SystemKeyspace
      * @param schemaCfName The name of the ColumnFamily responsible for part of the schema (keyspace, ColumnFamily, columns)
      * @return low-level schema representation (each row represents individual Keyspace or ColumnFamily)
      */
-    //相录于查询schemaCfName对应的ColumnFamilyStore中的记录
+    //相当于查询schemaCfName对应的ColumnFamilyStore中的记录
     public static List<Row> serializedSchema(String schemaCfName)
     {
         Token minToken = StorageService.getPartitioner().getMinimumToken();

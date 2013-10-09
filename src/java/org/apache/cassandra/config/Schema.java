@@ -52,19 +52,24 @@ public class Schema
     public static final int NAME_LENGTH = 48;
 
     /* metadata map for faster keyspace lookup */
+    //key是keyspace的名称
     private final Map<String, KSMetaData> keyspaces = new NonBlockingHashMap<String, KSMetaData>();
 
     /* Keyspace objects, one per keyspace. Only one instance should ever exist for any given keyspace. */
+    //key是keyspace的名称
     private final Map<String, Keyspace> keyspaceInstances = new NonBlockingHashMap<String, Keyspace>();
 
-    //BiMap是双向的通过key和value都可找到彼此
+    //BiMap是双向的，通过key和value都可找到彼此
     /* metadata map for faster ColumnFamily lookup */
+    //Pair<String, String>是(ksname,cfname)
     private final BiMap<Pair<String, String>, UUID> cfIdMap = HashBiMap.create();
 
     private volatile UUID version;
 
     // 59adb24e-f3cd-3e02-97f0-5b395827453f
     public static final UUID emptyVersion;
+
+    //指system和system_traces，不包含system_auth
     public static final ImmutableSet<String> systemKeyspaceNames = ImmutableSet.of(Keyspace.SYSTEM_KS, Tracing.TRACE_KS);
 
     static

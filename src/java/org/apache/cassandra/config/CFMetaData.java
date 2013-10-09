@@ -90,20 +90,12 @@ public final class CFMetaData
 
     // Note that this is the default only for user created tables
     public final static String DEFAULT_COMPRESSOR = LZ4Compressor.class.getCanonicalName();
-    //compile方法第一个参数是数字的会存入org.apache.cassandra.config.Schema.oldCfIdMap
-    //oldCfIdMap是<Integer, UUID>
+
     public static final CFMetaData IndexCf = compile("CREATE TABLE \"" + SystemKeyspace.INDEX_CF + "\" ("
                                                      + "table_name text,"
                                                      + "index_name text,"
                                                      + "PRIMARY KEY (table_name, index_name)"
                                                      + ") WITH COMPACT STORAGE AND COMMENT='indexes that have been completed'");
-//    "CREATE TABLE \"" + SystemTable.INDEX_CF + "\" ("
-//    + "table_name text,"
-//    + "index_name text,"
-//    + "index_name2 text,"
-//    //+ "index_name2 text,"
-//    + "PRIMARY KEY (table_name, index_name)"
-//    + ")WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
 
     public static final CFMetaData CounterIdCf = compile("CREATE TABLE \"" + SystemKeyspace.COUNTER_ID_CF + "\" ("
                                                          + "key text,"
@@ -472,6 +464,8 @@ public final class CFMetaData
     {
         try
         {
+        	System.out.println(cql);
+        	//仅仅是是进行到prepare而已，并未checkAccess、announceMigration，所以也不需要IF NOT EXISTS
             CreateTableStatement statement = (CreateTableStatement) QueryProcessor.parseStatement(cql).prepare().statement;
             CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator, null);
             statement.applyPropertiesTo(cfm);

@@ -24,6 +24,14 @@ import java.util.Map;
  */
 public class RequestSchedulerOptions
 {
+	//如:
+	// request_scheduler_options:
+	//   throttle_limit: 80
+	//   default_weight: 5
+	//   weights:
+	//     Keyspace1: 1
+	//     Keyspace2: 5
+	//参考:conf/cassandra.yaml
     public static final Integer DEFAULT_THROTTLE_LIMIT = 80;
     public static final Integer DEFAULT_WEIGHT = 1;
 

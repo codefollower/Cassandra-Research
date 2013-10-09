@@ -31,6 +31,7 @@ import org.apache.cassandra.io.util.MemoryInputStream;
 import org.apache.cassandra.io.util.MemoryOutputStream;
 import org.apache.cassandra.utils.FBUtilities;
 
+//IndexSummary中的数据使用off-heap(对应Memory)
 public class IndexSummary implements Closeable
 {
     public static final IndexSummarySerializer serializer = new IndexSummarySerializer();

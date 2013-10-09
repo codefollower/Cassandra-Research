@@ -36,6 +36,8 @@ public class CassandraDaemonStart {
         System.setProperty("cassandra.start_rpc", "false"); //不启用thrift server
 
         System.setProperty("cassandra-foreground", "true"); //打印输出到控制台
+        
+        System.setProperty("cassandra-pidfile", "pidfile.txt"); //打印输出到控制台
 
         CassandraDaemon.main(new String[] {});
     }

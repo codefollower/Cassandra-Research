@@ -26,6 +26,9 @@ import org.slf4j.LoggerFactory;
 import com.sun.jna.LastErrorException;
 import com.sun.jna.Native;
 
+//JNA是Java Native Access的缩写
+//参考:http://www.datastax.com/docs/1.1/install/install_jre
+//https://github.com/twall/jna
 public final class CLibrary
 {
     private static final Logger logger = LoggerFactory.getLogger(CLibrary.class);
@@ -55,6 +58,7 @@ public final class CLibrary
     {
         try
         {
+        	//会出错，不支持Windows，见: http://stackoverflow.com/questions/16263912/jna-failure-in-cassandra
             Native.register("c");
             jnaAvailable = true;
         }

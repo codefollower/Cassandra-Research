@@ -28,6 +28,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /**
  *  Base class for Secondary indexes that implement a unique index per row
  */
+//只在测试中使用
 public abstract class PerRowSecondaryIndex extends SecondaryIndex
 {
     /**

@@ -395,6 +395,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                                          boolean loadSSTables)
     {
         // get the max generation number, to prevent generation conflicts
+    	//在这里debug打条件断点columnFamily.equals("keysindextest")
         Directories directories = Directories.create(keyspace.getName(), columnFamily);
         Directories.SSTableLister lister = directories.sstableLister().includeBackups(true);
         List<Integer> generations = new ArrayList<Integer>();
@@ -405,6 +406,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             if (!desc.isCompatible())
                 throw new RuntimeException(String.format("Can't open incompatible SSTable! Current version %s, found file: %s", Descriptor.Version.CURRENT, desc));
         }
+        //得到最大的generation
         Collections.sort(generations);
         int value = (generations.size() > 0) ? (generations.get(generations.size() - 1)) : 0;
 

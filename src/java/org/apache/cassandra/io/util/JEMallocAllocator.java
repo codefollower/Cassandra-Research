@@ -20,6 +20,7 @@ package org.apache.cassandra.io.util;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
 
+//参考例子:my.test.jna.JNAHelloWorld
 public class JEMallocAllocator implements IAllocator
 {
     public interface JEMLibrary extends Library

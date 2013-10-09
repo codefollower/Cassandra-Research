@@ -94,7 +94,7 @@ public class Memory
         checkPosition(memoryOffset);
         long end = memoryOffset + count;
         checkPosition(end - 1);
-        while (memoryOffset < end)
+        while (memoryOffset < end) //peer相当于off-heap的起始地址
             unsafe.putByte(peer + memoryOffset++, buffer[bufferOffset++]);
     }
 

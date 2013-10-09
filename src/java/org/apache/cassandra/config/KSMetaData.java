@@ -80,8 +80,8 @@ public final class KSMetaData
 
     public static KSMetaData systemKeyspace()
     {
-    	//15个加下面CFMetaData.TraceSessionsCf, CFMetaData.TraceEventsCf总共17个
-        //CFMetaData默认定义了17个
+    	//14个加下面CFMetaData.TraceSessionsCf, CFMetaData.TraceEventsCf总共16个
+        //CFMetaData默认定义了16个
         List<CFMetaData> cfDefs = Arrays.asList(CFMetaData.BatchlogCf,
                                                 CFMetaData.RangeXfersCf,
                                                 CFMetaData.LocalCf,

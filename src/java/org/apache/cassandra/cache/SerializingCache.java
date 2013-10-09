@@ -36,6 +36,7 @@ import org.apache.cassandra.utils.vint.EncodedDataOutputStream;
 /**
  * Serializes cache values off-heap.
  */
+//用于row缓存
 public class SerializingCache<K, V> implements ICache<K, V>
 {
     private static final Logger logger = LoggerFactory.getLogger(SerializingCache.class);

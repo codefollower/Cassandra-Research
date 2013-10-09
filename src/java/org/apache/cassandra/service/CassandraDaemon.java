@@ -180,7 +180,7 @@ public class CassandraDaemon
      */
         logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
         logger.info("Classpath: {}", System.getProperty("java.class.path"));
-        CLibrary.tryMlockall();//看一下本地库是否可用
+        CLibrary.tryMlockall();//看一下本地库是否可用，windows下不支持JNA
 
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
         {
@@ -218,6 +218,7 @@ public class CassandraDaemon
                     : String.format("Directory %s is not accessible.", dataDir);
         }
 
+        //这里会触发key、row缓存的初始化
         if (CacheService.instance == null) // should never happen
             throw new RuntimeException("Failed to initialize Cache Service.");
 
@@ -429,6 +430,8 @@ public class CassandraDaemon
      */
     public void activate()
     {
+    	//bin/cassandra文件的aunch_service()中有设置
+    	//存放cassandra的进程id的文件
         String pidFile = System.getProperty("cassandra-pidfile");
 
         try
@@ -451,6 +454,7 @@ public class CassandraDaemon
                 new File(pidFile).deleteOnExit();
             }
 
+            //没有设置cassandra-foreground时，信息无法输出的控制台
             if (System.getProperty("cassandra-foreground") == null)
             {
                 System.out.close();

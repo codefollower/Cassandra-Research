@@ -27,6 +27,7 @@ import org.apache.cassandra.utils.FBUtilities;
  * 
  * Properties declared as volatile can be mutated via JMX.
  */
+//cassandra.yaml文件中只能定义与Config类中的字段同名的参数
 public class Config
 {
     public String cluster_name = "Test Cluster";
@@ -149,7 +150,7 @@ public class Config
 
     public int hinted_handoff_throttle_in_kb = 1024;
     public int max_hints_delivery_threads = 1;
-    public boolean compaction_preheat_key_cache = true;
+    public boolean compaction_preheat_key_cache = true; //preheat是"预热"的意思
 
     public volatile boolean incremental_backups = false;
     public int memtable_flush_queue_size = 4;
@@ -168,11 +169,11 @@ public class Config
 
     public boolean inter_dc_tcp_nodelay = false;
 
-    private static boolean isClientMode = false;
+    private static boolean isClientMode = false; //不能通过cassandra.yaml指定，私有的
 
     public boolean preheat_kernel_page_cache = false;
 
-    private static boolean outboundBindAny = false;
+    private static boolean outboundBindAny = false; //不能通过cassandra.yaml指定，私有的
 
     public static boolean getOutboundBindAny()
     {

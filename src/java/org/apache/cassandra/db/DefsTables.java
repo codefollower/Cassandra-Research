@@ -118,12 +118,14 @@ public class DefsTables //都是static方法
      */
     public static Collection<KSMetaData> loadFromKeyspace()
     {
+    	//读取schema_keyspaces表中的记录，看看有哪些keyspace
         List<Row> serializedSchema = SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
 
         List<KSMetaData> keyspaces = new ArrayList<KSMetaData>(serializedSchema.size());
 
         for (Row row : serializedSchema)
         {
+        	//忽略掉system和system_traces这两个keyspace
             if (Schema.invalidSchemaRow(row) || Schema.ignoredSchemaRow(row))
                 continue;
 
@@ -148,6 +150,7 @@ public class DefsTables //都是static方法
 
     private static Row serializedColumnFamilies(DecoratedKey ksNameKey)
     {
+    	//查询schema_columnfamilies表
         ColumnFamilyStore cfsStore = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
         return new Row(ksNameKey, cfsStore.getColumnFamily(QueryFilter.getIdentityFilter(ksNameKey,
                                                                                          SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF,
