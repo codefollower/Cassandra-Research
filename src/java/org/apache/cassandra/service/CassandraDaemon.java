@@ -226,7 +226,7 @@ public class CassandraDaemon
         // we do a one-off scrub of the system keyspace first; we can't load the list of the rest of the keyspaces,
         // until system keyspace is opened.
         for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(Keyspace.SYSTEM_KS).values())
-            ColumnFamilyStore.scrubDataDirectories(Keyspace.SYSTEM_KS, cfm.cfName);
+            ColumnFamilyStore.scrubDataDirectories(Keyspace.SYSTEM_KS, cfm.cfName); //清理一些临时或不再需要的文件
         try
         {
             SystemKeyspace.checkHealth();
@@ -338,6 +338,7 @@ public class CassandraDaemon
         StorageService.optionalTasks.schedule(runnable, 5 * 60, TimeUnit.SECONDS);
 
         // MeteredFlusher can block if flush queue fills up, so don't put on scheduledTasks
+        //每隔1秒检查一下哪些ColumnFamilyStore需要被强制flush
         StorageService.optionalTasks.scheduleWithFixedDelay(new MeteredFlusher(), 1000, 1000, TimeUnit.MILLISECONDS);
 
         SystemKeyspace.finishStartup();
@@ -355,17 +356,18 @@ public class CassandraDaemon
             System.exit(1);
         }
 
-        Mx4jTool.maybeLoad();
+        Mx4jTool.maybeLoad(); //支持XSLT(可选的)
 
         // Thift
         InetAddress rpcAddr = DatabaseDescriptor.getRpcAddress();
         int rpcPort = DatabaseDescriptor.getRpcPort();
-        thriftServer = new ThriftServer(rpcAddr, rpcPort);
+        thriftServer = new ThriftServer(rpcAddr, rpcPort); //只是构造一个实例，并没启动
 
         // Native transport
-        InetAddress nativeAddr = DatabaseDescriptor.getNativeTransportAddress();
+        //用于支持CQL
+        InetAddress nativeAddr = DatabaseDescriptor.getNativeTransportAddress(); //同DatabaseDescriptor.getRpcAddress()
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
-        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort);
+        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
     }
 
     /**

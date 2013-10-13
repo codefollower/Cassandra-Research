@@ -64,6 +64,7 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
 
 //用于存储服务，默认使用7000端口
+//OutboundTcpConnection负责发消息，MessagingService.SocketThread.run()负责接收消息
 public final class MessagingService implements MessagingServiceMBean
 {
     public static final String MBEAN_NAME = "org.apache.cassandra.net:type=MessagingService";
@@ -343,7 +344,7 @@ public final class MessagingService implements MessagingServiceMBean
             {
                 CallbackInfo expiredCallbackInfo = pair.right.value;
                 maybeAddLatency(expiredCallbackInfo.callback, expiredCallbackInfo.target, pair.right.timeout);
-                ConnectionMetrics.totalTimeouts.mark();
+                ConnectionMetrics.totalTimeouts.mark(); //实际上就是加1
                 getConnectionPool(expiredCallbackInfo.target).incrementTimeout();
 
                 if (expiredCallbackInfo.shouldHint())
@@ -417,6 +418,7 @@ public final class MessagingService implements MessagingServiceMBean
 
     private List<ServerSocket> getServerSocket(InetAddress localEp) throws ConfigurationException
     {
+    	//两个ServerSocket,一个是可选的SSL ServerSocket，另一个是普通的ServerSocket
         final List<ServerSocket> ss = new ArrayList<ServerSocket>(2);
         if (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption != ServerEncryptionOptions.InternodeEncryption.none)
         {
@@ -614,6 +616,7 @@ public final class MessagingService implements MessagingServiceMBean
             logger.trace("Message-to-self {} going over MessagingService", message);
 
         // message sinks are a testing hook
+        //只看到测试代码在用，为自定义的org.apache.cassandra.net.sink.IMessageSink接口实现类提供一些hook
         MessageOut processedMessage = SinkManager.processOutboundMessage(message, id, to);
         if (processedMessage == null)
         {
@@ -820,6 +823,7 @@ public final class MessagingService implements MessagingServiceMBean
                     {
                         // determine the connection type to decide whether to buffer
                         DataInputStream in = new DataInputStream(socket.getInputStream());
+                        //写入的格式见:OutboundTcpConnection.connect()
                         MessagingService.validateMagic(in.readInt());
                         int header = in.readInt();
                         boolean isStream = MessagingService.getBits(header, 3, 1) == 1;

@@ -323,7 +323,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
      *
      * @param endpoint
      */
-    private void quarantineEndpoint(InetAddress endpoint)
+    private void quarantineEndpoint(InetAddress endpoint) //隔离节点
     {
         justRemovedEndpoints.put(endpoint, System.currentTimeMillis());
     }
@@ -1059,6 +1059,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         if (logger.isTraceEnabled())
             logger.trace("gossip started with generation " + localState.getHeartBeatState().getGeneration());
 
+        //间隔1秒钟触发一次
         scheduledGossipTask = executor.scheduleWithFixedDelay(new GossipTask(),
                                                               Gossiper.intervalInMillis,
                                                               Gossiper.intervalInMillis,

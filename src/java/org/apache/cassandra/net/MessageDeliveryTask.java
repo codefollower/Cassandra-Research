@@ -40,7 +40,7 @@ public class MessageDeliveryTask implements Runnable
     {
         MessagingService.Verb verb = message.verb;
         if (MessagingService.DROPPABLE_VERBS.contains(verb)
-            && System.currentTimeMillis() > constructionTime + message.getTimeout())
+            && System.currentTimeMillis() > constructionTime + message.getTimeout()) //超时的并且可以扔掉的消息
         {
             MessagingService.instance().incrementDroppedMessages(verb);
             return;
