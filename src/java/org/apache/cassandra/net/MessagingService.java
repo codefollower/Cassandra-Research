@@ -520,6 +520,7 @@ public final class MessagingService implements MessagingServiceMBean
      * @param verb
      * @param verbHandler handler for the specified verb
      */
+    //在org.apache.cassandra.service.StorageService.StorageService()中注册
     public void registerVerbHandlers(Verb verb, IVerbHandler verbHandler)
     {
         assert !verbHandlers.containsKey(verb);

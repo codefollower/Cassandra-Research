@@ -59,6 +59,10 @@ import com.google.common.collect.Lists;
  * the Failure Detector.
  */
 
+//代码核心流程是: 每隔1秒钟运行一次GossipTask
+//GossipTask会通过MessagingService发送消息，然后MessagingService收到其他节点发来的消息后
+//会触发在org.apache.cassandra.service.StorageService中预先配置的各种org.apache.cassandra.net.IVerbHandler接口实现类，
+//每个节点即是一个发送方也是一个接收方
 public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 {
     private static final String MBEAN_NAME = "org.apache.cassandra.net:type=Gossiper";
@@ -71,12 +75,13 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
     private ScheduledFuture<?> scheduledGossipTask;
     public final static int intervalInMillis = 1000;
+    //StorageService.RING_DELAY默认是30秒，所以隔离延时时间默认是1分钟，
     public final static int QUARANTINE_DELAY = StorageService.RING_DELAY * 2;
     private static final Logger logger = LoggerFactory.getLogger(Gossiper.class);
     public static final Gossiper instance = new Gossiper();
 
     public static final long aVeryLongTime = 259200 * 1000; // 3 days
-    private long FatClientTimeout;
+    private long FatClientTimeout; //默认30秒，只在构造函数中赋值一次，实际上就等于StorageService.RING_DELAY
     private final Random random = new Random();
     private final Comparator<InetAddress> inetcomparator = new Comparator<InetAddress>()
     {
@@ -110,8 +115,12 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     private final Map<InetAddress, Long> expireTimeEndpointMap = new ConcurrentHashMap<InetAddress, Long>();
 
     // have we ever in our lifetime reached a seed?
-    private boolean seedContacted = false;
+    private boolean seedContacted = false; //是否跟种子节点联系过?
 
+    //间隔1秒钟触发一次，1秒钟是固定的，目前不能改变
+    //1. 随机选一个活着的节点给它发送本节点的消息摘要
+    //2. 可选的，随机选一个不可达的节点给它发送本节点的消息摘要
+    //3. 可选的，如果第1步选中的不是种子节点或者活着的节点数小于种子节点数，那么随机选一个种子节点给它发送本节点的消息摘要
     private class GossipTask implements Runnable
     {
         public void run()
@@ -176,6 +185,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     private Gossiper()
     {
         // half of QUARATINE_DELAY, to ensure justRemovedEndpoints has enough leeway to prevent re-gossip
+    	//默认30秒，只在构造函数中赋值一次，实际上就等于StorageService.RING_DELAY
         FatClientTimeout = (long) (QUARANTINE_DELAY / 2);
         /* register with the Failure Detector for receiving Failure detector events */
         FailureDetector.instance.registerFailureDetectionEventListener(this);
@@ -663,6 +673,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         return UUID.fromString(getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.HOST_ID).value);
     }
 
+    //把对应forEndpoint的EndpointState中的VersionedValue值的版本>version的都返回给正在通信的节点
     EndpointState getStateForVersionBiggerThan(InetAddress forEndpoint, int version)
     {
         EndpointState epState = endpointStateMap.get(forEndpoint);
@@ -736,6 +747,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
             IFailureDetector fd = FailureDetector.instance;
             int localGeneration = localEndpointState.getHeartBeatState().getGeneration();
             int remoteGeneration = remoteEndpointState.getHeartBeatState().getGeneration();
+            //A与B通信，B返回的generation要大
             if (remoteGeneration > localGeneration)
             {
                 localEndpointState.updateTimestamp();
@@ -978,6 +990,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         This method is used to figure the state that the Gossiper has but Gossipee doesn't. The delta digests
         and the delta state are built up.
     */
+    //deltaGossipDigestList和deltaEpStateMap都是empty
     void examineGossiper(List<GossipDigest> gDigestList, List<GossipDigest> deltaGossipDigestList, Map<InetAddress, EndpointState> deltaEpStateMap)
     {
         for (GossipDigest gDigest : gDigestList)
@@ -1002,11 +1015,15 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
                 if (remoteGeneration > localGeneration)
                 {
                     /* we request everything from the gossiper */
+                	//A给B发信息，B中有对应的endpoint(就是ip)，
+                	//但是A的generation要大于B的generation，所以B请求A把此endpoint的信息都发过来
                     requestAll(gDigest, deltaGossipDigestList, remoteGeneration);
                 }
                 else if (remoteGeneration < localGeneration)
                 {
                     /* send all data with generation = localgeneration and version > 0 */
+                	//A给B发信息，B中有对应的endpoint(就是ip)，
+                	//但是B的generation要大于A的generation，所以B把此endpoint的信息都发给A
                     sendAll(gDigest, deltaEpStateMap, 0);
                 }
                 else if (remoteGeneration == localGeneration)
@@ -1020,11 +1037,13 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
                     */
                     if (maxRemoteVersion > maxLocalVersion)
                     {
+                    	//B叫A发回大于maxLocalVersion的信息
                         deltaGossipDigestList.add(new GossipDigest(gDigest.getEndpoint(), remoteGeneration, maxLocalVersion));
                     }
                     else if (maxRemoteVersion < maxLocalVersion)
                     {
                         /* send all data with generation = localgeneration and version > maxRemoteVersion */
+                    	//B发给A大于maxRemoteVersion的信息
                         sendAll(gDigest, deltaEpStateMap, maxRemoteVersion);
                     }
                 }
@@ -1032,6 +1051,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
             else
             {
                 /* We are here since we have no data for this endpoint locally so request everything. */
+            	//A给B发信息，B中没有对应的endpoint(就是ip)，B请求A把此endpoint的信息都发过来
                 requestAll(gDigest, deltaGossipDigestList, remoteGeneration);
             }
         }

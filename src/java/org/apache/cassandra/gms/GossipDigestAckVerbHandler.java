@@ -69,6 +69,7 @@ public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
                 deltaEpStateMap.put(addr, localEpStatePtr);
         }
 
+        //A发送B没有的给B
         MessageOut<GossipDigestAck2> gDigestAck2Message = new MessageOut<GossipDigestAck2>(MessagingService.Verb.GOSSIP_DIGEST_ACK2,
                                                                                            new GossipDigestAck2(deltaEpStateMap),
                                                                                            GossipDigestAck2.serializer);
