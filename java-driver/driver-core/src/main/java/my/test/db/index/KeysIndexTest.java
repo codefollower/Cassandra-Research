@@ -43,7 +43,7 @@ public class KeysIndexTest extends TestBase {
         cql = "SELECT * FROM " + tableName //
                 + " WHERE block_id in(1,0)";
         SimpleStatement stmt = new SimpleStatement(cql);
-        stmt.setConsistencyLevel(ConsistencyLevel.TWO);
+        //stmt.setConsistencyLevel(ConsistencyLevel.TWO);
         ResultSet results = session.execute(stmt);
 
         System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "block_id", "short_hair", "f1",
