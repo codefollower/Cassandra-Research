@@ -23,6 +23,9 @@ import java.net.InetAddress;
  * A simple endpoint snitch implementation that assumes datacenter and rack information is encoded
  * in the 2nd and 3rd octets of the ip address, respectively.
  */
+//ip格式: part0.part1.part2.part3
+//part1是dc
+//part2是rack
 public class RackInferringSnitch extends AbstractNetworkTopologySnitch
 {
     public String getRack(InetAddress endpoint)

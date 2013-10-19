@@ -202,6 +202,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         if (logger.isDebugEnabled())
             logger.debug("Setting tokens to {}", tokens);
+        //更新local表的tokens字段(key=local)
         SystemKeyspace.updateTokens(tokens);
         tokenMetadata.updateNormalTokens(tokens, FBUtilities.getBroadcastAddress());
         // order is important here, the gossiper can fire in between adding these two states.  It's ok to send TOKENS without STATUS, but *not* vice versa.
@@ -454,6 +455,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (Boolean.parseBoolean(System.getProperty("cassandra.load_ring_state", "true")))
         {
             logger.info("Loading persisted ring state");
+            //读取本地的peers表，此表包含集群中每个节点的地址和相关的所有token(vnode的情况下有多个)
             Multimap<InetAddress, Token> loadedTokens = SystemKeyspace.loadTokens();
             Map<InetAddress, UUID> loadedHostIds = SystemKeyspace.loadHostIds();
             for (InetAddress ep : loadedTokens.keySet())
@@ -694,6 +696,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             {
                 // if we were already bootstrapped with 1 token but num_tokens is set higher in the config,
                 // then we need to migrate to multi-token
+            	//切割成getNumTokens个range
                 if (tokens.size() == 1 && DatabaseDescriptor.getNumTokens() > 1)
                 {
                     // wait for ring info
@@ -743,6 +746,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (!isSurveyMode)
         {
             // start participating in the ring.
+        	//更新local表的bootstrapped字段(key=local)
             SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.COMPLETED);
             setTokens(tokens);
             // remove the existing info about the replaced node.

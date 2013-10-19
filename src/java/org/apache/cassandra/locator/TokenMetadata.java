@@ -637,6 +637,7 @@ public class TokenMetadata
         }
     }
 
+    //按sortedTokens组成一个环
     public Collection<Range<Token>> getPrimaryRangesFor(Collection<Token> tokens)
     {
         Collection<Range<Token>> ranges = new ArrayList<Range<Token>>(tokens.size());
@@ -1008,10 +1009,13 @@ public class TokenMetadata
     public static class Topology
     {
         /** multi-map of DC to endpoints in that DC */
+    	//每个数据中心有哪些节点
         private final Multimap<String, InetAddress> dcEndpoints;
         /** map of DC to multi-map of rack to endpoints in that rack */
+        //每个数据中心有哪些机架和节点
         private final Map<String, Multimap<String, InetAddress>> dcRacks;
         /** reverse-lookup map for endpoint to current known dc/rack assignment */
+        //节点在哪个数据中心和机架
         private final Map<InetAddress, Pair<String, String>> currentLocations;
 
         protected Topology()

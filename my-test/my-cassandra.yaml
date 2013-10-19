@@ -20,7 +20,7 @@ disk_access_mode: mmap
 seed_provider:
     - class_name: org.apache.cassandra.locator.SimpleSeedProvider
       parameters:
-          - seeds: "127.0.0.1, 127.0.0.2"
+          - seeds: "127.0.0.2, 127.0.0.3"
 endpoint_snitch: org.apache.cassandra.locator.SimpleSnitch
 dynamic_snitch: true
 request_scheduler: org.apache.cassandra.scheduler.RoundRobinScheduler
@@ -40,4 +40,7 @@ authenticator: org.apache.cassandra.auth.PasswordAuthenticator
 row_cache_size_in_mb: 5
 row_cache_save_period: 14400
 row_cache_keys_to_save: 100
+
+#auto_bootstrap: false
+num_tokens: 3
 

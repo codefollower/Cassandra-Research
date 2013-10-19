@@ -85,6 +85,8 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
         Map<String, Set<InetAddress>> dcReplicas = new HashMap<String, Set<InetAddress>>(datacenters.size())
         {{
             for (Map.Entry<String, Integer> dc : datacenters.entrySet())
+            	//dc.getValue()是复制的份数，此时充当HashSet初始大小
+            	//dc.getValue()也可以看成是多少个InetAddress
                 put(dc.getKey(), new HashSet<InetAddress>(dc.getValue()));
         }};
         Topology topology = tokenMetadata.getTopology();

@@ -33,6 +33,7 @@ import org.apache.cassandra.utils.Pair;
  *
  * Used by the partitioner and by map/reduce by-token range scans.
  */
+//必须注意是(left, right]
 public class Range<T extends RingPosition> extends AbstractBounds<T> implements Comparable<Range<T>>, Serializable
 {
     public static final long serialVersionUID = 1L;
@@ -58,10 +59,15 @@ public class Range<T extends RingPosition> extends AbstractBounds<T> implements 
              * (2) k <= b -- return true
              * (3) b < k <= a -- return false
              */
-            if (point.compareTo(left) > 0)
+        	//假设(a,b]是(10,2)，那么就相关于从10(不包含)环绕回2，
+        	//point的有效值有两类，
+        	//第一类是: 11, 12, ..., 一直到正无穷大
+        	//第二类是: 0, 1, 2
+        	//但是3到10是无效的
+            if (point.compareTo(left) > 0) //对应(1)
                 return true;
             else
-                return right.compareTo(point) >= 0;
+                return right.compareTo(point) >= 0; //对应(2)、(3)
         }
         else
         {
@@ -74,7 +80,7 @@ public class Range<T extends RingPosition> extends AbstractBounds<T> implements 
 
     public boolean contains(Range<T> that)
     {
-        if (this.left.equals(this.right))
+        if (this.left.equals(this.right)) //代表整个环(自然包含所有其他range)
         {
             // full ring always contains all other ranges
             return true;
@@ -84,18 +90,25 @@ public class Range<T extends RingPosition> extends AbstractBounds<T> implements 
         boolean thatwraps = isWrapAround(that.left, that.right);
         if (thiswraps == thatwraps)
         {
+        	//例如(10, 5]就包含(12, 3]
+        	//核心思想:是左边越小，右边越大的WrapAround会包含其他的WrapAround
+        	//或者换一种思路，right-left越小的WrapAround会包含其他的WrapAround
             return left.compareTo(that.left) <= 0 && that.right.compareTo(right) <= 0;
         }
         else if (thiswraps)
         {
             // wrapping might contain non-wrapping
             // that is contained if both its tokens are in one of our wrap segments
+        	//例如(10, 5]就包含(12, 14]
+        	//(10, 5]也包含(0, 5]或者(0, 4)
+        	//相当于left>=10或right<=5的非WrapAround都包含
             return left.compareTo(that.left) <= 0 || that.right.compareTo(right) <= 0;
         }
         else
         {
             // (thatwraps)
             // non-wrapping cannot contain wrapping
+        	//也就是说(5, 10]也不包含(6, 9]
             return false;
         }
     }
@@ -244,6 +257,8 @@ public class Range<T extends RingPosition> extends AbstractBounds<T> implements 
     /**
      * Tells if the given range is a wrap around.
      */
+    //只要左边大于等于右边就是一个Wrap Around(卷绕的, 环绕的)
+    //比如(0, 0]或(10, 0]都是
     public static <T extends RingPosition> boolean isWrapAround(T left, T right)
     {
        return left.compareTo(right) >= 0;

@@ -11,8 +11,8 @@ public class KeysIndexTest extends TestBase {
     public void startInternal() throws Exception {
         tableName = "KeysIndexTest2";
 
-        create();
-        //insert();
+        //create();
+        insert();
     }
 
     void create() throws Exception {
@@ -27,7 +27,7 @@ public class KeysIndexTest extends TestBase {
     }
 
     void insert() throws Exception {
-        for (int i = 0; i < 10000; i++)
+        for (int i = 0; i < 2; i++)
             execute("INSERT INTO " + tableName + "(block_id, short_hair, f1) VALUES (" + i + ", true, 'ab" + i + "')");
     }
 }

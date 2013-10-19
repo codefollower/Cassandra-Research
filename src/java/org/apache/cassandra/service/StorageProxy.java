@@ -843,6 +843,7 @@ public class StorageProxy implements StorageProxyMBean
             }
             else
             {
+            	//目标节点临时不可用时，先存到system.hints表
                 if (!shouldHint(destination))
                     continue;
 
