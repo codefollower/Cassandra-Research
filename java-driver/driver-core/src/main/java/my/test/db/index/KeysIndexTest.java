@@ -14,7 +14,7 @@ public class KeysIndexTest extends TestBase {
 
     @Override
     public void startInternal() throws Exception {
-        tableName = "KeysIndexTest3";
+        tableName = "KeysIndexTest";
 
         create();
         insert();
@@ -39,6 +39,8 @@ public class KeysIndexTest extends TestBase {
 
     void select() {
         String cql = "SELECT * FROM " + tableName //
+                + " WHERE block_id in = 1";
+        cql = "SELECT * FROM " + tableName //
                 + " WHERE block_id in(1,0)";
         SimpleStatement stmt = new SimpleStatement(cql);
         stmt.setConsistencyLevel(ConsistencyLevel.TWO);
