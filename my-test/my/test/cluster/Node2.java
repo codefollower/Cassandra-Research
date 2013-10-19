@@ -19,25 +19,12 @@
  */
 package my.test.cluster;
 
-import org.apache.cassandra.service.CassandraDaemon;
+import my.test.start.CassandraDaemonStart;
 
 public class Node2 {
 
-    public static void main(String[] args) {
-//        System.setProperty("cassandra.rpc_port", "9160");
-//        System.setProperty("cassandra.start_native_transport", "true"); //启用native server，用于支持CQL
-//        System.setProperty("cassandra.native_transport_port", "9042");
-
-        System.setProperty("cassandra.config", "node2.yaml");
-
-        System.setProperty("log4j.defaultInitOverride", "true");
-        System.setProperty("log4j.configuration", "my-log4j-server.properties");
-
-        //System.setProperty("cassandra.start_rpc", "false"); //不启用thrift server
-
-        System.setProperty("cassandra-foreground", "true"); //打印输出到控制台
-
-        CassandraDaemon.main(new String[] {});
-    }
+	public static void main(String[] args) {
+		CassandraDaemonStart.run(args, "node2.yaml");
+	}
 
 }

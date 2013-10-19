@@ -8,7 +8,7 @@ commitlog_sync: batch
 commitlog_sync_batch_window_in_ms: 1.0
 #partitioner: org.apache.cassandra.dht.ByteOrderedPartitioner
 partitioner: org.apache.cassandra.dht.Murmur3Partitioner
-listen_address: 127.0.0.1
+listen_address: 127.0.0.3
 storage_port: 7010
 rpc_port: 9170
 column_index_size_in_kb: 4
@@ -32,5 +32,15 @@ server_encryption_options:
     truststore: conf/.truststore
     truststore_password: cassandra
 incremental_backups: true
-flush_largest_memtables_at: 1.0
+#flush_largest_memtables_at: 1.0
 compaction_throughput_mb_per_sec: 0
+
+authenticator: org.apache.cassandra.auth.PasswordAuthenticator
+
+row_cache_size_in_mb: 5
+row_cache_save_period: 14400
+row_cache_keys_to_save: 100
+
+#auto_bootstrap: false
+num_tokens: 3
+

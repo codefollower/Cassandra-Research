@@ -23,23 +23,28 @@ import org.apache.cassandra.service.CassandraDaemon;
 
 public class CassandraDaemonStart {
 
-    public static void main(String[] args) {
-        System.setProperty("cassandra.rpc_port", "9160");
-        System.setProperty("cassandra.start_native_transport", "true"); //启用native server，用于支持CQL
-        System.setProperty("cassandra.native_transport_port", "9042");
+	public static void run(String[] args, String configFileName) {
+		System.setProperty("cassandra.rpc_port", "9160");
+		System.setProperty("cassandra.start_native_transport", "true"); // 启用native
+																		// server，用于支持CQL
+		System.setProperty("cassandra.native_transport_port", "9042");
 
-        System.setProperty("cassandra.config", "my-cassandra.yaml");
+		System.setProperty("cassandra.config", configFileName);
 
-        System.setProperty("log4j.defaultInitOverride", "true");
-        System.setProperty("log4j.configuration", "my-log4j-server.properties");
+		System.setProperty("log4j.defaultInitOverride", "true");
+		System.setProperty("log4j.configuration", "my-log4j-server.properties");
 
-        System.setProperty("cassandra.start_rpc", "false"); //不启用thrift server
+		System.setProperty("cassandra.start_rpc", "false"); // 不启用thrift server
 
-        System.setProperty("cassandra-foreground", "true"); //打印输出到控制台
-        
-        System.setProperty("cassandra-pidfile", "pidfile.txt"); //打印输出到控制台
+		System.setProperty("cassandra-foreground", "true"); // 打印输出到控制台
 
-        CassandraDaemon.main(new String[] {});
-    }
+		System.setProperty("cassandra-pidfile", "pidfile.txt"); // 打印输出到控制台
+
+		CassandraDaemon.main(new String[] {});
+	}
+
+	public static void main(String[] args) {
+		run(args, "my-cassandra.yaml");
+	}
 
 }
