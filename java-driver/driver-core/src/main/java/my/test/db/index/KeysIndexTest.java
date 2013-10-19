@@ -15,7 +15,6 @@ public class KeysIndexTest extends TestBase {
     @Override
     public void startInternal() throws Exception {
         tableName = "KeysIndexTest";
-
         create();
         insert();
         select();
@@ -44,6 +43,7 @@ public class KeysIndexTest extends TestBase {
                 + " WHERE block_id in(1,0)";
         SimpleStatement stmt = new SimpleStatement(cql);
         //stmt.setConsistencyLevel(ConsistencyLevel.TWO);
+        stmt.setConsistencyLevel(ConsistencyLevel.QUORUM);
         ResultSet results = session.execute(stmt);
 
         System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "block_id", "short_hair", "f1",
