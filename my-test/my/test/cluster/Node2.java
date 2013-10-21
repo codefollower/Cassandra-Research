@@ -21,10 +21,14 @@ package my.test.cluster;
 
 import my.test.start.CassandraDaemonStart;
 
-public class Node2 {
+public class Node2 extends CassandraDaemonStart {
+    public static void main(String[] args) {
+        setConfigLoader(Node2.class);
+        run(args);
+    }
 
-	public static void main(String[] args) {
-		CassandraDaemonStart.run(args, "node2.yaml");
-	}
-
+    public Node2() {
+        this.listen_address = "127.0.0.2";
+        this.dir = "cluster/node2";
+    }
 }

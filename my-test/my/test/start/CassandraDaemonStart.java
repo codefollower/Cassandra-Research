@@ -19,32 +19,64 @@
  */
 package my.test.start;
 
+import org.apache.cassandra.config.Config;
+import org.apache.cassandra.config.YamlConfigurationLoader;
+import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.service.CassandraDaemon;
 
-public class CassandraDaemonStart {
+public class CassandraDaemonStart extends YamlConfigurationLoader {
 
-	public static void run(String[] args, String configFileName) {
-		System.setProperty("cassandra.rpc_port", "9160");
-		System.setProperty("cassandra.start_native_transport", "true"); // 启用native
-																		// server，用于支持CQL
-		System.setProperty("cassandra.native_transport_port", "9042");
+    public static void main(String[] args) {
+        setConfigLoader(CassandraDaemonStart.class);
+        run(args);
+    }
 
-		System.setProperty("cassandra.config", configFileName);
+    protected String listen_address;
+    protected String dir;
 
-		System.setProperty("log4j.defaultInitOverride", "true");
-		System.setProperty("log4j.configuration", "my-log4j-server.properties");
+    //在org.apache.cassandra.utils.FBUtilities.construct(String, String)中必须使用无参数的构造函数
+    public CassandraDaemonStart() {
+        this.listen_address = "127.0.0.1";
+        this.dir = "standalone";
+    }
 
-		System.setProperty("cassandra.start_rpc", "false"); // 不启用thrift server
+    @Override
+    public Config loadConfig() throws ConfigurationException {
 
-		System.setProperty("cassandra-foreground", "true"); // 打印输出到控制台
+        this.dir = "my-test-data/" + dir + "/";
+        Config config = super.loadConfig();
+        config.listen_address = listen_address;
+        config.commitlog_directory = dir + "commitlog";
+        config.saved_caches_directory = dir + "saved_caches";
+        config.data_file_directories = new String[] { dir + "data" };
+        return config;
+    }
 
-		System.setProperty("cassandra-pidfile", "pidfile.txt"); // 打印输出到控制台
+    public static void setConfigLoader(Class<?> clz) {
+        System.setProperty("cassandra.config.loader", clz.getName());
+    }
 
-		CassandraDaemon.main(new String[] {});
-	}
+    public static void run(String[] args) {
 
-	public static void main(String[] args) {
-		run(args, "my-cassandra.yaml");
-	}
+        System.setProperty("cassandra.rpc_port", "9160");
+        System.setProperty("cassandra.start_native_transport", "true"); // 启用native
+                                                                        // server，用于支持CQL
+        System.setProperty("cassandra.native_transport_port", "9042");
+
+        System.setProperty("cassandra.config", "my-cassandra.yaml");
+
+        System.setProperty("log4j.defaultInitOverride", "true");
+        System.setProperty("log4j.configuration", "my-log4j-server.properties");
+
+        System.setProperty("cassandra.start_rpc", "false"); // 不启用thrift server
+
+        System.setProperty("cassandra-foreground", "true"); // 打印输出到控制台
+
+        System.setProperty("cassandra-pidfile", "pidfile.txt");
+
+        System.setProperty("cassandra.load_ring_state", "false"); // 不从system.peers表加载ring状态信息
+
+        CassandraDaemon.main(args);
+    }
 
 }

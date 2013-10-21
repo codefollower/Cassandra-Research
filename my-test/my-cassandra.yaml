@@ -3,6 +3,10 @@
 # Consider the effects on 'o.a.c.i.s.LegacySSTableTest' before changing schemas in this file.
 #
 cluster_name: Test Cluster
+
+start_native_transport: true
+native_transport_port: 9042
+
 in_memory_compaction_limit_in_mb: 1
 commitlog_sync: batch
 commitlog_sync_batch_window_in_ms: 1.0
@@ -35,12 +39,12 @@ incremental_backups: true
 #flush_largest_memtables_at: 1.0
 compaction_throughput_mb_per_sec: 0
 
-authenticator: org.apache.cassandra.auth.PasswordAuthenticator
+#authenticator: org.apache.cassandra.auth.PasswordAuthenticator
 
 row_cache_size_in_mb: 5
 row_cache_save_period: 14400
 row_cache_keys_to_save: 100
 
 #auto_bootstrap: false
-num_tokens: 3
+num_tokens: 2
 
