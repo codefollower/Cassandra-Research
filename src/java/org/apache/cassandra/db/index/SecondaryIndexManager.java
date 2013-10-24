@@ -575,7 +575,7 @@ public class SecondaryIndexManager
 
         public StandardUpdater(DecoratedKey key)
         {
-            this.key = key;
+            this.key = key; //是rowkey
         }
 
         public void insert(Column column)

@@ -409,7 +409,7 @@ public class SimpleClient {
 
     public void run() {
         connect("127.0.0.1");
-        //createSchema();
+        createSchema();
         //session.execute("USE simplex");
 
         SimpleStatement stmt = new SimpleStatement("USE simplex");

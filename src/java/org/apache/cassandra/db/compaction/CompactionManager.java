@@ -133,7 +133,7 @@ public class CompactionManager implements CompactionManagerMBean
             return Collections.emptyList();
         }
 
-        int count = compactingCF.count(cfs);
+        int count = compactingCF.count(cfs); //相同的cfs的个数
         if (count > 0 && executor.getActiveCount() >= executor.getMaximumPoolSize())
         {
             logger.debug("Background compaction is still running for {}.{} ({} remaining). Skipping",
@@ -167,6 +167,7 @@ public class CompactionManager implements CompactionManagerMBean
 
     // the actual sstables to compact are not determined until we run the BCT; that way, if new sstables
     // are created between task submission and execution, we execute against the most up-to-date information
+    //在org.apache.cassandra.service.CassandraDaemon.setup()中通过调用submitBackground启动
     class BackgroundCompactionTask implements Runnable
     {
         private final ColumnFamilyStore cfs;

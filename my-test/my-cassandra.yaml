@@ -45,6 +45,21 @@ row_cache_size_in_mb: 5
 row_cache_save_period: 14400
 row_cache_keys_to_save: 100
 
+concurrent_reads: 2
+concurrent_writes: 2
+concurrent_replicates: 2
+
+#方便在eclipse中debug，不会产生超时
+request_timeout_in_ms: 100000000
+read_request_timeout_in_ms: 100000000
+range_request_timeout_in_ms: 100000000
+write_request_timeout_in_ms: 100000000
+cas_contention_timeout_in_ms: 100000000
+truncate_request_timeout_in_ms: 100000000
+
 #auto_bootstrap: false
 num_tokens: 2
+
+memtable_total_space_in_mb: 1
+
 

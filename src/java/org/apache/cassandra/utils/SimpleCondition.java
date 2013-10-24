@@ -39,6 +39,7 @@ public class SimpleCondition implements Condition
         set = false;
     }
 
+    //未收到通知时返回false
     public synchronized boolean await(long time, TimeUnit unit) throws InterruptedException
     {
         long start = System.nanoTime();

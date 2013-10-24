@@ -276,6 +276,7 @@ public final class CFMetaData
         }
     }
 
+    //主要用于读，见org.apache.cassandra.service.AbstractReadExecutor.getReadExecutor(ReadCommand, ConsistencyLevel)
     public static class SpeculativeRetry
     {
         public enum RetryType
@@ -356,6 +357,7 @@ public final class CFMetaData
     public final String ksName;                       // name of keyspace
     public final String cfName;                       // name of this column family
     public final ColumnFamilyType cfType;             // standard, super
+    //用于列名比较
     public volatile AbstractType<?> comparator;       // bytes, long, timeuuid, utf8, etc.
 
     //OPTIONAL

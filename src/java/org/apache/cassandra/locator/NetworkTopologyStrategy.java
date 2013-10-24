@@ -44,9 +44,10 @@ import com.google.common.collect.Multimap;
  * This class also caches the Endpoints and invalidates the cache if there is a
  * change in the number of tokens.
  */
+//此类考虑snitch，但是SimpleStrategy不用考虑
 public class NetworkTopologyStrategy extends AbstractReplicationStrategy
 {
-    private final IEndpointSnitch snitch;
+    private final IEndpointSnitch snitch; //超类AbstractReplicationStrategy中的snitch被覆盖了
     private final Map<String, Integer> datacenters;
     private static final Logger logger = LoggerFactory.getLogger(NetworkTopologyStrategy.class);
 

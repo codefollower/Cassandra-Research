@@ -125,9 +125,11 @@ public abstract class AbstractReadExecutor
     public static AbstractReadExecutor getReadExecutor(ReadCommand command, ConsistencyLevel consistency_level) throws UnavailableException
     {
         Keyspace keyspace = Keyspace.open(command.ksName);
+        //getLiveSortedEndpoints会得到一个最合适的节点列表
         List<InetAddress> allReplicas = StorageProxy.getLiveSortedEndpoints(keyspace, command.key);
         CFMetaData metaData = Schema.instance.getCFMetaData(command.ksName, command.cfName);
 
+        //随机的
         ReadRepairDecision rrDecision = metaData.newReadRepairDecision();
          
         if (rrDecision != ReadRepairDecision.NONE) {

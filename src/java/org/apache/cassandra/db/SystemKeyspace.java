@@ -488,6 +488,7 @@ public class SystemKeyspace
     public static int incrementAndGetGeneration()
     {
         String req = "SELECT gossip_generation FROM system.%s WHERE key='%s'";
+        //是: SELECT gossip_generation FROM system.local WHERE key='local'
         UntypedResultSet result = processInternal(String.format(req, LOCAL_CF, LOCAL_KEY));
 
         int generation;

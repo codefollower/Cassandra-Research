@@ -104,8 +104,9 @@ public enum ConsistencyLevel
             case ALL:
                 return keyspace.getReplicationStrategy().getReplicationFactor();
             case LOCAL_QUORUM:
-                return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter());
+                return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter()); //按本地数据中心的(复制因子/2+1)算
             case EACH_QUORUM:
+                //累计每个中心的(复制因子/2+1)之和
                 NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
                 int n = 0;
                 for (String dc : strategy.getDatacenters())
@@ -164,7 +165,7 @@ public enum ConsistencyLevel
 
         switch (readRepair)
         {
-            case NONE:
+            case NONE: //例如，如果是QUORUM，复制因子是3，那么就只返回两个节点的InetAddress
                 return liveEndpoints.subList(0, Math.min(liveEndpoints.size(), blockFor(keyspace)));
             case GLOBAL:
                 return liveEndpoints;
@@ -180,7 +181,7 @@ public enum ConsistencyLevel
                 }
                 // check if blockfor more than we have localep's
                 int blockFor = blockFor(keyspace);
-                if (local.size() < blockFor)
+                if (local.size() < blockFor) //本地数据中心的节点不够时，从其他数据中心中的节点中取
                     local.addAll(other.subList(0, Math.min(blockFor - local.size(), other.size())));
                 return local;
             default:

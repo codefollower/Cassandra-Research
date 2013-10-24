@@ -26,6 +26,7 @@ import javax.management.ObjectName;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 
+//用于通过jmx来查看某个主机对应哪个机架和数据中心
 public class EndpointSnitchInfo implements EndpointSnitchInfoMBean
 {
     public static void create()

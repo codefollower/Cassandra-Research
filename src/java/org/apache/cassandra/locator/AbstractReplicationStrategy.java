@@ -73,7 +73,8 @@ public abstract class AbstractReplicationStrategy
 
     public ArrayList<InetAddress> getCachedEndpoints(Token t)
     {
-        return cachedEndpoints.get(t);
+        return null; //我加上了，为了观察每次地址是如何选的
+        //return cachedEndpoints.get(t);
     }
 
     public void cacheEndpoint(Token t, ArrayList<InetAddress> addr)
@@ -94,10 +95,10 @@ public abstract class AbstractReplicationStrategy
      * @param searchPosition the position the natural endpoints are requested for
      * @return a copy of the natural endpoints for the given token
      */
-    public ArrayList<InetAddress> getNaturalEndpoints(RingPosition searchPosition)
+    public ArrayList<InetAddress> getNaturalEndpoints(RingPosition<?> searchPosition)
     {
-        Token searchToken = searchPosition.getToken();
-        Token keyToken = TokenMetadata.firstToken(tokenMetadata.sortedTokens(), searchToken);
+        Token<?> searchToken = searchPosition.getToken();
+        Token<?> keyToken = TokenMetadata.firstToken(tokenMetadata.sortedTokens(), searchToken);
         ArrayList<InetAddress> endpoints = getCachedEndpoints(keyToken);
         if (endpoints == null)
         {

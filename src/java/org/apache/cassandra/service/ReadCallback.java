@@ -96,6 +96,7 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
         }
     }
 
+    //TResolved不是类，是范型类型的名字
     public TResolved get() throws ReadTimeoutException, DigestMismatchException
     {
         if (!await(command.getTimeout(), TimeUnit.MILLISECONDS))
@@ -198,6 +199,7 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
                 AsyncRepairCallback repairHandler = new AsyncRepairCallback(repairResolver, endpoints.size());
 
                 MessageOut<ReadCommand> message = ((ReadCommand) command).createMessage();
+                //如果某个key对应三个节点，endpoints并不是所有这3个节点，可能是两个
                 for (InetAddress endpoint : endpoints)
                     MessagingService.instance().sendRR(message, endpoint, repairHandler);
             }

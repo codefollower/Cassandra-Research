@@ -15,15 +15,23 @@ public class KeysIndexTest extends TestBase {
     @Override
     public void startInternal() throws Exception {
         tableName = "KeysIndexTest";
-        create();
+        //create();
         insert();
-        select();
+        //select();
     }
 
     void create() throws Exception {
-        execute("CREATE TABLE IF NOT EXISTS " + tableName //
+        //此时建立的索引是CompositesIndexOnRegular
+        cql = "CREATE TABLE IF NOT EXISTS " + tableName //
                 + " ( block_id int, short_hair boolean, f1 text, " //
-                + "PRIMARY KEY (block_id))");
+                + "PRIMARY KEY (block_id))";
+
+        //此时建立的索引是KeysIndex
+        cql = "CREATE TABLE IF NOT EXISTS " + tableName //
+                + " ( block_id int, short_hair boolean, f1 text, " //
+                + "PRIMARY KEY (block_id)) WITH COMPACT STORAGE";
+
+        execute(cql);
 
         //存储到my-test-data\data\mytest\keysindextest\mytest-keysindextest.KeysIndexTest_index_f1-ja-1-Data.db文件
         String indexName = tableName + "_index_f1";
@@ -32,8 +40,16 @@ public class KeysIndexTest extends TestBase {
     }
 
     void insert() throws Exception {
-        for (int i = 0; i < 2; i++)
-            execute("INSERT INTO " + tableName + "(block_id, short_hair, f1) VALUES (" + i + ", true, 'ab" + i + "')");
+        int i = 9;
+        String cql = "INSERT INTO " + tableName + "(block_id, short_hair, f1) VALUES (" + i + ", true, 'ab" + i + "')";
+        SimpleStatement stmt = new SimpleStatement(cql);
+        //stmt.setConsistencyLevel(ConsistencyLevel.TWO);
+        //stmt.setConsistencyLevel(ConsistencyLevel.QUORUM);
+        execute(stmt);
+        String str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+        for (i = 0; i < 1000; i++)
+            execute("INSERT INTO " + tableName + "(block_id, short_hair, f1) VALUES (" + i + ", true, 'ab" + str + i + "')");
     }
 
     void select() {
@@ -41,9 +57,22 @@ public class KeysIndexTest extends TestBase {
                 + " WHERE block_id in = 1";
         cql = "SELECT * FROM " + tableName //
                 + " WHERE block_id in(1,0)";
+
+        cql = "SELECT * FROM " + tableName //
+                + " WHERE block_id =9900000";
+
+        //不支持按索引字段进行范围查询
+        cql = "SELECT * FROM " + tableName + " WHERE f1 >'ab1'";
+
+        cql = "SELECT * FROM " + tableName + " WHERE f1='ab9900000'";
+        //cql = "SELECT * FROM " + tableName + " WHERE f1='ab9900000' and block_id = 900000";
+        cql = "SELECT * FROM " + tableName + " WHERE token(block_id) >= 900000";
         SimpleStatement stmt = new SimpleStatement(cql);
-        //stmt.setConsistencyLevel(ConsistencyLevel.TWO);
-        stmt.setConsistencyLevel(ConsistencyLevel.QUORUM);
+        stmt.setConsistencyLevel(ConsistencyLevel.TWO);
+        //stmt.setConsistencyLevel(ConsistencyLevel.QUORUM);
+        //stmt.setConsistencyLevel(ConsistencyLevel.SERIAL);
+        //stmt.setConsistencyLevel(ConsistencyLevel.LOCAL_SERIAL);
+        stmt.setConsistencyLevel(ConsistencyLevel.ONE);
         ResultSet results = session.execute(stmt);
 
         System.out.println(String.format("%-30s\t%-20s\t%-20s\n%s", "block_id", "short_hair", "f1",

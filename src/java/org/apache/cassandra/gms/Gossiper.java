@@ -280,6 +280,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
      */
     int getMaxEndpointStateVersion(EndpointState epState)
     {
+    	//HeartBeatState与EndpointState中所有VersionedValue最大的版本号
         int maxVersion = epState.getHeartBeatState().getHeartBeatVersion();
         for (VersionedValue value : epState.getApplicationStateMap().values())
             maxVersion = Math.max(maxVersion, value.version);
@@ -365,6 +366,10 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         // local epstate will be part of endpointStateMap
         List<InetAddress> endpoints = new ArrayList<InetAddress>(endpointStateMap.keySet());
         Collections.shuffle(endpoints, random);
+
+        //这个在eclipse找断点调试代码时需要注意:
+        //在这个循环过程中BackgroundActivityMonitor和LoadBroadcaster会并发修改对应EndpointState中的applicationState字段的值
+        //所以在getMaxEndpointStateVersion方法的循环中有可能会改变VersionedValue的值
         for (InetAddress endpoint : endpoints)
         {
             epState = endpointStateMap.get(endpoint);
@@ -1101,7 +1106,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     {
         HeartBeatState hbState = new HeartBeatState(generationNbr);
         EndpointState localState = new EndpointState(hbState);
-        localState.markAlive();
+        localState.markAlive(); //这行是多余的，EndpointState构造函数里已把isAlive设为true了
         endpointStateMap.putIfAbsent(FBUtilities.getBroadcastAddress(), localState);
     }
 

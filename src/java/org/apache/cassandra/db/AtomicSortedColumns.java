@@ -271,7 +271,7 @@ public class AtomicSortedColumns extends ColumnFamily
         final SnapTreeMap<ByteBuffer, Column> map;
         final DeletionInfo deletionInfo;
 
-        Holder(AbstractType<?> comparator)
+        Holder(AbstractType<?> comparator) //comparator用于列名比较
         {
             this(new SnapTreeMap<ByteBuffer, Column>(comparator), LIVE);
         }

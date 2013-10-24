@@ -9,6 +9,7 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.SocketOptions;
+import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.ProtocolOptions.Compression;
 
 public abstract class TestBase {
@@ -28,7 +29,7 @@ public abstract class TestBase {
         so.setConnectTimeoutMillis(60 * 60 * 1000);
         builder.withSocketOptions(so);
 
-        builder.withCredentials("cassandra", "cassandra");
+        //builder.withCredentials("cassandra", "cassandra");
 
         PoolingOptions po = new PoolingOptions();
         po.setCoreConnectionsPerHost(HostDistance.LOCAL, 1);
@@ -72,6 +73,10 @@ public abstract class TestBase {
 
     public void execute(String cql) throws Exception {
         session.execute(cql);
+    }
+
+    public void execute(Statement statement) throws Exception {
+        session.execute(statement);
     }
 
     public void tryExecute() {

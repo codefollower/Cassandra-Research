@@ -120,6 +120,7 @@ public class TokenMetadata
 
     private ArrayList<Token> sortTokens()
     {
+    	//tokenToEndpointMap.keySet()返回的是一个TreeMap的KeySet，是有序的，按token升序排列
         return new ArrayList<Token>(tokenToEndpointMap.keySet());
     }
 
