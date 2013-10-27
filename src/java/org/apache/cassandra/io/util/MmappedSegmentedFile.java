@@ -34,6 +34,7 @@ public class MmappedSegmentedFile extends SegmentedFile
     private static final Logger logger = LoggerFactory.getLogger(MmappedSegmentedFile.class);
 
     // in a perfect world, MAX_SEGMENT_SIZE would be final, but we need to test with a smaller size to stay sane.
+    //JVM最大内存映射是2G，而2G = 2 * 1024 * 1024 * 1024 = 2,147,483,648 = 2的31次方{约等于Integer.MAX_VALUE(2的31次方-1)}
     public static long MAX_SEGMENT_SIZE = Integer.MAX_VALUE;
 
     /**
@@ -76,6 +77,7 @@ public class MmappedSegmentedFile extends SegmentedFile
             return new MappedFileDataInput(segment.right, path, segment.left, (int) (position - segment.left));
         }
 
+        //超过2G的情况，见Builder.createSegments(String)中的注释
         // not mmap'd: open a braf covering the segment
         // FIXME: brafs are unbounded, so this segment will cover the rest of the file, rather than just the row
         RandomAccessReader file = RandomAccessReader.open(new File(path));
@@ -129,12 +131,12 @@ public class MmappedSegmentedFile extends SegmentedFile
         {
             super();
             boundaries = new ArrayList<Long>();
-            boundaries.add(0L);
+            boundaries.add(0L); //先填0
         }
 
         public void addPotentialBoundary(long boundary)
         {
-            if (boundary - currentStart <= MAX_SEGMENT_SIZE)
+            if (boundary - currentStart <= MAX_SEGMENT_SIZE) //不到2G
             {
                 // boundary fits into current segment: expand it
                 currentSize = boundary - currentStart;
@@ -150,7 +152,7 @@ public class MmappedSegmentedFile extends SegmentedFile
             currentSize = boundary - currentStart;
 
             // if we couldn't make room, the boundary needs its own segment
-            if (currentSize > MAX_SEGMENT_SIZE)
+            if (currentSize > MAX_SEGMENT_SIZE) //新的size还大于2G
             {
                 currentStart = boundary;
                 boundaries.add(currentStart);
@@ -170,7 +172,7 @@ public class MmappedSegmentedFile extends SegmentedFile
 
         private Segment[] createSegments(String path)
         {
-            int segcount = boundaries.size() - 1;
+            int segcount = boundaries.size() - 1; //因为get(0)是开始位置，当要计算片段个数是必须建1
             Segment[] segments = new Segment[segcount];
             RandomAccessFile raf;
 
@@ -191,7 +193,7 @@ public class MmappedSegmentedFile extends SegmentedFile
                     long size = boundaries.get(i + 1) - start;
                     MappedByteBuffer segment = size <= MAX_SEGMENT_SIZE
                                                ? raf.getChannel().map(FileChannel.MapMode.READ_ONLY, start, size)
-                                               : null;
+                                               : null; //超过2G的之后在getSegment时直接用RandomAccessReader读
                     segments[i] = new Segment(start, segment);
                 }
             }
@@ -210,7 +212,7 @@ public class MmappedSegmentedFile extends SegmentedFile
         public void serializeBounds(DataOutput out) throws IOException
         {
             super.serializeBounds(out);
-            out.writeInt(boundaries.size());
+            out.writeInt(boundaries.size()); //开始的0位置也算在内
             for (long position: boundaries)
                 out.writeLong(position);
         }

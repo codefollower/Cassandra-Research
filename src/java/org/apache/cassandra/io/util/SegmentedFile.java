@@ -39,6 +39,18 @@ import org.apache.cassandra.utils.Pair;
  * would need to be longer than 2GB, that segment will not be mmap'd, and a new RandomAccessFile will be created for
  * each access to that segment.
  */
+//这个类表示一个大文件的一个片段，大文件在内存中装不下，所以要一段一段地读。
+//子类如下:
+//BufferedSegmentedFile
+//CompressedSegmentedFile
+//MmappedSegmentedFile
+//PoolingSegmentedFile (抽象类)
+//    BufferedPoolingSegmentedFile
+//    CompressedPoolingSegmentedFile
+//其中BufferedSegmentedFile和CompressedSegmentedFile在SSTableReader.openForBatch中使用
+//其余的都在此类中使用，
+//在cassandra.yaml中配置disk_access_mode为mmap时使用MmappedSegmentedFile，其他的使用BufferedPoolingSegmentedFile，
+//如果使用了压缩，那么使用CompressedPoolingSegmentedFile(通过调用getCompressedBuilder()，而不管disk_access_mode参数)
 public abstract class SegmentedFile
 {
     public final String path;
@@ -123,6 +135,7 @@ public abstract class SegmentedFile
         }
     }
 
+    //只在MmappedSegmentedFile中使用
     static final class Segment extends Pair<Long, MappedByteBuffer> implements Comparable<Segment>
     {
         public Segment(long offset, MappedByteBuffer segment)
@@ -132,7 +145,7 @@ public abstract class SegmentedFile
 
         public final int compareTo(Segment that)
         {
-            return (int)Math.signum(this.left - that.left);
+            return (int)Math.signum(this.left - that.left); //返回0、1或-1(表示=、>、<)
         }
     }
 

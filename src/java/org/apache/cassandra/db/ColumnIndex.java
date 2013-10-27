@@ -175,7 +175,7 @@ public class ColumnIndex
             blockSize += size;
 
             // if we hit the column index size that we have to index after, go ahead and index it.
-            if (blockSize >= DatabaseDescriptor.getColumnIndexSize())
+            if (blockSize >= DatabaseDescriptor.getColumnIndexSize()) //默认是64K
             {
                 IndexHelper.IndexInfo cIndexInfo = new IndexHelper.IndexInfo(firstColumn.name(), column.name(), indexOffset + startPosition, endPosition - startPosition);
                 result.columnsIndex.add(cIndexInfo);
@@ -192,6 +192,7 @@ public class ColumnIndex
             lastColumn = column;
         }
 
+        //对应rowHeaderSize
         private void maybeWriteRowHeader() throws IOException
         {
             if (lastColumn == null)

@@ -30,6 +30,8 @@ import org.apache.cassandra.serializers.MarshalException;
  * Utility class for the Parser to gather attributes for modification
  * statements.
  */
+//insert和update同时支持TIMESTAMP和TTL
+//对于delete语句，Attributes只支持USING TIMESTAMP，不支持TTL
 public class Attributes
 {
     private final Term timestamp;

@@ -40,6 +40,10 @@ import org.apache.cassandra.utils.FilterFactory;
 import org.apache.cassandra.utils.IFilter;
 import org.apache.cassandra.utils.StreamingHistogram;
 
+//SSTableWriter构造函数负责:data、COMPRESSION_INFO、CRC、DIGEST，其中的CRC、DIGEST在DataIntegrityMetadata.ChecksumWriter
+//IndexWriter里负责: index、summary、FILTER
+//closeAndOpenReader里负责:STATS、TOC
+//10个Component类型只有COMPACTED_MARKER没有
 public class SSTableWriter extends SSTable
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableWriter.class);
@@ -63,6 +67,7 @@ public class SSTableWriter extends SSTable
              SSTableMetadata.createCollector(Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)).comparator));
     }
 
+    //10个Component类型，这里不包含COMPACTED_MARKER，要么选COMPRESSION_INFO要么选DIGEST和CRC
     private static Set<Component> components(CFMetaData metadata)
     {
         Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,

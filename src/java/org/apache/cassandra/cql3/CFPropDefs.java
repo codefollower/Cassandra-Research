@@ -53,6 +53,9 @@ public class CFPropDefs extends PropertyDefinitions
 
     static
     {
+        //不包含上面的KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD和COMPACTION_STRATEGY_CLASS_KEY
+        //所以这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
+        //可能是个bug
         keywords.add(KW_COMMENT);
         keywords.add(KW_READREPAIRCHANCE);
         keywords.add(KW_DCLOCALREADREPAIRCHANCE);
@@ -105,8 +108,9 @@ public class CFPropDefs extends PropertyDefinitions
             CompressionParameters cp = new CompressionParameters(sstableCompressionClass, chunkLength, remainingOptions);
             cp.validate();
         }
-
+        //default_time_to_live不能小于最小值0
         validateMinimumInt(KW_DEFAULT_TIME_TO_LIVE, 0, CFMetaData.DEFAULT_DEFAULT_TIME_TO_LIVE);
+        //index_interval不能小于最小值1
         validateMinimumInt(KW_INDEX_INTERVAL, 1, CFMetaData.DEFAULT_INDEX_INTERVAL);
 
         SpeculativeRetry.fromString(getString(KW_SPECULATIVE_RETRY, SpeculativeRetry.RetryType.NONE.name()));

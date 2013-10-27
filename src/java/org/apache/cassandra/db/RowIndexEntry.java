@@ -148,6 +148,7 @@ public class RowIndexEntry implements IMeasurableMemory
     /**
      * An entry in the row index for a row whose columns are indexed.
      */
+    //一行有多列时才用这个类，否则直接用RowIndexEntry
     private static class IndexedEntry extends RowIndexEntry
     {
         private final DeletionTime deletionTime;

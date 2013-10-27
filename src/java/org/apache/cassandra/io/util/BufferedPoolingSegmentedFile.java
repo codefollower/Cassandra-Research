@@ -19,6 +19,7 @@ package org.apache.cassandra.io.util;
 
 import java.io.File;
 
+//与BufferedSegmentedFile类似，只不过有缓存
 public class BufferedPoolingSegmentedFile extends PoolingSegmentedFile
 {
     public BufferedPoolingSegmentedFile(String path, long length)

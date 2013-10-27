@@ -73,10 +73,10 @@ public class SequentialWriter extends OutputStream
 
         filePath = file.getAbsolutePath();
 
-        buffer = new byte[bufferSize];
+        buffer = new byte[bufferSize]; //默认64K
         this.skipIOCache = skipIOCache;
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
-        this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024;
+        this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024; //默认是10M
 
         try
         {

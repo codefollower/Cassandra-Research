@@ -19,6 +19,8 @@ package org.apache.cassandra.io.util;
 
 import java.io.File;
 
+//在SSTableReader.openForBatch中使用
+//每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
 public class BufferedSegmentedFile extends SegmentedFile
 {
     public BufferedSegmentedFile(String path, long length)

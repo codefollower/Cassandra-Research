@@ -74,6 +74,7 @@ public class IndexSummaryBuilder
         assert keys != null && keys.size() > 0;
         assert keys.size() == positions.size();
 
+        //keyPosition经过for循环后的值就是(offheapSize + (keys.size() * 4))
         Memory memory = Memory.allocate(offheapSize + (keys.size() * 4));
         int idxPosition = 0;
         int keyPosition = keys.size() * 4;

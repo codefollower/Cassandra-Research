@@ -20,6 +20,8 @@ package org.apache.cassandra.io.util;
 import org.apache.cassandra.io.compress.CompressedRandomAccessReader;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 
+//在SSTableReader.openForBatch中使用
+//每次获取一个文件片段时实际上还是用CompressedRandomAccessReader打开同一个文件，只不过要seek到不到位置
 public class CompressedSegmentedFile extends SegmentedFile implements ICompressedFile
 {
     public final CompressionMetadata metadata;
