@@ -7,6 +7,11 @@
  * Remove leveled json manifest migration code (CASSANDRA-5996)
 
 
+2.0.3
+ * Fix modifying column_metadata from thrift (CASSANDRA-6182)
+ * cqlsh: fix LIST USERS output (CASSANDRA-6242)
+
+
 2.0.2
  * Update FailureDetector to use nanontime (CASSANDRA-4925)
  * Fix FileCacheService regressions (CASSANDRA-6149)
