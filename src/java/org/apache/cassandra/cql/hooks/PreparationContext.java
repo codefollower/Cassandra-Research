@@ -15,28 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.net.sink;
+package org.apache.cassandra.cql.hooks;
 
-import java.net.InetAddress;
+import org.apache.cassandra.cql.CQLStatement;
+import org.apache.cassandra.thrift.ThriftClientState;
 
-import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.net.MessageOut;
-
-public interface IMessageSink
+/**
+ * Contextual information about the preparation of a CQLStatement.
+ * Used by {@link org.apache.cassandra.cql.hooks.PostPreparationHook}
+ */
+public class PreparationContext
 {
-    /**
-     * Transform or drop an outgoing message
-     *
-     * @return null if the message is dropped, or the transformed message to send, which may be just
-     * the original message
-     */
-    public MessageOut handleMessage(MessageOut message, int id, InetAddress to);
+    public final ThriftClientState clientState;
+    public final String queryString;
+    public final CQLStatement statement;
 
-    /**
-     * Transform or drop an incoming message
-     *
-     * @return null if the message is dropped, or the transformed message to receive, which may be just
-     * the original message
-     */
-    public MessageIn handleMessage(MessageIn message, int id, InetAddress to);
+    public PreparationContext(ThriftClientState clientState, String queryString, CQLStatement statement)
+    {
+        this.clientState = clientState;
+        this.queryString = queryString;
+        this.statement = statement;
+    }
 }

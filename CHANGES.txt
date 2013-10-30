@@ -8,8 +8,17 @@
 
 
 2.0.3
+ * Compact hottest sstables first and optionally omit coldest from
+   compaction entirely (CASSANDRA-6109)
  * Fix modifying column_metadata from thrift (CASSANDRA-6182)
  * cqlsh: fix LIST USERS output (CASSANDRA-6242)
+ * Add IRequestSink interface (CASSANDRA-6248)
+ * Update memtable size while flushing (CASSANDRA-6249)
+ * Provide hooks around CQL2/CQL3 statement execution (CASSANDRA-6252)
+ * Require Permission.SELECT for CAS updates (CASSANDRA-6247)
+ * New CQL-aware SSTableWriter (CASSANDRA-5894)
+Merged from 1.2:
+ * Require logging in for Thrift CQL2/3 statement preparation (CASSANDRA-6254)
 
 
 2.0.2
