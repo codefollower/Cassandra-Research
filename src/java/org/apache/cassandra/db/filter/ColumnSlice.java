@@ -53,11 +53,13 @@ public class ColumnSlice
         return (start.remaining() > 0 && finish.remaining() > 0 && orderedComparator.compare(start, finish) > 0);
     }
 
+    //name在[start, finish]这个闭区间中
     public boolean includes(Comparator<ByteBuffer> cmp, ByteBuffer name)
     {
         return cmp.compare(start, name) <= 0 && (finish.equals(ByteBufferUtil.EMPTY_BYTE_BUFFER) || cmp.compare(finish, name) >= 0);
     }
 
+    //name在finish之后就说明当前的ColumnSlice在name之前
     public boolean isBefore(Comparator<ByteBuffer> cmp, ByteBuffer name)
     {
         return !finish.equals(ByteBufferUtil.EMPTY_BYTE_BUFFER) && cmp.compare(finish, name) < 0;

@@ -42,6 +42,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /*
  * Abstract parent class of individual modifications, i.e. INSERT, UPDATE and DELETE.
  */
+//insert、update、delete三种类型的语句共用
 public abstract class ModificationStatement implements CQLStatement
 {
     private static final ColumnIdentifier CAS_RESULT_COLUMN = new ColumnIdentifier("[applied]", false);
@@ -50,6 +51,7 @@ public abstract class ModificationStatement implements CQLStatement
     public final CFMetaData cfm;
     public final Attributes attrs;
 
+    //partition key和clustering key中的字段
     private final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<ColumnIdentifier, Restriction>();
     private final List<Operation> columnOperations = new ArrayList<Operation>();
 
@@ -150,6 +152,7 @@ public abstract class ModificationStatement implements CQLStatement
         addKeyValues(name, new Restriction.EQ(value, false));
     }
 
+    //对应delete和update的where子句
     public void processWhereClause(List<Relation> whereClause, VariableSpecifications names) throws InvalidRequestException
     {
         CFDefinition cfDef = cfm.getCfDef();
@@ -200,6 +203,7 @@ public abstract class ModificationStatement implements CQLStatement
                     break;
                 case VALUE_ALIAS:
                 case COLUMN_METADATA:
+                    //delete和update的where子句只能出现primary key
                     throw new InvalidRequestException(String.format("Non PRIMARY KEY %s found in where clause", name));
             }
         }
@@ -382,6 +386,8 @@ public abstract class ModificationStatement implements CQLStatement
         if (!mutations.isEmpty())
             StorageProxy.mutateWithTriggers(mutations, cl, false);
 
+        //我加上的，用于测试，触发memtable的flush
+        //Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
         return null;
     }
 

@@ -29,6 +29,7 @@ import org.apache.cassandra.utils.Pair;
 /**
  * A <code>DELETE</code> parsed from a CQL query statement.
  */
+//还不支持在where中使用or
 public class DeleteStatement extends ModificationStatement
 {
     private DeleteStatement(int boundTerms, CFMetaData cfm, Attributes attrs)
@@ -48,12 +49,15 @@ public class DeleteStatement extends ModificationStatement
         ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
         List<Operation> deletions = getOperations();
 
+        //只与clustering key相关
         boolean fullKey = builder.componentCount() == cfDef.columns.size();
         boolean isRange = cfDef.isCompact ? !fullKey : (!fullKey || deletions.isEmpty());
 
+        //删除非partition key和clustering key列时，必须在where中完整指定所有的clustering key列。
         if (!deletions.isEmpty() && isRange)
             throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.get(0).columnName));
 
+        //没有指定clustering key列并且不是删除具体的某列时就表示删除整行
         if (deletions.isEmpty() && builder.componentCount() == 0)
         {
             // No columns specified, delete the row

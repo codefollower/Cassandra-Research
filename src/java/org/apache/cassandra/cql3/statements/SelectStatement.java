@@ -150,7 +150,7 @@ public class SelectStatement implements CQLStatement
         if (parameters.isCount && pageSize <= 0)
             pageSize = DEFAULT_COUNT_PAGE_SIZE;
 
-        if (pageSize <= 0 || command == null || !QueryPagers.mayNeedPaging(command, pageSize))
+        if (pageSize <= 0 || command == null || !QueryPagers.mayNeedPaging(command, pageSize)) //不需要分页
         {
             return execute(command, cl, variables, limit, now);
         }
@@ -517,7 +517,7 @@ public class SelectStatement implements CQLStatement
         return true;
     }
 
-    private boolean isColumnRange()
+    private boolean isColumnRange() //clustering key中的字段
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not compact, composite).
         // Static CF (non compact but non composite) never entails a column slice however

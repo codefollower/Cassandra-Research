@@ -31,6 +31,7 @@ import org.apache.cassandra.utils.Pair;
  * An <code>UPDATE</code> statement parsed from a CQL query statement.
  *
  */
+//对应insert和update语句
 public class UpdateStatement extends ModificationStatement
 {
     private static final Operation setToEmptyOperation = new Constants.Setter(null, new Constants.Value(ByteBufferUtil.EMPTY_BYTE_BUFFER));

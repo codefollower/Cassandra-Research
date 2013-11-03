@@ -37,8 +37,8 @@ public abstract class ReadCommand implements IReadCommand, Pageable
 {
     public enum Type
     {
-        GET_BY_NAMES((byte)1),
-        GET_SLICES((byte)2);
+        GET_BY_NAMES((byte)1), //对应子类:org.apache.cassandra.db.SliceByNamesReadCommand
+        GET_SLICES((byte)2); //对应子类:org.apache.cassandra.db.SliceFromReadCommand
 
         public final byte serializedValue;
 

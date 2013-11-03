@@ -321,6 +321,7 @@ public abstract class Maps
         }
     }
 
+    //只用于delete语句，如: DELETE todo['2012-9-24'] FROM users WHERE user_id = 'frodo'
     public static class DiscarderByKey extends Operation
     {
         public DiscarderByKey(ColumnIdentifier column, Term k)
