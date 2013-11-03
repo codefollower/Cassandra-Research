@@ -56,6 +56,12 @@ public class DatabaseDescriptor
 {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseDescriptor.class);
 
+    /**
+     * Tokens are serialized in a Gossip VersionedValue String.  VV are restricted to 64KB
+     * when we send them over the wire, which works out to about 1700 tokens.
+     */
+    private static final int MAX_NUM_TOKENS = 1536;
+
     private static IEndpointSnitch snitch;
     private static InetAddress listenAddress; // leave null so we can fall through to getLocalHost
     private static InetAddress broadcastAddress;
@@ -382,8 +388,6 @@ public class DatabaseDescriptor
             logger.debug("setting auto_bootstrap to {}", conf.auto_bootstrap);
         }
 
-        logger.info("{}using multi-threaded compaction", (conf.multithreaded_compaction ? "" : "Not "));
-
         if (conf.in_memory_compaction_limit_in_mb != null && conf.in_memory_compaction_limit_in_mb <= 0)
         {
             throw new ConfigurationException("in_memory_compaction_limit_in_mb must be a positive integer");
@@ -422,6 +426,9 @@ public class DatabaseDescriptor
         if (conf.initial_token != null)
             for (String token : tokensFromString(conf.initial_token))
                 partitioner.getTokenFactory().validate(token);
+
+        if (conf.num_tokens > MAX_NUM_TOKENS)
+            throw new ConfigurationException(String.format("A maximum number of %d tokens per node is supported", MAX_NUM_TOKENS));
 
         try
         {
@@ -854,11 +861,6 @@ public class DatabaseDescriptor
     public static int getConcurrentCompactors()
     {
         return conf.concurrent_compactors;
-    }
-
-    public static boolean isMultithreadedCompaction()
-    {
-        return conf.multithreaded_compaction;
     }
 
     public static int getCompactionThroughputMbPerSec()

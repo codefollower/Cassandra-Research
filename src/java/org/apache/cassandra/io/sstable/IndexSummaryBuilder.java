@@ -71,7 +71,7 @@ public class IndexSummaryBuilder
 
     public IndexSummary build(IPartitioner partitioner)
     {
-        assert keys != null && keys.size() > 0;
+        assert keys.size() > 0;
         assert keys.size() == positions.size();
 
         //keyPosition经过for循环后的值就是(offheapSize + (keys.size() * 4))

@@ -36,6 +36,8 @@ import javax.management.Notification;
 import javax.management.NotificationBroadcasterSupport;
 import javax.management.ObjectName;
 
+import static java.nio.charset.StandardCharsets.ISO_8859_1;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.AtomicDouble;
@@ -83,8 +85,6 @@ import org.apache.cassandra.thrift.TokenRange;
 import org.apache.cassandra.thrift.cassandraConstants;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
-
-import static com.google.common.base.Charsets.ISO_8859_1;
 
 /**
  * This abstraction contains the token/identifier of this node
@@ -743,7 +743,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     tokens = new ArrayList<Token>(initialTokens.size());
                     for (String token : initialTokens)
                         tokens.add(getPartitioner().getTokenFactory().fromString(token));
-                    logger.info("Saved token not found. Using {} from configuration", tokens);
+                    logger.info("Saved tokens not found. Using configuration value: {}", tokens);
                 }
             }
             else
@@ -792,7 +792,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     logger.info("Split previous range ({}, {}] into {}", left, right, tokens);
                 }
                 else
-                    logger.info("Using saved token {}", tokens);
+                    logger.info("Using saved tokens {}", tokens);
             }
         }
 

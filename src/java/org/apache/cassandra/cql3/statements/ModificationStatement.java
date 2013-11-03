@@ -22,6 +22,7 @@ import java.util.*;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnSlice;
@@ -155,30 +156,29 @@ public abstract class ModificationStatement implements CQLStatement
     //对应delete和update的where子句
     public void processWhereClause(List<Relation> whereClause, VariableSpecifications names) throws InvalidRequestException
     {
-        CFDefinition cfDef = cfm.getCfDef();
         for (Relation rel : whereClause)
         {
-            CFDefinition.Name name = cfDef.get(rel.getEntity());
-            if (name == null)
+            ColumnDefinition def = cfm.getColumnDefinition(rel.getEntity());
+            if (def == null)
                 throw new InvalidRequestException(String.format("Unknown key identifier %s", rel.getEntity()));
 
-            switch (name.kind)
+            switch (def.kind)
             {
-                case KEY_ALIAS:
-                case COLUMN_ALIAS:
+                case PARTITION_KEY:
+                case CLUSTERING_COLUMN:
                     Restriction restriction;
 
                     if (rel.operator() == Relation.Type.EQ)
                     {
-                        Term t = rel.getValue().prepare(name);
+                        Term t = rel.getValue().prepare(def);
                         t.collectMarkerSpecification(names);
                         restriction = new Restriction.EQ(t, false);
                     }
-                    else if (name.kind == CFDefinition.Name.Kind.KEY_ALIAS && rel.operator() == Relation.Type.IN)
+                    else if (def.kind == ColumnDefinition.Kind.PARTITION_KEY && rel.operator() == Relation.Type.IN)
                     {
                         if (rel.getValue() != null)
                         {
-                            Term t = rel.getValue().prepare(name);
+                            Term t = rel.getValue().prepare(def);
                             t.collectMarkerSpecification(names);
                             restriction = Restriction.IN.create(t);
                         }
@@ -187,7 +187,7 @@ public abstract class ModificationStatement implements CQLStatement
                             List<Term> values = new ArrayList<Term>(rel.getInValues().size());
                             for (Term.Raw raw : rel.getInValues())
                             {
-                                Term t = raw.prepare(name);
+                                Term t = raw.prepare(def);
                                 t.collectMarkerSpecification(names);
                                 values.add(t);
                             }
@@ -196,15 +196,14 @@ public abstract class ModificationStatement implements CQLStatement
                     }
                     else
                     {
-                        throw new InvalidRequestException(String.format("Invalid operator %s for PRIMARY KEY part %s", rel.operator(), name));
+                        throw new InvalidRequestException(String.format("Invalid operator %s for PRIMARY KEY part %s", rel.operator(), def.name));
                     }
 
-                    addKeyValues(name.name, restriction);
+                    addKeyValues(def.name, restriction);
                     break;
-                case VALUE_ALIAS:
-                case COLUMN_METADATA:
-                    //delete和update的where子句只能出现primary key
-                    throw new InvalidRequestException(String.format("Non PRIMARY KEY %s found in where clause", name));
+                case COMPACT_VALUE:
+                case REGULAR://delete和update的where子句只能出现primary key
+                    throw new InvalidRequestException(String.format("Non PRIMARY KEY %s found in where clause", def.name));
             }
         }
     }
@@ -212,14 +211,13 @@ public abstract class ModificationStatement implements CQLStatement
     public List<ByteBuffer> buildPartitionKeyNames(List<ByteBuffer> variables)
     throws InvalidRequestException
     {
-        CFDefinition cfDef = cfm.getCfDef();
-        ColumnNameBuilder keyBuilder = cfDef.getKeyNameBuilder();
+        ColumnNameBuilder keyBuilder = cfm.getKeyNameBuilder();
         List<ByteBuffer> keys = new ArrayList<ByteBuffer>();
-        for (CFDefinition.Name name : cfDef.keys.values())
+        for (ColumnDefinition def : cfm.partitionKeyColumns())
         {
-            Restriction r = processedKeys.get(name.name);
+            Restriction r = processedKeys.get(def.name);
             if (r == null)
-                throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", name));
+                throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
 
             List<ByteBuffer> values = r.values(variables);
 
@@ -228,7 +226,7 @@ public abstract class ModificationStatement implements CQLStatement
                 for (ByteBuffer val : values)
                 {
                     if (val == null)
-                        throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", name));
+                        throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
                     keys.add(keyBuilder.copy().add(val).build());
                 }
             }
@@ -238,7 +236,7 @@ public abstract class ModificationStatement implements CQLStatement
                     throw new InvalidRequestException("IN is only supported on the last column of the partition key");
                 ByteBuffer val = values.get(0);
                 if (val == null)
-                    throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", name));
+                    throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
                 keyBuilder.add(val);
             }
         }
@@ -248,21 +246,20 @@ public abstract class ModificationStatement implements CQLStatement
     public ColumnNameBuilder createClusteringPrefixBuilder(List<ByteBuffer> variables)
     throws InvalidRequestException
     {
-        CFDefinition cfDef = cfm.getCfDef();
-        ColumnNameBuilder builder = cfDef.getColumnNameBuilder();
-        CFDefinition.Name firstEmptyKey = null;
-        for (CFDefinition.Name name : cfDef.columns.values())
+        ColumnNameBuilder builder = cfm.getColumnNameBuilder();
+        ColumnDefinition firstEmptyKey = null;
+        for (ColumnDefinition def : cfm.clusteringColumns())
         {
-            Restriction r = processedKeys.get(name.name);
+            Restriction r = processedKeys.get(def.name);
             if (r == null)
             {
-                firstEmptyKey = name;
-                if (requireFullClusteringKey() && cfDef.isComposite && !cfDef.isCompact)
-                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", name));
+                firstEmptyKey = def;
+                if (requireFullClusteringKey() && cfm.hasCompositeComparator() && !cfm.isDense())
+                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
             }
             else if (firstEmptyKey != null)
             {
-                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s since %s is set", firstEmptyKey.name, name.name));
+                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s since %s is set", firstEmptyKey.name, def.name));
             }
             else
             {
@@ -270,19 +267,19 @@ public abstract class ModificationStatement implements CQLStatement
                 assert values.size() == 1; // We only allow IN for row keys so far
                 ByteBuffer val = values.get(0);
                 if (val == null)
-                    throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s", name));
+                    throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s", def.name));
                 builder.add(val);
             }
         }
         return builder;
     }
 
-    protected CFDefinition.Name getFirstEmptyKey()
+    protected ColumnDefinition getFirstEmptyKey()
     {
-        for (CFDefinition.Name name : cfm.getCfDef().columns.values())
+        for (ColumnDefinition def : cfm.clusteringColumns())
         {
-            if (processedKeys.get(name.name) == null)
-                return name;
+            if (processedKeys.get(def.name) == null)
+                return def;
         }
         return null;
     }
@@ -291,21 +288,21 @@ public abstract class ModificationStatement implements CQLStatement
     throws RequestExecutionException, RequestValidationException
     {
         // Lists SET operation incurs a read.
-        Set<ByteBuffer> toRead = null;
+        Set<ColumnIdentifier> toRead = null;
         for (Operation op : columnOperations)
         {
             if (op.requiresRead())
             {
                 if (toRead == null)
-                    toRead = new TreeSet<ByteBuffer>(UTF8Type.instance);
-                toRead.add(op.columnName.key);
+                    toRead = new TreeSet<ColumnIdentifier>();
+                toRead.add(op.columnName);
             }
         }
 
         return toRead == null ? null : readRows(partitionKeys, clusteringPrefix, toRead, (CompositeType)cfm.comparator, local, cl);
     }
 
-    private Map<ByteBuffer, ColumnGroupMap> readRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, Set<ByteBuffer> toRead, CompositeType composite, boolean local, ConsistencyLevel cl)
+    private Map<ByteBuffer, ColumnGroupMap> readRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, Set<ColumnIdentifier> toRead, CompositeType composite, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {
         try
@@ -319,7 +316,7 @@ public abstract class ModificationStatement implements CQLStatement
 
         ColumnSlice[] slices = new ColumnSlice[toRead.size()];
         int i = 0;
-        for (ByteBuffer name : toRead)
+        for (ColumnIdentifier name : toRead)
         {
             ByteBuffer start = clusteringPrefix.copy().add(name).build();
             ByteBuffer finish = clusteringPrefix.copy().add(name).buildAsEndOfRange();
@@ -367,6 +364,9 @@ public abstract class ModificationStatement implements CQLStatement
     {
         if (options.getConsistency() == null)
             throw new InvalidRequestException("Invalid empty consistency level");
+
+        if (hasConditions() && options.getProtocolVersion() == 1)
+            throw new InvalidRequestException("Conditional updates are not supported by the protocol version in use. You need to upgrade to a driver using the native protocol v2.");
 
         return hasConditions()
              ? executeWithCondition(queryState, options)
@@ -456,24 +456,22 @@ public abstract class ModificationStatement implements CQLStatement
 
     private ResultSet buildCasFailureResultSet(ByteBuffer key, ColumnFamily cf) throws InvalidRequestException
     {
-        CFDefinition cfDef = cfm.getCfDef();
-
         Selection selection;
         if (ifNotExists)
         {
-            selection = Selection.wildcard(cfDef);
+            selection = Selection.wildcard(cfm);
         }
         else
         {
-            List<CFDefinition.Name> names = new ArrayList<CFDefinition.Name>(columnConditions.size());
+            List<ColumnDefinition> defs = new ArrayList<>(columnConditions.size());
             for (Operation condition : columnConditions)
-                names.add(cfDef.get(condition.columnName));
-            selection = Selection.forColumns(names);
+                defs.add(cfm.getColumnDefinition(condition.columnName));
+            selection = Selection.forColumns(defs);
         }
 
         long now = System.currentTimeMillis();
         Selection.ResultSetBuilder builder = selection.resultSetBuilder(now);
-        SelectStatement.forSelection(cfDef, selection).processColumnFamily(key, cf, Collections.<ByteBuffer>emptyList(), now, builder);
+        SelectStatement.forSelection(cfm, selection).processColumnFamily(key, cf, Collections.<ByteBuffer>emptyList(), now, builder);
 
         return builder.build();
     }
@@ -544,8 +542,7 @@ public abstract class ModificationStatement implements CQLStatement
         ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
 
         // CQL row marker
-        CFDefinition cfDef = cfm.getCfDef();
-        if (cfDef.isComposite && !cfDef.isCompact && !cfm.isSuper())
+        if (cfm.hasCompositeComparator() && !cfm.isDense() && !cfm.isSuper())
         {
             ByteBuffer name = clusteringPrefix.copy().add(ByteBufferUtil.EMPTY_BYTE_BUFFER).build();
             cf.addColumn(params.makeColumn(name, ByteBufferUtil.EMPTY_BYTE_BUFFER));
@@ -583,12 +580,11 @@ public abstract class ModificationStatement implements CQLStatement
         public ModificationStatement prepare(VariableSpecifications boundNames) throws InvalidRequestException
         {
             CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
-            CFDefinition cfDef = metadata.getCfDef();
 
             Attributes preparedAttributes = attrs.prepare(keyspace(), columnFamily());
             preparedAttributes.collectMarkerSpecification(boundNames);
 
-            ModificationStatement stmt = prepareInternal(cfDef, boundNames, preparedAttributes);
+            ModificationStatement stmt = prepareInternal(metadata, boundNames, preparedAttributes);
 
             if (ifNotExists || (conditions != null && !conditions.isEmpty()))
             {
@@ -609,8 +605,8 @@ public abstract class ModificationStatement implements CQLStatement
                 {
                     for (Pair<ColumnIdentifier, Operation.RawUpdate> entry : conditions)
                     {
-                        CFDefinition.Name name = cfDef.get(entry.left);
-                        if (name == null)
+                        ColumnDefinition def = metadata.getColumnDefinition(entry.left);
+                        if (def == null)
                             throw new InvalidRequestException(String.format("Unknown identifier %s", entry.left));
 
                         /*
@@ -619,21 +615,21 @@ public abstract class ModificationStatement implements CQLStatement
                          * now, we just refuse lists, which also save use from having to bother about the read that some
                          * list operation involve.
                          */
-                        if (name.type instanceof ListType)
-                            throw new InvalidRequestException(String.format("List operation (%s) are not allowed in conditional updates", name));
+                        if (def.type instanceof ListType)
+                            throw new InvalidRequestException(String.format("List operation (%s) are not allowed in conditional updates", def.name));
 
-                        Operation condition = entry.right.prepare(name);
+                        Operation condition = entry.right.prepare(def);
                         assert !condition.requiresRead();
 
                         condition.collectMarkerSpecification(boundNames);
 
-                        switch (name.kind)
+                        switch (def.kind)
                         {
-                            case KEY_ALIAS:
-                            case COLUMN_ALIAS:
+                            case PARTITION_KEY:
+                            case CLUSTERING_COLUMN:
                                 throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", entry.left));
-                            case VALUE_ALIAS:
-                            case COLUMN_METADATA:
+                            case COMPACT_VALUE:
+                            case REGULAR:
                                 stmt.addCondition(condition);
                                 break;
                         }
@@ -643,6 +639,6 @@ public abstract class ModificationStatement implements CQLStatement
             return stmt;
         }
 
-        protected abstract ModificationStatement prepareInternal(CFDefinition cfDef, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException;
+        protected abstract ModificationStatement prepareInternal(CFMetaData cfm, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException;
     }
 }

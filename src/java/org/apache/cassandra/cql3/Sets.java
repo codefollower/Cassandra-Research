@@ -232,9 +232,9 @@ public abstract class Sets
         public void execute(ByteBuffer rowKey, ColumnFamily cf, ColumnNameBuilder prefix, UpdateParameters params) throws InvalidRequestException
         {
             // delete + add
-            ColumnNameBuilder column = prefix.add(columnName.key);
             //像这种:UPDATE users SET emails = {'fb@friendsofmordor.org','abc@d.com'}
             //就是先删除再插入
+            ColumnNameBuilder column = prefix.add(columnName);
             cf.addAtom(params.makeTombstoneForOverwrite(column.build(), column.buildAsEndOfRange()));
             Adder.doAdd(t, cf, column, params);
         }
@@ -249,7 +249,7 @@ public abstract class Sets
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, ColumnNameBuilder prefix, UpdateParameters params) throws InvalidRequestException
         {
-            doAdd(t, cf, prefix.add(columnName.key), params);
+            doAdd(t, cf, prefix.add(columnName), params);
         }
 
         static void doAdd(Term t, ColumnFamily cf, ColumnNameBuilder columnName, UpdateParameters params) throws InvalidRequestException
@@ -287,7 +287,7 @@ public abstract class Sets
                                       ? Collections.singleton(((Constants.Value)value).bytes)
                                       : ((Sets.Value)value).elements;
 
-            ColumnNameBuilder column = prefix.add(columnName.key);
+            ColumnNameBuilder column = prefix.add(columnName);
             for (ByteBuffer bb : toDiscard)
             {
                 ByteBuffer cellName = column.copy().add(bb).build();

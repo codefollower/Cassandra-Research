@@ -5,9 +5,14 @@
  * Stop using Thrift-generated Index* classes internally (CASSANDRA-5971)
  * Remove 1.2 network compatibility code (CASSANDRA-5960)
  * Remove leveled json manifest migration code (CASSANDRA-5996)
-
+ * Remove CFDefinition (CASSANDRA-6253)
+ * Use AtomicIntegerFieldUpdater in RefCountedMemory (CASSANDRA-6278)
 
 2.0.3
+ * Avoid flushing compaction_history after each operation (CASSANDRA-6287)
+ * Fix repair assertion error when tombstones expire (CASSANDRA-6277)
+ * Skip loading corrupt key cache (CASSANDRA-6260)
+ * Fixes for compacting larger-than-memory rows (CASSANDRA-6274)
  * Compact hottest sstables first and optionally omit coldest from
    compaction entirely (CASSANDRA-6109)
  * Fix modifying column_metadata from thrift (CASSANDRA-6182)
@@ -17,8 +22,11 @@
  * Provide hooks around CQL2/CQL3 statement execution (CASSANDRA-6252)
  * Require Permission.SELECT for CAS updates (CASSANDRA-6247)
  * New CQL-aware SSTableWriter (CASSANDRA-5894)
+ * Reject CAS operation when the protocol v1 is used (CASSANDRA-6270)
 Merged from 1.2:
  * Require logging in for Thrift CQL2/3 statement preparation (CASSANDRA-6254)
+ * restrict max_num_tokens to 1536 (CASSANDRA-6267)
+ * Nodetool gets default JMX port from cassandra-env.sh (CASSANDRA-6273)
 
 
 2.0.2
@@ -102,7 +110,7 @@ Merged from 1.2:
 
 2.0.1
  * Fix bug that could allow reading deleted data temporarily (CASSANDRA-6025)
- * Improve memory use defaults (CASSANDRA-5069)
+ * Improve memory use defaults (CASSANDRA-6059)
  * Make ThriftServer more easlly extensible (CASSANDRA-6058)
  * Remove Hadoop dependency from ITransportFactory (CASSANDRA-6062)
  * add file_cache_size_in_mb setting (CASSANDRA-5661)
