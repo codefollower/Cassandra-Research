@@ -50,12 +50,16 @@ public abstract class TestBase {
     }
 
     public void start() throws Exception {
-        initDefaults();
-        init();
+        try {
+            initDefaults();
+            init();
 
-        startInternal();
+            startInternal();
 
-        stop();
+        } finally {
+            stop();
+        }
+
     }
 
     public void stop() throws Exception {
