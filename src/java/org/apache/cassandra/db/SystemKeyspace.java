@@ -79,6 +79,7 @@ public class SystemKeyspace
     public static final String SCHEMA_COLUMNFAMILIES_CF = "schema_columnfamilies";
     public static final String SCHEMA_COLUMNS_CF = "schema_columns";
     public static final String SCHEMA_TRIGGERS_CF = "schema_triggers";
+    public static final String SCHEMA_USER_TYPES_CF = "schema_usertypes";
     public static final String COMPACTION_LOG = "compactions_in_progress";
     public static final String PAXOS_CF = "paxos";
     public static final String SSTABLE_ACTIVITY_CF = "sstable_activity";
@@ -86,6 +87,12 @@ public class SystemKeyspace
 
     private static final String LOCAL_KEY = "local";
     private static final ByteBuffer ALL_LOCAL_NODE_ID_KEY = ByteBufferUtil.bytes("Local");
+
+    public static final List<String> allSchemaCfs = Arrays.asList(SCHEMA_KEYSPACES_CF,
+                                                                  SCHEMA_COLUMNFAMILIES_CF,
+                                                                  SCHEMA_COLUMNS_CF,
+                                                                  SCHEMA_TRIGGERS_CF,
+                                                                  SCHEMA_USER_TYPES_CF);
 
     public enum BootstrapState
     {
@@ -295,7 +302,6 @@ public class SystemKeyspace
 
         String req = "INSERT INTO system.%s (peer, tokens) VALUES ('%s', %s)";
         processInternal(String.format(req, PEERS_CF, ep.getHostAddress(), tokensAsSet(tokens)));
-        forceBlockingFlush(PEERS_CF);
     }
 
     public static synchronized void updatePreferredIP(InetAddress ep, InetAddress preferred_ip)
@@ -359,7 +365,6 @@ public class SystemKeyspace
     {
         String req = "DELETE FROM system.%s WHERE peer = '%s'";
         processInternal(String.format(req, PEERS_CF, ep.getHostAddress()));
-        forceBlockingFlush(PEERS_CF);
     }
 
     /**
@@ -592,7 +597,6 @@ public class SystemKeyspace
         cf.addColumn(new Column(ByteBufferUtil.bytes(indexName), ByteBufferUtil.EMPTY_BYTE_BUFFER, FBUtilities.timestampMicros()));
         RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, ByteBufferUtil.bytes(keyspaceName), cf);
         rm.apply();
-        forceBlockingFlush(INDEX_CF);
     }
 
     public static void setIndexRemoved(String keyspaceName, String indexName)
@@ -600,7 +604,6 @@ public class SystemKeyspace
         RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, ByteBufferUtil.bytes(keyspaceName));
         rm.delete(INDEX_CF, ByteBufferUtil.bytes(indexName), FBUtilities.timestampMicros());
         rm.apply();
-        forceBlockingFlush(INDEX_CF);
     }
 
     /**
@@ -710,10 +713,8 @@ public class SystemKeyspace
     {
         List<Row> schema = new ArrayList<>();
 
-        schema.addAll(serializedSchema(SCHEMA_KEYSPACES_CF));
-        schema.addAll(serializedSchema(SCHEMA_COLUMNFAMILIES_CF));
-        schema.addAll(serializedSchema(SCHEMA_COLUMNS_CF));
-        schema.addAll(serializedSchema(SCHEMA_TRIGGERS_CF));
+        for (String cf : allSchemaCfs)
+            schema.addAll(serializedSchema(cf));
 
         return schema;
     }
@@ -737,10 +738,8 @@ public class SystemKeyspace
     {
         Map<DecoratedKey, RowMutation> mutationMap = new HashMap<>();
 
-        serializeSchema(mutationMap, SCHEMA_KEYSPACES_CF);
-        serializeSchema(mutationMap, SCHEMA_COLUMNFAMILIES_CF);
-        serializeSchema(mutationMap, SCHEMA_COLUMNS_CF);
-        serializeSchema(mutationMap, SCHEMA_TRIGGERS_CF);
+        for (String cf : allSchemaCfs)
+            serializeSchema(mutationMap, cf);
 
         return mutationMap.values();
     }

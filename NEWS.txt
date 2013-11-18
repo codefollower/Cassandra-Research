@@ -13,14 +13,6 @@ restore snapshots created with the previous major version using the
 'sstableloader' tool. You can upgrade the file format of your snapshots
 using the provided 'sstableupgrade' tool.
 
-2.0.3
-=====
-Upgrading
----------
-    - The IEndpointStateChangeSubscriber has a new method, beforeChange, that
-      any custom implemenations using the class will need to implement.
-
-
 2.1
 ===
 
@@ -37,18 +29,18 @@ Upgrading
      behavior) and 1.0 omits everything.
 
 
-2.0.2
+2.0.3
 =====
 
 New features
 ------------
-    - A new CQLSSTableWriter class has been added. It is the equivalent of
-      the existing SSTableSimpleWriter/SSTableSimpleUnsortedWriter but is
-      CQL oriented.
+    - It's now possible to configure the maximum allowed size of the native
+      protocol frames (native_transport_max_frame_size_in_mb in the yaml file).
 
 Upgrading
 ---------
-    - Nodetool defaults to Sequential mode for repair operations
+    - The IEndpointStateChangeSubscriber has a new method, beforeChange, that
+      any custom implemenations using the class will need to implement.
 
 
 2.0.2
@@ -68,6 +60,13 @@ New features
     - New replace_address to supplant the (now removed) replace_token and
       replace_node workflows to replace a dead node in place.  Works like the
       old options, but takes the IP address of the node to be replaced.
+    - A new CQLSSTableWriter class has been added. It is the equivalent of
+      the existing SSTableSimpleWriter/SSTableSimpleUnsortedWriter but is
+      CQL oriented.
+
+Upgrading
+---------
+    - Nodetool defaults to Sequential mode for repair operations
 
 
 2.0.1

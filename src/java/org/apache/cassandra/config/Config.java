@@ -84,6 +84,7 @@ public class Config
     public Boolean start_rpc = true;
     public String rpc_address;
     public Integer rpc_port = 9160;
+    public Integer rpc_listen_backlog = 50;
     public String rpc_server_type = "sync";
     public Boolean rpc_keepalive = true;
     public Integer rpc_min_threads = 16;
@@ -96,6 +97,7 @@ public class Config
     public Boolean start_native_transport = false;
     public Integer native_transport_port = 9042;
     public Integer native_transport_max_threads = 128;
+    public Integer native_transport_max_frame_size_in_mb = 256;
 
     @Deprecated
     public Integer thrift_max_message_length_in_mb = 16;
