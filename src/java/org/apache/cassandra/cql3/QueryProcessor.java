@@ -44,7 +44,7 @@ import org.apache.cassandra.utils.SemanticVersion;
 
 public class QueryProcessor
 {
-    public static final SemanticVersion CQL_VERSION = new SemanticVersion("3.1.1");
+    public static final SemanticVersion CQL_VERSION = new SemanticVersion("3.1.2");
 
     private static final Logger logger = LoggerFactory.getLogger(QueryProcessor.class);
     private static final MemoryMeter meter = new MemoryMeter();
@@ -72,7 +72,7 @@ public class QueryProcessor
     private static final ConcurrentLinkedHashMap<MD5Digest, CQLStatement> preparedStatements;
     private static final ConcurrentLinkedHashMap<Integer, CQLStatement> thriftPreparedStatements;
 
-    static 
+    static
     {
         if (MemoryMeter.isInitialized())
         {
@@ -439,6 +439,11 @@ public class QueryProcessor
 
     private static long measure(Object key)
     {
-        return MemoryMeter.isInitialized() ? meter.measureDeep(key) : 1;
+        if (!MemoryMeter.isInitialized())
+            return 1;
+
+        return key instanceof MeasurableForPreparedCache
+             ? ((MeasurableForPreparedCache)key).measureForPreparedCache(meter)
+             : meter.measureDeep(key);
     }
 }

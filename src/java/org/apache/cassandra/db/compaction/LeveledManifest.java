@@ -135,8 +135,14 @@ public class LeveledManifest
 
         // the level for the added sstables is the max of the removed ones,
         // plus one if the removed were all on the same level
+        int minLevel = Integer.MAX_VALUE;
+
         for (SSTableReader sstable : removed)
-            remove(sstable);
+        {
+            int thisLevel = remove(sstable);
+            minLevel = Math.min(minLevel, thisLevel);
+        }
+        lastCompactedKeys[minLevel] = SSTableReader.sstableOrdering.max(added).last;
 
         // it's valid to do a remove w/o an add (e.g. on truncate)
         if (added.isEmpty())
@@ -145,13 +151,8 @@ public class LeveledManifest
         if (logger.isDebugEnabled())
             logger.debug("Adding [{}]", toString(added));
 
-        int minLevel = Integer.MAX_VALUE;
         for (SSTableReader ssTableReader : added)
-        {
-            minLevel = Math.min(minLevel, ssTableReader.getSSTableLevel());
             add(ssTableReader);
-        }
-        lastCompactedKeys[minLevel] = SSTableReader.sstableOrdering.max(added).last;
     }
 
     public synchronized void repairOverlappingSSTables(int level)

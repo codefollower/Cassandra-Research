@@ -362,7 +362,9 @@ public class Memtable
                         if (!cfs.indexManager.hasIndexes())
                             currentSize.addAndGet(-ColumnFamilyStore.removeDeletedColumnsOnly(cf, Integer.MIN_VALUE));
                     }
-                    writer.append((DecoratedKey)entry.getKey(), cf);
+
+                    if (cf.getColumnCount() > 0 || cf.isMarkedForDelete())
+                        writer.append((DecoratedKey)entry.getKey(), cf);
                 }
 
                 if (writer.getFilePointer() > 0)
@@ -430,7 +432,7 @@ public class Memtable
 
                 if (newRatio < MIN_SANE_LIVE_RATIO)
                 {
-                    logger.warn("setting live ratio to minimum of {} instead of {}", MIN_SANE_LIVE_RATIO, newRatio);
+                    logger.debug("setting live ratio to minimum of {} instead of {}", MIN_SANE_LIVE_RATIO, newRatio);
                     newRatio = MIN_SANE_LIVE_RATIO;
                 }
                 if (newRatio > MAX_SANE_LIVE_RATIO)

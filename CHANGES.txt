@@ -1,4 +1,7 @@
 2.1
+ * allocate fixed index summary memory pool and resample cold index summaries 
+   to use less memory (CASSANDRA-5519)
+ * Removed multithreaded compaction (CASSANDRA-6142)
  * Parallelize fetching rows for low-cardinality indexes (CASSANDRA-1337)
  * change logging from log4j to logback (CASSANDRA-5883)
  * switch to LZ4 compression for internode communication (CASSANDRA-5887)
@@ -9,9 +12,15 @@
  * Use AtomicIntegerFieldUpdater in RefCountedMemory (CASSANDRA-6278)
  * User-defined types for CQL3 (CASSANDRA-5590)
  * Use of o.a.c.metrics in nodetool (CASSANDRA-5871)
+ * Batch read from OTC's queue and cleanup (CASSANDRA-1632)
+
+
+2.0.4
+ * Fix setting last compacted key in the wrong level for LCS (CASSANDRA-6284)
 
 
 2.0.3
+ * Fix FD leak on slice read path (CASSANDRA-6275)
  * Cancel read meter task when closing SSTR (CASSANDRA-6358)
  * free off-heap IndexSummary during bulk (CASSANDRA-6359)
  * Recover from IOException in accept() thread (CASSANDRA-6349)
@@ -38,7 +47,14 @@
  * Fix bug missing results with IN clauses (CASSANDRA-6327)
  * Fix paging with reversed slices (CASSANDRA-6343)
  * Set minTimestamp correctly to be able to drop expired sstables (CASSANDRA-6337)
+ * Support NaN and Infinity as float literals (CASSANDRA-6003)
+ * Remove RF from nodetool ring output (CASSANDRA-6289)
+ * Fix attempting to flush empty rows (CASSANDRA-6374)
+ * Fix potential out of bounds exception when paging (CASSANDRA-6333)
 Merged from 1.2:
+ * Optimize FD phi calculation (CASSANDRA-6386)
+ * Improve initial FD phi estimate when starting up (CASSANDRA-6385)
+ * Don't list CQL3 table in CLI describe even if named explicitely (CASSANDRA-5750)
  * Invalidate row cache when dropping CF (CASSANDRA-6351)
  * add non-jamm path for cached statements (CASSANDRA-6293)
  * (Hadoop) Require CFRR batchSize to be at least 2 (CASSANDRA-6114)
@@ -61,6 +77,8 @@ Merged from 1.2:
  * Fix AssertionError when doing set element deletion (CASSANDRA-6341)
  * Make CL code for the native protocol match the one in C* 2.0
    (CASSANDRA-6347)
+ * Disallow altering CQL3 table from thrift (CASSANDRA-6370)
+ * Fix size computation of prepared statement (CASSANDRA-6369)
 
 
 2.0.2

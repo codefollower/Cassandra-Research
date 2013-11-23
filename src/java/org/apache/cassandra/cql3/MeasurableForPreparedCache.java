@@ -1,6 +1,4 @@
-package org.apache.cassandra.gms;
 /*
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -17,31 +15,12 @@ package org.apache.cassandra.gms;
  * KIND, either express or implied.  See the License for the
  * specific language governing permissions and limitations
  * under the License.
- *
  */
+package org.apache.cassandra.cql3;
 
+import org.github.jamm.MemoryMeter;
 
-import static org.junit.Assert.*;
-
-import org.junit.Test;
-
-public class ArrivalWindowTest
+public interface MeasurableForPreparedCache
 {
-    @Test
-    public void testWithNanoTime()
-    {
-        final ArrivalWindow windowWithNano = new ArrivalWindow(4);
-        final long toNano = 1000000L;
-
-        windowWithNano.add(111 * toNano);
-        windowWithNano.add(222 * toNano);
-        windowWithNano.add(333 * toNano);
-        windowWithNano.add(444 * toNano);
-        windowWithNano.add(555 * toNano);
-
-        //all good
-        assertEquals(1.0, windowWithNano.phi(666 * toNano), 0.01);
-        //oh noes, a much higher timestamp, something went wrong!
-        assertEquals(22.03, windowWithNano.phi(3000 * toNano), 0.01);
-    }
+    public long measureForPreparedCache(MemoryMeter meter);
 }
