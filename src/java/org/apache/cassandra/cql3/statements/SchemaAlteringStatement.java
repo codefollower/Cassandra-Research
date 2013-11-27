@@ -28,11 +28,17 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 /**
  * Abstract class for statements that alter the schema.
  */
+//对应drop/create keyspace/type/table/index/trigger
+//以及alter keyspace/type/table
+//index/trigger没有alter
+
+//通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
+//调用顺序prepareKeyspace->prepare->checkAccess->validate->execute
 public abstract class SchemaAlteringStatement extends CFStatement implements CQLStatement
 {
     private final boolean isColumnFamilyLevel;
 
-    protected SchemaAlteringStatement()
+    protected SchemaAlteringStatement() //对应alter/drop/create keyspace或type，不需要列族
     {
         super(null);
         this.isColumnFamilyLevel = false;
@@ -66,6 +72,7 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
 
     public abstract void announceMigration() throws RequestValidationException;
 
+    //没有子类覆盖此方法
     public ResultMessage execute(QueryState state, QueryOptions options) throws RequestValidationException
     {
         announceMigration();
@@ -73,7 +80,7 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
         return new ResultMessage.SchemaChange(changeType(), keyspace(), tableName);
     }
 
-    public ResultMessage executeInternal(QueryState state)
+    public ResultMessage executeInternal(QueryState state) //没有子类覆盖此方法
     {
         // executeInternal is for local query only, thus altering schema is not supported
         throw new UnsupportedOperationException();

@@ -25,6 +25,9 @@ import java.util.List;
  * a value (term). For example, <key> > "start" or "colname1" = "somevalue".
  *
  */
+//表示where子句中的一个关系表达式，只支持and，不支持or
+//比如where a=10 and b>20就会得到两个Relation，
+//其中entity字段分别是a、b，relationType字段分别是EQ、LT，而value字段分别是10、20
 public class Relation
 {
     private final ColumnIdentifier entity;
@@ -38,13 +41,29 @@ public class Relation
         EQ, LT, LTE, GTE, GT, IN;
     }
 
+    //WHERE token(user_id,f1) > 10时会分开成两次，entity分别是user_id和f1，值都是10
+    //但是会抛异常:
+    /*
+     * java.lang.IllegalArgumentException: null
+        at java.nio.Buffer.limit(Buffer.java:267) ~[na:1.7.0_10]
+        at org.apache.cassandra.db.marshal.AbstractCompositeType.getBytes(AbstractCompositeType.java:55) ~[main/:na]
+        at org.apache.cassandra.db.marshal.AbstractCompositeType.getWithShortLength(AbstractCompositeType.java:64) ~[main/:na]
+        at org.apache.cassandra.db.marshal.CompositeType.split(CompositeType.java:147) ~[main/:na]
+        at org.apache.cassandra.cql3.statements.SelectStatement.processColumnFamily(SelectStatement.java:861) ~[main/:na]
+        at org.apache.cassandra.cql3.statements.SelectStatement.process(SelectStatement.java:840) ~[main/:na]
+        at org.apache.cassandra.cql3.statements.SelectStatement.processResults(SelectStatement.java:212) ~[main/:na]
+        at org.apache.cassandra.cql3.statements.SelectStatement.execute(SelectStatement.java:171) ~[main/:na]
+        at org.apache.cassandra.cql3.statements.SelectStatement.execute(SelectStatement.java:1) ~[main/:na]
+        at org.apache.cassandra.cql3.QueryProcessor.processStatement(QueryProcessor.java:189) ~[main/:na]
+        at org.apache.cassandra.cql3.QueryProcessor.process(QueryProcessor.java:222) ~[main/:na]
+     */
     private Relation(ColumnIdentifier entity, Type type, Term.Raw value, List<Term.Raw> inValues, boolean onToken)
     {
         this.entity = entity;
         this.relationType = type;
         this.value = value;
         this.inValues = inValues;
-        this.onToken = onToken;
+        this.onToken = onToken; //比如WHERE token(user_id) > 10时onToken为true
     }
 
     /**

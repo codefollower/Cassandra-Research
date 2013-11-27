@@ -65,11 +65,13 @@ public class KSPropDefs extends PropertyDefinitions
         return strategyClass;
     }
 
+    //由CreateKeyspaceStatement触发
     public KSMetaData asKSMetadata(String ksName) throws RequestValidationException
     {
         return KSMetaData.newKeyspace(ksName, getReplicationStrategyClass(), getReplicationOptions(), getBoolean(KW_DURABLE_WRITES, true));
     }
 
+    //由AlterKeyspaceStatement触发
     public KSMetaData asKSMetadataUpdate(KSMetaData old) throws RequestValidationException
     {
         String sClass = strategyClass;

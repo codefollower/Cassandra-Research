@@ -33,6 +33,8 @@ public abstract class ParsedStatement
     }
 
     // Used by the parser and preparable statement
+    //boundNames.size是prepared语句中?号的个数,
+    //先触发setBoundVariables，再到Prepared(CQLStatement, List<ColumnSpecification>)
     public void setBoundVariables(List<ColumnIdentifier> boundNames)
     {
         this.variables = new VariableSpecifications(boundNames);
@@ -56,6 +58,7 @@ public abstract class ParsedStatement
             this(statement, names.getSpecifications());
         }
 
+        //凡是调用这个函数的类说明他们对应的CQL是不支持?号占位符的
         public Prepared(CQLStatement statement)
         {
             this(statement, Collections.<ColumnSpecification>emptyList());

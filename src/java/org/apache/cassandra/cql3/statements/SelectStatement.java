@@ -329,7 +329,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             RowPosition start = includeStart ? startToken.minKeyBound() : startToken.maxKeyBound();
             RowPosition end = includeEnd ? endToken.maxKeyBound() : endToken.minKeyBound();
 
-            return new Range<RowPosition>(start, end);
+            return new Range<RowPosition>(start, end); //代表(START, END]区间
         }
         else
         {
@@ -345,14 +345,14 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             if (includeKeyBound(Bound.START))
             {
                 return includeKeyBound(Bound.END)
-                     ? new Bounds<RowPosition>(startKey, finishKey)
-                     : new IncludingExcludingBounds<RowPosition>(startKey, finishKey);
+                     ? new Bounds<RowPosition>(startKey, finishKey) //代表[START, END]区间
+                     : new IncludingExcludingBounds<RowPosition>(startKey, finishKey); //代表[START, END)区间
             }
             else
             {
                 return includeKeyBound(Bound.END)
-                     ? new Range<RowPosition>(startKey, finishKey)
-                     : new ExcludingBounds<RowPosition>(startKey, finishKey);
+                     ? new Range<RowPosition>(startKey, finishKey) //代表(START, END]区间
+                     : new ExcludingBounds<RowPosition>(startKey, finishKey); //代表(START, END)区间
             }
         }
     }
@@ -528,7 +528,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not dense, composite).
         // Static CF (non dense but non composite) never entails a column slice however
-        if (!cfm.isDense())
+        if (!cfm.isDense()) //列族不是密集型的
             return cfm.hasCompositeComparator();
 
         // Otherwise (i.e. for compact table where we don't have a row marker anyway and thus don't care about CASSANDRA-5762),
@@ -1052,6 +1052,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         private final List<Relation> whereClause;
         private final Term.Raw limit;
 
+        //where子句只支持and不支持or
         public RawStatement(CFName cfName, Parameters parameters, List<RawSelector> selectClause, List<Relation> whereClause, Term.Raw limit)
         {
             super(cfName);
@@ -1129,6 +1130,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     case REGULAR:
                         // We only all IN on the row key and last clustering key so far, never on non-PK columns, and this even if there's an index
                         Restriction r = updateRestriction(def, stmt.metadataRestrictions.get(def.name), rel, names);
+                        //非PK列不允许在IN中有多1个以上的值，只能为1
                         if (r.isIN() && !((Restriction.IN)r).canHaveOnlyOneValue())
                             // Note: for backward compatibility reason, we conside a IN of 1 value the same as a EQ, so we let that slide.
                             throw new InvalidRequestException(String.format("IN predicates on non-primary-key columns (%s) is not yet supported", def.name));
@@ -1148,7 +1150,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             // If a component of the partition key is restricted by a relation, all preceding
             // components must have a EQ. Only the last partition key component can be in IN relation.
             boolean canRestrictFurtherComponents = true;
-            ColumnDefinition previous = null;
+            ColumnDefinition previous = null; //只用于打日志
             stmt.keyIsInRelation = false;
             Iterator<ColumnDefinition> iter = cfm.partitionKeyColumns().iterator();
             for (int i = 0; i < stmt.keyRestrictions.length; i++)

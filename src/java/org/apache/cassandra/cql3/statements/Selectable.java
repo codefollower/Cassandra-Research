@@ -22,6 +22,16 @@ import java.util.List;
 
 import org.apache.cassandra.cql3.ColumnIdentifier;
 
+//对应Select语句的:
+/*
+selector is:
+  column name
+| ( WRITETIME (column_name) )
+| TTL
+| ( TTL (column_name) )
+| (function (selector , selector, ...) )
+function is a timeuuid function, a token function, or a blob conversion function.
+ */
 public interface Selectable
 {
     public static class WritetimeOrTTL implements Selectable
@@ -47,6 +57,8 @@ public interface Selectable
         public final String functionName;
         public final List<Selectable> args;
 
+        //可以这样SELECT token(user_id)，如果是token(user_id, f1)那么args.size>0
+        //但不能这样SELECT token(20)
         public WithFunction(String functionName, List<Selectable> args)
         {
             this.functionName = functionName;
@@ -72,6 +84,7 @@ public interface Selectable
         public final Selectable selected;
         public final ColumnIdentifier field;
 
+        //此构造函数没有见到在哪里调用
         public WithFieldSelection(Selectable selected, ColumnIdentifier field)
         {
             this.selected = selected;

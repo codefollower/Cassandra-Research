@@ -37,6 +37,8 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 public class CreateKeyspaceStatement extends SchemaAlteringStatement
 {
     private final String name;
+    //org.apache.cassandra.cql3.CqlParser中会先new出一个KSPropDefs实例，然后解析CREATE KEYSPACE时
+    //碰到属性相关的配置则调用KSPropDefs的方法，最后再构造CreateKeyspaceStatement实例
     private final KSPropDefs attrs;
     private final boolean ifNotExists;
 
