@@ -453,12 +453,13 @@ public final class CFMetaData
 
     public CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp, AbstractType<?> subcc)
     {
+        //makeComparator只有是ColumnFamilyType.Super才用得着subcc，否则直接是comp
         this(keyspace, name, type, makeComparator(type, comp, subcc));
     }
 
     public CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp)
     {
-        this(keyspace, name, type, comp, getId(keyspace, name));
+        this(keyspace, name, type, comp, getId(keyspace, name)); //按keyspace和列族名组合成一个UUID
     }
 
     @VisibleForTesting
@@ -2057,7 +2058,7 @@ public final class CFMetaData
         }
 
         return maxClusteringIdx >= 0
-             ? maxClusteringIdx == comparator.componentsCount() - 1
+             ? maxClusteringIdx == comparator.componentsCount() - 1 //有Clustering key并且是最后一个
              : !hasRegular && !isCQL3OnlyPKComparator(comparator);
 
     }

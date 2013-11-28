@@ -43,13 +43,45 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /** A <code>CREATE TABLE</code> parsed from a CQL query statement. */
 public class CreateTableStatement extends SchemaAlteringStatement
 {
-    public AbstractType<?> comparator; //用于clustering key
-    private AbstractType<?> defaultValidator; //第一个非partition key和clustering key字段类型(按定义顺序)
-    private AbstractType<?> keyValidator; //用于partition key
+    //与clustering key的类型相关
+    //1. 如果没有定义clustering key并且使用CompactStorage，那么comparator是UTF8Type
+    //2. 如果没有定义clustering key并且未使用CompactStorage，那么comparator是CompositeType
+    //   如果普通字段中没有Collection类型的字段，
+    //   那么这个CompositeType只有一个UTF8Type，否则等于UTF8Type + ColumnToCollectionType
+    //3. 如果clustering key只有一个字段并且使用CompactStorage，那么comparator就是此字段的类型
+    //4. 其他情况comparator是CompositeType
+    //   4.1 使用CompactStorage时，CompositeType由clustering key中的所有字段类型组成
+    //   4.2 未使用CompactStorage时，
+    //       如果普通字段中没有Collection类型的字段，
+    //       CompositeType由clustering key中的所有字段类型 + UTF8Type组成
+    //       如果普通字段中有Collection类型的字段，
+    //       则CompositeType由clustering key中的所有字段类型 + UTF8Type + ColumnToCollectionType组成
+    public AbstractType<?> comparator;
+    
+
+    //1. 如果定义了clustering key并且使用CompactStorage，同时没有其他普通字段, 那么defaultValidator是UTF8Type
+    //2. 如果定义了clustering key并且使用CompactStorage，同时有其他普通字段(只能有一个), 那么defaultValidator是此普通字段的类型
+    //3. 如果没有定义clustering key或者未使用CompactStorage
+    //   3.1 如果普通字段中有Counter类型的字段, 那么defaultValidator是CounterColumnType
+    //   3.2 其他情况，defaultValidator是BytesType
+    private AbstractType<?> defaultValidator;
+    
+    //与partition key的类型相关
+    //如果partition key只有一个字段，那么keyValidator就是此字段的类型
+    //如果partition key有多个字段，那么keyValidator就是CompositeType
+    private AbstractType<?> keyValidator;
 
     private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
     private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
-    private ByteBuffer valueAlias; //使用CompactStorage时第一个并且只有一个非partition key和clustering key字段名
+    
+    //1.
+    //前提条件: 使用CompactStorage并且存在clustering key字段时,
+    //除了partition key和clustering key字段之外，最多可以定义一个普通字段，
+    //如果存在这样的普通字段那么valueAlias就是这个普通字段的字段名
+    //如果不存在这样的普通字段，valueAlias的值是ByteBufferUtil.EMPTY_BYTE_BUFFER
+    //2.
+    //如果不满足前提条件，valueAlias是null
+    private ByteBuffer valueAlias; 
 
     private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
     private final CFPropDefs properties;
@@ -91,6 +123,14 @@ public class CreateTableStatement extends SchemaAlteringStatement
     // Column definitions
     private Map<ByteBuffer, ColumnDefinition> getColumns(CFMetaData cfm)
     {
+        //对于这种情况:
+        //CREATE TABLE IF NOT EXISTS test ( block_id uuid, breed text, color text, short_hair boolean,
+        //   PRIMARY KEY (block_id, breed, short_hair)) WITH COMPACT STORAGE
+        //虽然componentIndex指向的是short_hair的boolean类型，但是剩下的普通字段color text已从columns删除了，columns是empty的
+        //所以不会导致ColumnDefinition.regularDef中用boolean来调用ColumnIdentifier(ByteBuffer, AbstractType)
+        //如果把RawStatement.prepare()方法中的那行"stmt.columns.remove(lastEntry.getKey())"注释掉就会产生错误
+        //所以comparator是CompositeType时，最后一个类型不是ColumnToCollectionType就是UTF8Type
+        //UTF8Type就是用在ColumnIdentifier(ByteBuffer, AbstractType)中用来生成字段名的string型式的。
         Map<ByteBuffer, ColumnDefinition> columnDefs = new HashMap<ByteBuffer, ColumnDefinition>();
         Integer componentIndex = null;
         if (cfm.hasCompositeComparator())
@@ -152,7 +192,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
         cfmd.defaultValidator(defaultValidator)
             .keyValidator(keyValidator)
             .columnMetadata(getColumns(cfmd));
-
+        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
+        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
+        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
         cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
         cfmd.addColumnMetadataFromAliases(columnAliases, comparator, ColumnDefinition.Kind.CLUSTERING_COLUMN);
         //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
@@ -406,6 +448,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
             {
                 // For compact, we are in the "static" case, so we need at least one column defined. For non-compact however, having
                 // just the PK is fine since we have CQL3 row marker.
+                //不可能出现这个，
+                //因为前面if (columnAliases.isEmpty())　{　if (useCompactStorage)　{if (stmt.columns.isEmpty())
+                //如果满足这三个if就提前抛异常了
+                //如果columnAliases不是Empty，直接就进入了上一个if (useCompactStorage && !stmt.columnAliases.isEmpty())
                 if (useCompactStorage && stmt.columns.isEmpty())
                     throw new InvalidRequestException("COMPACT STORAGE with non-composite PRIMARY KEY require one column not part of the PRIMARY KEY, none given");
 
