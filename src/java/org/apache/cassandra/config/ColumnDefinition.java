@@ -38,13 +38,30 @@ import static org.apache.cassandra.utils.FBUtilities.json;
 public class ColumnDefinition extends ColumnSpecification
 {
     // system.schema_columns column names
+    /*
+    CREATE TABLE schema_columns (
+            //这4个对应超类ColumnSpecification中的4个字段
+            keyspace_name text,
+            columnfamily_name text,
+            column_name text,
+            validator text,
+            //这4个对应此类的5个字段
+            index_type text,
+            index_options text,
+            index_name text,
+            component_index int,
+            type text, //对应ColumnDefinition.kind字段
+            PRIMARY KEY(keyspace_name, columnfamily_name, column_name)
+        ) WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640
+    */
+    //下面7个字段就对应schema_columns中的后7个字段名
     private static final String COLUMN_NAME = "column_name";
-    private static final String TYPE = "validator";
-    private static final String INDEX_TYPE = "index_type";
+    private static final String TYPE = "validator"; //其实就是字段的类型，使用validator这名字一点都不直观
+    private static final String INDEX_TYPE = "index_type"; //对应org.apache.cassandra.config.IndexType
     private static final String INDEX_OPTIONS = "index_options";
     private static final String INDEX_NAME = "index_name";
     private static final String COMPONENT_INDEX = "component_index";
-    private static final String KIND = "type";
+    private static final String KIND = "type"; //对应枚举类型ColumnDefinition.Kind
 
     /*
      * The type of CQL3 column this definition represents.
@@ -78,6 +95,7 @@ public class ColumnDefinition extends ColumnSpecification
         }
     }
 
+    //超类ColumnSpecification有4个字段，此类有5个字段，刚好9个，刚好对应system.schema_columns表中的9个字段
     public final Kind kind;
 
     private String indexName;
@@ -115,6 +133,8 @@ public class ColumnDefinition extends ColumnSpecification
     {
         this(cfm.ksName,
              cfm.cfName,
+             //cfm.getComponentComparator(componentIndex, kind)返回的值用于生成字段名的字符串型式
+             //见org.apache.cassandra.cql3.statements.CreateTableStatement.getColumns(CFMetaData)中的注释
              new ColumnIdentifier(name, cfm.getComponentComparator(componentIndex, kind)),
              validator,
              null,
@@ -160,7 +180,7 @@ public class ColumnDefinition extends ColumnSpecification
 
     public boolean isOnAllComponents()
     {
-        return componentIndex == null;
+        return componentIndex == null; //例如PARTITION_KEY中只包含一个字段时，或者COMPACT_VALUE的情况也是null
     }
 
     // The componentIndex. This never return null however for convenience sake:
@@ -304,6 +324,10 @@ public class ColumnDefinition extends ColumnSpecification
         ColumnFamily cf = rm.addOrGet(CFMetaData.SchemaColumnsCf);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
+        //形参: org.apache.cassandra.db.Column.create(String value, long timestamp, String... names)
+        //对于形参names，下面调用addColumn时都包含3个值
+        //总共9个字段，为什么这里只加入7列？
+        //
         cf.addColumn(Column.create("", timestamp, cfName, name.toString(), ""));
         cf.addColumn(Column.create(type.toString(), timestamp, cfName, name.toString(), TYPE));
         cf.addColumn(indexType == null ? DeletedColumn.create(ldt, timestamp, cfName, name.toString(), INDEX_TYPE)

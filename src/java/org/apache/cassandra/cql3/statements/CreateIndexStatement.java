@@ -61,6 +61,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
         state.hasColumnFamilyAccess(keyspace(), columnFamily(), Permission.ALTER);
     }
 
+    //参考测试: my.test.cql3.statements.IndexTest.test_CreateIndexStatement_validate()
     public void validate(ClientState state) throws RequestValidationException
     {
         CFMetaData cfm = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
@@ -76,7 +77,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
         {
             if (ifNotExists)
                 return;
-            else
+            else //在同一个字段上不能建立两个索引，哪怕索引名不同也不行
                 throw new InvalidRequestException("Index already exists");
         }
 
@@ -97,6 +98,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
             throw new InvalidRequestException(String.format("Cannot add secondary index to already primarily indexed column %s", columnName));
     }
 
+    //参考测试: my.test.cql3.statements.IndexTest.test_CreateIndexStatement_announceMigration()
     public void announceMigration() throws InvalidRequestException, ConfigurationException
     {
         logger.debug("Updating column {} definition for index {}", columnName, indexName);

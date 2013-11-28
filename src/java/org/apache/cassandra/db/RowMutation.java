@@ -34,6 +34,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 // TODO convert this to a Builder pattern instead of encouraging RM.add directly,
 // which is less-efficient since we have to keep a mutable HashMap around
+//类似于HBase的Put，代表一行记录，key就是rowKey，modifications就是要修改的列，只不过这些列被放到不同的ColumnFamily中
 public class RowMutation implements IMutation
 {
     public static final RowMutationSerializer serializer = new RowMutationSerializer();
@@ -58,6 +59,8 @@ public class RowMutation implements IMutation
         this(keyspaceName, key, Collections.singletonMap(cf.id(), cf));
     }
 
+    //Row相当于RowMutation的简化版，只有一个ColumnFamily
+    //rowKey(对应row.key.key)放在DecoratedKey中
     public RowMutation(String keyspaceName, Row row)
     {
         this(keyspaceName, row.key.key, row.cf);

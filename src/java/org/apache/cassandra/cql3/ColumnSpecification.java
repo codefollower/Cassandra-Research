@@ -19,7 +19,7 @@ package org.apache.cassandra.cql3;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 
-public class ColumnSpecification
+public class ColumnSpecification //有一个子类: org.apache.cassandra.config.ColumnDefinition
 {
     public final String ksName;
     public final String cfName;

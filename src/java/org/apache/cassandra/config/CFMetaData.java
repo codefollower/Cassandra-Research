@@ -125,7 +125,7 @@ public final class CFMetaData
                                                                     + "read_repair_chance double,"
                                                                     + "local_read_repair_chance double,"
                                                                     + "replicate_on_write boolean,"
-                                                                    + "gc_grace_seconds int,"
+                                                                    + "gc_grace_seconds int," //grace是宽限的意思
                                                                     + "default_validator text,"
                                                                     + "key_validator text,"
                                                                     + "min_compaction_threshold int,"
@@ -309,6 +309,7 @@ public final class CFMetaData
         }
     }
 
+    //主要用于读，见org.apache.cassandra.service.AbstractReadExecutor.getReadExecutor(ReadCommand, ConsistencyLevel)
     public static class SpeculativeRetry
     {
         public enum RetryType
@@ -330,6 +331,7 @@ public final class CFMetaData
             String name = retry.toUpperCase();
             try
             {
+                //例如: WITH speculative_retry = '90percentile'
                 if (name.endsWith(RetryType.PERCENTILE.toString()))
                 {
                     double value = Double.parseDouble(name.substring(0, name.length() - 10));
@@ -339,16 +341,21 @@ public final class CFMetaData
                 }
                 else if (name.endsWith("MS"))
                 {
+                    //例如: WITH speculative_retry = '60ms'
                     double value = Double.parseDouble(name.substring(0, name.length() - 2));
                     return new SpeculativeRetry(RetryType.CUSTOM, value);
                 }
                 else
                 {
+                    //例如: WITH speculative_retry = 'ALWAYS'
+                    //或 WITH speculative_retry = 'NONE'
                     return new SpeculativeRetry(RetryType.valueOf(name), 0);
                 }
             }
             catch (IllegalArgumentException e)
             {
+                //执行RetryType.valueOf(name)时，如果name无效，那么会抛出IllegalArgumentException
+                //如: WITH speculative_retry = 'invalid speculative_retry type'
                 // ignore to throw the below exception.
             }
             throw new ConfigurationException("invalid speculative_retry type: " + retry);
@@ -384,6 +391,7 @@ public final class CFMetaData
     public final String ksName;                       // name of keyspace
     public final String cfName;                       // name of this column family
     public final ColumnFamilyType cfType;             // standard, super
+    //参见org.apache.cassandra.cql3.statements.CreateTableStatement.comparator的注释
     public volatile AbstractType<?> comparator;       // bytes, long, timeuuid, utf8, etc.
 
     //OPTIONAL
@@ -417,6 +425,7 @@ public final class CFMetaData
     public static final String DEFAULT_COLUMN_ALIAS = "column";
     public static final String DEFAULT_VALUE_ALIAS = "value";
 
+    //存放org.apache.cassandra.config.ColumnDefinition.Type中定义的4种类型的字段
     private volatile Map<ByteBuffer, ColumnDefinition> columnMetadata = new HashMap<>();
     private volatile List<ColumnDefinition> partitionKeyColumns;  // Always of size keyValidator.componentsCount, null padded if necessary
     private volatile List<ColumnDefinition> clusteringColumns;    // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
@@ -482,6 +491,7 @@ public final class CFMetaData
 
     private static CFMetaData compile(String cql)
     {
+        //System.out.println(cql); //这里打印"system"这个Keyspace中有哪些表(或称为列族)，总共有17个
         return compile(cql, Keyspace.SYSTEM_KS);
     }
 
@@ -490,6 +500,7 @@ public final class CFMetaData
     {
         try
         {
+            //仅仅是是进行到prepare而已，并未checkAccess、announceMigration，所以也不需要IF NOT EXISTS
             CreateTableStatement statement = (CreateTableStatement) QueryProcessor.parseStatement(cql).prepare().statement;
             CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator, null);
             statement.applyPropertiesTo(cfm);
@@ -1562,7 +1573,9 @@ public final class CFMetaData
         ColumnFamily cf = rm.addOrGet(SchemaColumnFamiliesCf);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
+        //第1列是cfName自身
         cf.addColumn(Column.create("", timestamp, cfName, ""));
+        //第2列是cfName的类型，在Column.create内部会用cfName+"type"组合起来当列名，fType.toString()是列值
         cf.addColumn(Column.create(cfType.toString(), timestamp, cfName, "type"));
 
         if (isSuper())
@@ -1771,7 +1784,9 @@ public final class CFMetaData
      */
     public RowMutation toSchema(long timestamp) throws ConfigurationException
     {
+        //这个RowMutation的key是此CF对应的Keyspace名，而不是CF自己的名字
         RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(ksName));
+        //RowMutation在里面会得到两个ColumnFamily: schema_columnfamilies和schema_columns
         toSchema(rm, timestamp);
         return rm;
     }
@@ -2115,6 +2130,7 @@ public final class CFMetaData
     @Override
     public String toString()
     {
+        //ToStringBuilder.setDefaultStyle(ToStringStyle.MULTI_LINE_STYLE); //我加上的
         return new ToStringBuilder(this)
             .append("cfId", cfId)
             .append("ksName", ksName)
