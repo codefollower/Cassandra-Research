@@ -1,15 +1,34 @@
+/*
+ * Copyright 2011 The Apache Software Foundation
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package my.test.cql3.statements;
 
 import my.test.TestBase;
 
-public class CreateTableStatementTest extends TestBase {
+public class TableTest extends TestBase {
     public static void main(String[] args) throws Exception {
-        new CreateTableStatementTest().start();
+        new TableTest().start();
     }
 
     @Override
     public void startInternal() throws Exception {
-        tableName = "CreateTableStatementTest";
+        tableName = "TableTest";
 
         test_RawStatement_prepare();
 
@@ -20,6 +39,8 @@ public class CreateTableStatementTest extends TestBase {
 
     //按org.apache.cassandra.cql3.statements.CreateTableStatement.RawStatement.prepare()中的代码测试
     public void test_RawStatement_prepare() throws Exception {
+        tryExecute("DROP TABLE IF EXISTS " + tableName);
+
         //表名不能使用中文
         tryExecute("CREATE TABLE IF NOT EXISTS " + tableName + "中sss ( block_id uuid)");
 
@@ -199,6 +220,15 @@ public class CreateTableStatementTest extends TestBase {
         //测试org.apache.cassandra.cql3.statements.CreateTableStatement.RawStatement.getTypeAndRemove中的isReversed=true
         execute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid, breed text, color text, short_hair boolean,"
                 + "PRIMARY KEY (block_id, breed)) WITH CLUSTERING ORDER BY (breed DESC)");
+
+        tryExecute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid, breed text, color text, short_hair boolean,"
+                + "PRIMARY KEY (block_id, breed, short_hair)) WITH COMPACT STORAGE");
+
+        tryExecute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid, breed text, color text, short_hair boolean,"
+                + "PRIMARY KEY (block_id))");
+
+        tryExecute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid, breed text, color text, short_hair counter,"
+                + "PRIMARY KEY (block_id))");
     }
 
     public void test_CFPropDefs_validate() throws Exception {
@@ -276,7 +306,7 @@ public class CreateTableStatementTest extends TestBase {
 
     public void test_CreateTableStatement_applyPropertiesTo() throws Exception {
         //execute("CREATE TABLE IF NOT EXISTS " + tableName + " ( block_id uuid PRIMARY KEY, breed text, emails set<text>)");
-        
+
         execute("CREATE TABLE IF NOT EXISTS " + tableName //
                 + " ( block_id uuid, breed text, short_hair boolean, f1 text, f2 int, " //
                 + "PRIMARY KEY ((block_id, breed), short_hair, f1)) WITH COMPACT STORAGE");

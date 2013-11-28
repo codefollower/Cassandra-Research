@@ -4,8 +4,8 @@ system_traces
 system_auth
 
 
-内部有19个表(或称列族):
-属于system有14个:
+内部有22个表(或称列族):
+属于system有17个:
 ====================================================================
 	CREATE TABLE "IndexInfo" (
 		table_name text,
@@ -36,7 +36,7 @@ system_auth
 		read_repair_chance double,
 		local_read_repair_chance double,
 		replicate_on_write boolean,
-		gc_grace_seconds int,
+		gc_grace_seconds int, //grace是宽限的意思
 		default_validator text,
 		key_validator text,
 		min_compaction_threshold int,
@@ -79,14 +79,23 @@ system_auth
 		PRIMARY KEY (keyspace_name, columnfamily_name, trigger_name)
 	) WITH COMMENT='triggers metadata table'
 
+	CREATE TABLE schema_usertypes (
+		type_name text,
+		column_names list<text>,
+		column_types list<text>,
+		PRIMARY KEY (type_name)
+	) WITH COMMENT='Defined user types' AND gc_grace_seconds=8640
+
 	CREATE TABLE hints (
 		target_id uuid,
 		hint_id timeuuid,
 		message_version int,
 		mutation blob,
 		PRIMARY KEY (target_id, hint_id, message_version)
-	) WITH COMPACT STORAGE AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'enabled' : false} 
-	  AND COMMENT='hints awaiting delivery'AND gc_grace_seconds=0
+	) WITH COMPACT STORAGE 
+	  AND COMPACTION={'class' : 'SizeTieredCompactionStrategy', 'enabled' : false} 
+	  AND COMMENT='hints awaiting delivery'
+	  AND gc_grace_seconds=0
 
 	CREATE TABLE peers (
 		peer inet PRIMARY KEY,
@@ -146,12 +155,32 @@ system_auth
 		row_key blob,
 		cf_id UUID,
 		in_progress_ballot timeuuid,
+		proposal_ballot timeuuid,
 		proposal blob,
 		most_recent_commit_at timeuuid,
 		most_recent_commit blob,
 		PRIMARY KEY (row_key, cf_id)
 	) WITH COMMENT='in-progress paxos proposals'
 
+	CREATE TABLE sstable_activity (
+		keyspace_name text,
+		columnfamily_name text,
+		generation int,
+		rate_15m double,
+		rate_120m double,
+		PRIMARY KEY ((keyspace_name, columnfamily_name, generation))
+	) WITH COMMENT='historic sstable read rates'
+
+	CREATE TABLE compaction_history (
+		id uuid,
+		keyspace_name text,
+		columnfamily_name text,
+		compacted_at timestamp,
+		bytes_in bigint,
+		bytes_out bigint,
+		rows_merged map<int, bigint>,
+		PRIMARY KEY (id)
+	) WITH COMMENT='show all compaction history' AND DEFAULT_TIME_TO_LIVE=604800
 
 属于system_traces有2个:
 ====================================================================
