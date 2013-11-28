@@ -1,3 +1,22 @@
+/*
+ * Copyright 2011 The Apache Software Foundation
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package my.test.cql3.statements;
 
 import my.test.TestBase;
@@ -79,6 +98,27 @@ public class SelectTest extends TestBase {
         cql = "SELECT * FROM users WHERE age>=10 ALLOW FILTERING";
         cql = "SELECT * FROM users WHERE user_id = 'frodo' and f1=11 and age>=10 ALLOW FILTERING";
 
+        //cql = "SELECT * FROM users WHERE token(user_id,f1) > 10";
+
+        //cql = "SELECT token(user_id),token(20) FROM users WHERE age>=10 ALLOW FILTERING";
+
+        //where子句只支持and不支持or
+        //cql = "SELECT * FROM users WHERE user_id = 'frodo' or f1=11 and age>=10 ALLOW FILTERING";
+
+        cql = "SELECT user_id FROM users WHERE age>=10 ALLOW FILTERING";
+
+        //少了as
+        cql = "SELECT user_id uid FROM users WHERE age>=10 ALLOW FILTERING";
+        cql = "SELECT user_id as uid FROM users WHERE age>=10 ALLOW FILTERING";
+
+        cql = "SELECT user_id.a FROM users WHERE age>=10 ALLOW FILTERING";
+        
+        cql = "SELECT * FROM users WHERE age=10";
+        
+        cql = "SELECT * FROM users WHERE age=10 ORDER BY age DESC";
+        
+        cql = "SELECT * FROM users WHERE age>=10 LIMIT 2 ALLOW FILTERING";
+        
         SimpleStatement stmt = new SimpleStatement(cql);
         stmt.setFetchSize(20);
         ResultSet results = session.execute(stmt);

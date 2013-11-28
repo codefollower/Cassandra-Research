@@ -1,3 +1,22 @@
+/*
+ * Copyright 2011 The Apache Software Foundation
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package my.test.cql3.statements;
 
 import my.test.TestBase;
@@ -108,65 +127,6 @@ public class IndexTest extends TestBase {
     void createTest() throws Exception {
         //test_CreateIndexStatement_validate();
         test_CreateIndexStatement_announceMigration();
-
-        //        cql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" + //
-        //                "block_id uuid," + //
-        //                "species text," + //
-        //                "alias text," + //
-        //                "population varint," + //
-        //                "PRIMARY KEY (block_id, population)" + //
-        //
-        //                ") WITH compression = { 'sstable_compression' : 'DeflateCompressor', 'chunk_length_kb' : 64 }" + //
-        //                "AND compaction = { 'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 6 }";
-        //        execute();
-        //
-        //        cql = "DROP INDEX IF EXISTS " + indexName;
-        //        tryExecute();
-        //
-        //        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (alias);";
-        //        execute();
-        //
-        //        indexName = tableName + "_index_population";
-        //        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (population);";
-        //        execute();
-        //
-        //        tableName += "2";
-        //        execute("CREATE TABLE IF NOT EXISTS " + tableName //
-        //                + " ( block_id uuid, breed text, short_hair boolean, f1 text, f2 int, " //
-        //                + "PRIMARY KEY ((block_id, breed), short_hair, f1)) WITH COMPACT STORAGE");
-        //
-        //        indexName = tableName + "_index_f2";
-        //        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (f2);";
-        //        tryExecute();
-        //
-        //        tableName += "22";
-        //        execute("CREATE TABLE IF NOT EXISTS " + tableName //
-        //                + " ( block_id uuid, breed text, short_hair boolean, f1 text, f2 int, " //
-        //                + "PRIMARY KEY (block_id))");
-        //
-        //        indexName = tableName + "_index_f2";
-        //        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (f2);";
-        //        tryExecute();
-        //
-        //        tableName += "2";
-        //        execute("CREATE TABLE IF NOT EXISTS " + tableName //
-        //                + " ( block_id uuid, breed text, short_hair boolean, f1 text, " //
-        //                + "PRIMARY KEY ((block_id, breed), f1)) WITH COMPACT STORAGE");
-        //
-        //        indexName = tableName + "_index_f1";
-        //        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (f1);";
-        //        tryExecute();
-        //
-        //        //测试org.apache.cassandra.cql3.statements.CreateIndexStatement.announceMigration()中的
-        //        //cd.setIndexType(IndexType.KEYS, Collections.<String, String>emptyMap());
-        //        tableName += "2";
-        //        execute("CREATE TABLE IF NOT EXISTS " + tableName //
-        //                + " ( block_id uuid, breed text, short_hair boolean, f1 text, " //
-        //                + "PRIMARY KEY ((block_id, breed))) WITH COMPACT STORAGE");
-        //
-        //        indexName = tableName + "_index_f1";
-        //        cql = "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (f1);";
-        //        tryExecute();
     }
 
     void dropTest() throws Exception {
