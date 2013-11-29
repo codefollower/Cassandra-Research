@@ -38,6 +38,7 @@ public class ServerConnection extends Connection
     private final ClientState clientState;
     private volatile State state;
 
+    //key是streamId
     private final ConcurrentMap<Integer, QueryState> queryStates = new NonBlockingHashMap<Integer, QueryState>();
 
     public ServerConnection(Channel channel, int version, Connection.Tracker tracker)

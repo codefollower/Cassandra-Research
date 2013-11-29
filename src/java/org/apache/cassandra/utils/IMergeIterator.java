@@ -21,5 +21,6 @@ import java.util.Iterator;
 
 public interface IMergeIterator<In, Out> extends CloseableIterator<Out>
 {
+    //返回的Iterable的元素又是一个Iterator，相当于List套List的场景
     Iterable<? extends Iterator<In>> iterators();
 }

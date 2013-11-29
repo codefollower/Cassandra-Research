@@ -64,7 +64,7 @@ public class EstimatedHistogram
     {
         assert bucketData.length == offsets.length +1;
         bucketOffsets = offsets;
-        buckets = new AtomicLongArray(bucketData);
+        buckets = new AtomicLongArray(bucketData); //AtomicLongArray在jdk1.7才有
     }
 
     private void makeOffsets(int size)
@@ -331,6 +331,7 @@ public class EstimatedHistogram
             long[] buckets = new long[size];
 
             for (int i = 0; i < size; i++) {
+                //0号位置被覆盖了
                 offsets[i == 0 ? 0 : i - 1] = in.readLong();
                 buckets[i] = in.readLong();
             }
