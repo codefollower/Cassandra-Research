@@ -46,6 +46,7 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
+//会把缓存内容定期保存到硬盘
 public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K, V>
 {
     private static final Logger logger = LoggerFactory.getLogger(AutoSavingCache.class);
@@ -105,6 +106,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         long start = System.nanoTime();
 
         // modern format, allows both key and value (so key cache load can be purely sequential)
+        //如my-test-data\saved_caches\mytest-keysindextest.KeysIndexTest_index_f1-KeyCache
         File path = getCachePath(cfs.keyspace.getName(), cfs.name, CURRENT_VERSION);
         if (path.exists())
         {
@@ -147,6 +149,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
 
     public Future<?> submitWrite(int keysToSave)
     {
+        //会调用Writer.saveCache
         return CompactionManager.instance.submitCacheWrite(getWriter(keysToSave));
     }
 
