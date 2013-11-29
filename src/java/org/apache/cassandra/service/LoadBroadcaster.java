@@ -28,6 +28,8 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.gms.*;
 
+//见org.apache.cassandra.service.StorageService.getLoad()
+//用来保存每个节点的硬盘空间使用情况的，每隔1分钟收集一次
 public class LoadBroadcaster implements IEndpointStateChangeSubscriber
 {
     static final int BROADCAST_INTERVAL = 60 * 1000;

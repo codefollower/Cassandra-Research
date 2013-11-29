@@ -204,6 +204,7 @@ public class StorageProxy implements StorageProxyMBean
      * expected (since, if the CAS doesn't succeed, it means the current value do not match the one in expected). If
      * expected == null and the CAS is unsuccessfull, the first live column of the CF is returned.
      */
+    //用于条件化insert和update
     public static ColumnFamily cas(String keyspaceName,
                                    String cfName,
                                    ByteBuffer key,
@@ -884,6 +885,7 @@ public class StorageProxy implements StorageProxyMBean
             }
             else
             {
+                //目标节点临时不可用时，先存到system.hints表
                 if (!shouldHint(destination))
                     continue;
 
@@ -1169,6 +1171,7 @@ public class StorageProxy implements StorageProxyMBean
         List<Row> rows = null;
         try
         {
+            //使用SERIAL和LOCAL_SERIAL的方式读
             if (consistency_level.isSerialConsistency())
             {
                 // make sure any in-progress paxos writes are done (i.e., committed to a majority of replicas), before performing a quorum read
@@ -1507,6 +1510,7 @@ public class StorageProxy implements StorageProxyMBean
         {
             int cql3RowCount = 0;
             rows = new ArrayList<Row>();
+            //根据rowKey(是command.keyRange)取得一个范围，如果没指定rowKey只是按索引字段查，还是会把查询请求发给所有节点的
             List<AbstractBounds<RowPosition>> ranges = getRestrictedRanges(command.keyRange);
 
             // our estimate of how many result rows there will be per-range

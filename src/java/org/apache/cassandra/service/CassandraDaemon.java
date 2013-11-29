@@ -108,6 +108,7 @@ public class CassandraDaemon
         }
      /*   else
         {
+            //如1.6.0_29，java_major=1.6.0，java_minor=29
             String[] java_version = javaVersion.split("_");
             String java_major = java_version[0];
             int java_minor;
@@ -125,7 +126,7 @@ public class CassandraDaemon
      */
         logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
         logger.info("Classpath: {}", System.getProperty("java.class.path"));
-        CLibrary.tryMlockall();
+        CLibrary.tryMlockall(); //看一下本地库是否可用，windows下不支持JNA
 
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
         {
@@ -178,6 +179,7 @@ public class CassandraDaemon
             }
         }
 
+        //这里会触发key、row缓存的初始化
         if (CacheService.instance == null) // should never happen
             throw new RuntimeException("Failed to initialize Cache Service.");
 
@@ -185,7 +187,7 @@ public class CassandraDaemon
         // we do a one-off scrub of the system keyspace first; we can't load the list of the rest of the keyspaces,
         // until system keyspace is opened.
         for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(Keyspace.SYSTEM_KS).values())
-            ColumnFamilyStore.scrubDataDirectories(Keyspace.SYSTEM_KS, cfm.cfName);
+            ColumnFamilyStore.scrubDataDirectories(Keyspace.SYSTEM_KS, cfm.cfName); //清理一些临时或不再需要的文件
         try
         {
             SystemKeyspace.checkHealth();
@@ -245,6 +247,7 @@ public class CassandraDaemon
 
         // MeteredFlusher can block if flush queue fills up, so don't put on scheduledTasks
         // Start it before commit log, so memtables can flush during commit log replay
+        //每隔1秒检查一下哪些ColumnFamilyStore需要被强制flush
         StorageService.optionalTasks.scheduleWithFixedDelay(new MeteredFlusher(), 1000, 1000, TimeUnit.MILLISECONDS);
 
         // replay the log if necessary
@@ -300,7 +303,7 @@ public class CassandraDaemon
             System.exit(1);
         }
 
-        Mx4jTool.maybeLoad();
+        Mx4jTool.maybeLoad(); //支持XSLT(可选的)
 
         // Metrics
         String metricsReporterConfigFile = System.getProperty("cassandra.metricsReporterConfigFile");
@@ -322,12 +325,13 @@ public class CassandraDaemon
         InetAddress rpcAddr = DatabaseDescriptor.getRpcAddress();
         int rpcPort = DatabaseDescriptor.getRpcPort();
         int listenBacklog = DatabaseDescriptor.getRpcListenBacklog();
-        thriftServer = new ThriftServer(rpcAddr, rpcPort, listenBacklog);
+        thriftServer = new ThriftServer(rpcAddr, rpcPort, listenBacklog); //只是构造一个实例，并没启动
 
         // Native transport
-        InetAddress nativeAddr = DatabaseDescriptor.getNativeTransportAddress();
+        //用于支持CQL
+        InetAddress nativeAddr = DatabaseDescriptor.getNativeTransportAddress(); //同DatabaseDescriptor.getRpcAddress()
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
-        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort);
+        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
     }
 
     /**
@@ -392,6 +396,8 @@ public class CassandraDaemon
      */
     public void activate()
     {
+        //bin/cassandra文件的aunch_service()中有设置
+        //存放cassandra的进程id的文件
         String pidFile = System.getProperty("cassandra-pidfile");
 
         try
@@ -413,7 +419,7 @@ public class CassandraDaemon
             {
                 new File(pidFile).deleteOnExit();
             }
-
+            //没有设置cassandra-foreground时，信息无法输出的控制台
             if (System.getProperty("cassandra-foreground") == null)
             {
                 System.out.close();

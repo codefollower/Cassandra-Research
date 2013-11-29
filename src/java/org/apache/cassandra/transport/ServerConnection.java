@@ -66,6 +66,7 @@ public class ServerConnection extends Connection
         switch (state)
         {
             case UNINITIALIZED:
+                //说明第一个消息必须是STARTUP或OPTIONS
                 if (type != Message.Type.STARTUP && type != Message.Type.OPTIONS)
                     throw new ProtocolException(String.format("Unexpected message %s, expecting STARTUP or OPTIONS", type));
                 break;

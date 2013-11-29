@@ -42,8 +42,24 @@ public class OutboundTcpConnectionPool
     private InetAddress resetedEndpoint;
     private ConnectionMetrics metrics;
 
+    //这个连接池其实只有cmdCon和ackCon两条连接
+    //ackCon负责REQUEST_RESPONSE、INTERNAL_RESPONSE、GOSSIP
+    //其他的由cmdCon负责
     OutboundTcpConnectionPool(InetAddress remoteEp)
     {
+        /*
+        CREATE TABLE peers (
+            peer inet PRIMARY KEY, //对应remoteEp
+            host_id uuid,
+            tokens set<varchar>,
+            schema_version uuid,
+            release_version text,
+            rpc_address inet,
+            preferred_ip inet, //对应resetedEndpoint
+            data_center text,
+            rack text
+         ) WITH COMMENT='known peers in the cluster'
+         */
         id = remoteEp;
         resetedEndpoint = SystemKeyspace.getPreferredIP(remoteEp);
 
@@ -111,7 +127,7 @@ public class OutboundTcpConnectionPool
 
     public void incrementTimeout()
     {
-        metrics.timeouts.mark();
+        metrics.timeouts.mark(); //加1
     }
 
     public Socket newSocket() throws IOException
@@ -154,11 +170,11 @@ public class OutboundTcpConnectionPool
                 return false; // if nothing needs to be encrypted then return immediately.
             case all:
                 break;
-            case dc:
+            case dc: //数据中心相同时不需要加密
                 if (snitch.getDatacenter(address).equals(snitch.getDatacenter(FBUtilities.getBroadcastAddress())))
                     return false;
                 break;
-            case rack:
+            case rack: //数据中心和机架都相同时不需要加密
                 // for rack then check if the DC's are the same.
                 if (snitch.getRack(address).equals(snitch.getRack(FBUtilities.getBroadcastAddress()))
                         && snitch.getDatacenter(address).equals(snitch.getDatacenter(FBUtilities.getBroadcastAddress())))

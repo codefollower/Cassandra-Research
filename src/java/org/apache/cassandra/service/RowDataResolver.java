@@ -62,6 +62,7 @@ public class RowDataResolver extends AbstractRowResolver
         long start = System.nanoTime();
 
         ColumnFamily resolved;
+        //计算每个节点返回的记录
         if (replies.size() > 1)
         {
             List<ColumnFamily> versions = new ArrayList<ColumnFamily>(replies.size());
@@ -81,6 +82,7 @@ public class RowDataResolver extends AbstractRowResolver
                     maxLiveCount = liveCount;
             }
 
+            //计算这些记录的超集
             resolved = resolveSuperset(versions, timestamp);
             if (logger.isDebugEnabled())
                 logger.debug("versions merged");
@@ -111,11 +113,13 @@ public class RowDataResolver extends AbstractRowResolver
 
         for (int i = 0; i < versions.size(); i++)
         {
+            //如果没有差别，那么就不用管
             ColumnFamily diffCf = ColumnFamily.diff(versions.get(i), resolved);
             if (diffCf == null) // no repair needs to happen
                 continue;
 
             // create and send the row mutation message based on the diff
+            //只发送新加的内容给那些未同步数据的节点
             RowMutation rowMutation = new RowMutation(keyspaceName, key.key, diffCf);
             MessageOut repairMessage;
             // use a separate verb here because we don't want these to be get the white glove hint-

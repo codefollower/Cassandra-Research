@@ -55,6 +55,8 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 
 import com.google.common.util.concurrent.Uninterruptibles;
 
+//OutboundTcpConnection负责发消息，MessagingService.SocketThread.run()负责接收消息
+//此类的流程是通过enqueue方法加消息，然后在run()中轮训，最后写往指定的Socket
 public class OutboundTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
@@ -134,7 +136,7 @@ public class OutboundTcpConnection extends Thread
             {
                 try
                 {
-                    drainedMessages.add(backlog.take());
+                    drainedMessages.add(backlog.take()); //会阻塞
                 }
                 catch (InterruptedException e)
                 {
@@ -157,6 +159,11 @@ public class OutboundTcpConnection extends Thread
                             break outer;
                         continue;
                     }
+                    //m.getTimeout是消息超时时间，
+                    //qm.timestamp是进行队列的时间，
+                    //qm.timestamp < System.currentTimeMillis() - m.getTimeout()相当于
+                    //qm.timestamp+m.getTimeout() < System.currentTimeMillis()
+                    //意思就是消息进入队列太久了，都超过超时时间了，所以必须废弃，不再处理
                     if (qm.timestamp < System.currentTimeMillis() - m.getTimeout())
                         dropped.incrementAndGet();
                     else if (socket != null || connect())
@@ -258,6 +265,7 @@ public class OutboundTcpConnection extends Thread
         }
     }
 
+    //对应IncomingTcpConnection.receiveMessage(DataInputStream, int)
     private void writeInternal(MessageOut message, int id, long timestamp) throws IOException
     {
         out.writeInt(MessagingService.PROTOCOL_MAGIC);
@@ -306,6 +314,8 @@ public class OutboundTcpConnection extends Thread
         }
     }
 
+    //对照MessagingService.SocketThread.run()和IncomingTcpConnection.handleModernVersion()
+    //看看它们里面是如何读数据的
     private boolean connect()
     {
         if (logger.isDebugEnabled())
@@ -373,6 +383,7 @@ public class OutboundTcpConnection extends Thread
                 }
 
                 out.writeInt(MessagingService.current_version);
+                //发送本机的ip地址
                 CompactEndpointSerializationHelper.serialize(FBUtilities.getBroadcastAddress(), out);
                 if (shouldCompressConnection())
                 {
@@ -419,7 +430,7 @@ public class OutboundTcpConnection extends Thread
                 try
                 {
                     logger.info("Handshaking version with {}", poolReference.endPoint());
-                    version.set(inputStream.readInt());
+                    version.set(inputStream.readInt()); //响应方的协议版本
                 }
                 catch (IOException ex) 
                 {

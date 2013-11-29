@@ -100,6 +100,7 @@ public class IncomingTcpConnection extends Thread
         }
     }
 
+    //对照OutboundTcpConnection.connect()看它如何发数据
     private void handleModernVersion() throws IOException
     {
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
@@ -148,6 +149,7 @@ public class IncomingTcpConnection extends Thread
         }
     }
 
+    //对应OutboundTcpConnection.writeInternal(MessageOut, int, long)
     private InetAddress receiveMessage(DataInputStream input, int version) throws IOException
     {
         int id;
@@ -158,7 +160,7 @@ public class IncomingTcpConnection extends Thread
 
         long timestamp = System.currentTimeMillis();
         // make sure to readInt, even if cross_node_to is not enabled
-        int partial = input.readInt();
+        int partial = input.readInt(); //读timestamp
         if (DatabaseDescriptor.hasCrossNodeTimeout())
             timestamp = (timestamp & 0xFFFFFFFF00000000L) | (((partial & 0xFFFFFFFFL) << 2) >> 2);
 
