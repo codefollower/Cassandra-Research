@@ -25,7 +25,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 
-public interface IAuthenticator
+public interface IAuthenticator //Authenticator认证者
 {
     static final String USERNAME_KEY = "username";
     static final String PASSWORD_KEY = "password";

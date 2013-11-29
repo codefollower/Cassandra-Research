@@ -51,6 +51,7 @@ import org.mindrot.jbcrypt.BCrypt;
  * that keeps credentials (usernames and bcrypt-hashed passwords)
  * internally in C* - in system_auth.credentials CQL3 table.
  */
+//启动时，会先调用setup()方法
 public class PasswordAuthenticator implements ISaslAwareAuthenticator
 {
     private static final Logger logger = LoggerFactory.getLogger(PasswordAuthenticator.class);
@@ -75,7 +76,8 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
                                                                       CREDENTIALS_CF,
                                                                       90 * 24 * 60 * 60); // 3 months.
 
-    private SelectStatement authenticateStatement;
+    //SELECT salted_hash FROM system_auth.credentials WHERE username = ?
+    private SelectStatement authenticateStatement;  //在setup中初始化，使用prepare的方式
 
     // No anonymous access.
     public boolean requireAuthentication()
@@ -143,6 +145,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
 
     public void alter(String username, Map<Option, Object> options) throws RequestExecutionException
     {
+        //options map<text,text>, //这个字段目前未使用
         process(String.format("UPDATE %s.%s SET salted_hash = '%s' WHERE username = '%s'",
                               Auth.AUTH_KS,
                               CREDENTIALS_CF,
@@ -168,7 +171,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
 
     public void setup()
     {
-        setupCredentialsTable();
+        setupCredentialsTable(); //创建system_auth.credentials表
 
         // the delay is here to give the node some time to see its peers - to reduce
         // "skipped default user setup: some nodes are were not ready" log spam.
@@ -179,7 +182,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
                                           {
                                               public void run()
                                               {
-                                                  setupDefaultUser();
+                                                  setupDefaultUser(); //创建默认超级用户cassandra/cassandra
                                               }
                                           },
                                           Auth.SUPERUSER_SETUP_DELAY,
@@ -314,12 +317,14 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
          * would expect
          * @throws javax.security.sasl.SaslException
          */
+        //编码方式见com.datastax.driver.core.PlainTextAuthProvider.PlainTextAuthenticator.initialResponse()
         private Map<String, String> decodeCredentials(byte[] bytes) throws AuthenticationException
         {
             logger.debug("Decoding credentials from client token");
             byte[] user = null;
             byte[] pass = null;
             int end = bytes.length;
+            //从后往前遍历，第一个看到的是密码，然后是用户名
             for (int i = bytes.length - 1 ; i >= 0; i--)
             {
                 if (bytes[i] == NUL)

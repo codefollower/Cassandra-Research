@@ -25,6 +25,7 @@ import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
+//配置使用AllowAllAuthenticator时，不支持CREATE/ALTER/DROP USER语句
 public class AllowAllAuthenticator implements IAuthenticator
 {
     public boolean requireAuthentication()

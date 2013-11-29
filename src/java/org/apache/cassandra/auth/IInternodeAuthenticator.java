@@ -23,6 +23,7 @@ import java.net.InetAddress;
 
 import org.apache.cassandra.exceptions.ConfigurationException;
 
+//目前只有AllowAllInternodeAuthenticator实现了，并没有真正用起来
 public interface IInternodeAuthenticator
 {
     /**

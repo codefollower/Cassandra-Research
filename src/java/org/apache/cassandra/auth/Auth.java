@@ -61,6 +61,8 @@ public class Auth
                                                                 USERS_CF,
                                                                 90 * 24 * 60 * 60); // 3 months.
 
+    //SELECT * FROM system_auth.users WHERE name = ?
+    //在setup中初始化，使用prepare的方式
     private static SelectStatement selectUserStatement;
 
     /**
@@ -126,8 +128,8 @@ public class Auth
         if (DatabaseDescriptor.getAuthenticator() instanceof AllowAllAuthenticator)
             return;
 
-        setupAuthKeyspace();
-        setupUsersTable();
+        setupAuthKeyspace(); //创建system_auth表空间
+        setupUsersTable(); //创建users表
 
         DatabaseDescriptor.getAuthenticator().setup();
         DatabaseDescriptor.getAuthorizer().setup();
@@ -144,7 +146,7 @@ public class Auth
                                           {
                                               public void run()
                                               {
-                                                  setupDefaultSuperuser();
+                                                  setupDefaultSuperuser(); //插入cassandra这个默认的超级用户
                                               }
                                           },
                                           SUPERUSER_SETUP_DELAY,
@@ -243,6 +245,7 @@ public class Auth
     {
         try
         {
+            //QueryOptions中的List<ByteBuffer> values相当于prepare语句的参数值
             ResultMessage.Rows rows = selectUserStatement.execute(QueryState.forInternalCalls(),
                                                                   new QueryOptions(consistencyForUser(username),
                                                                                    Lists.newArrayList(ByteBufferUtil.bytes(username))));
@@ -265,11 +268,13 @@ public class Auth
     {
         public void onDropKeyspace(String ksName)
         {
+            //删除与ksName相关的所有权限
             DatabaseDescriptor.getAuthorizer().revokeAll(DataResource.keyspace(ksName));
         }
 
         public void onDropColumnFamily(String ksName, String cfName)
         {
+            //删除与ksName、cfName相关的所有权限
             DatabaseDescriptor.getAuthorizer().revokeAll(DataResource.columnFamily(ksName, cfName));
         }
 

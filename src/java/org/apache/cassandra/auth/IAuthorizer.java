@@ -26,7 +26,8 @@ import org.apache.cassandra.exceptions.RequestValidationException;
 /**
  * Primary Cassandra authorization interface.
  */
-public interface IAuthorizer
+//用于GRANT and REVOKE语句
+public interface IAuthorizer //Authorizer受权
 {
     /**
      * The primary IAuthorizer method. Returns a set of permissions of a user on a resource.
@@ -35,6 +36,7 @@ public interface IAuthorizer
      * @param resource Resource for which the authorization is being requested. @see DataResource.
      * @return Set of permissions of the user on the resource. Should never return null. Use Permission.NONE instead.
      */
+    //看看user在resource上有什么权限(Permission)，这是一个查询操作，并不是GRANT或REVOKE
     Set<Permission> authorize(AuthenticatedUser user, IResource resource);
 
     /**
@@ -49,6 +51,7 @@ public interface IAuthorizer
      * @throws RequestValidationException
      * @throws RequestExecutionException
      */
+    //performer是执行grant语句的人，to才是被受权的人
     void grant(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String to)
     throws RequestValidationException, RequestExecutionException;
 
