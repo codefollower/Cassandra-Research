@@ -29,6 +29,7 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 
+//对应Gossiper.doGossipToLiveMember(MessageOut<GossipDigestSyn>)
 public class GossipDigestSynVerbHandler implements IVerbHandler<GossipDigestSyn>
 {
     private static final Logger logger = LoggerFactory.getLogger(GossipDigestSynVerbHandler.class);
@@ -73,6 +74,8 @@ public class GossipDigestSynVerbHandler implements IVerbHandler<GossipDigestSyn>
 
         doSort(gDigestList);
 
+        //假设A与B通信，deltaGossipDigestList是B要A下次发回的信息
+        //而deltaEpStateMap是B返回A的并且A中没有的信息
         List<GossipDigest> deltaGossipDigestList = new ArrayList<GossipDigest>();
         Map<InetAddress, EndpointState> deltaEpStateMap = new HashMap<InetAddress, EndpointState>();
         Gossiper.instance.examineGossiper(gDigestList, deltaGossipDigestList, deltaEpStateMap);

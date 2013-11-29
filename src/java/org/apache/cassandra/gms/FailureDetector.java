@@ -46,7 +46,9 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     public static final String MBEAN_NAME = "org.apache.cassandra.net:type=FailureDetector";
     private static final int SAMPLE_SIZE = 1000;
 
-    public static final IFailureDetector instance = new FailureDetector();
+    //我改过的，避免在eclipse中按f3时总是跳到IFailureDetector接口
+    public static final FailureDetector instance = new FailureDetector();
+    //public static final IFailureDetector instance = new FailureDetector();
     private static final Logger logger = LoggerFactory.getLogger(FailureDetector.class);
 
     // this is useless except to provide backwards compatibility in phi_convict_threshold,

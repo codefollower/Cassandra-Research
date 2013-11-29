@@ -19,7 +19,7 @@ package org.apache.cassandra.gms;
 
 import java.net.InetAddress;
 
-public interface IFailureNotification
+public interface IFailureNotification //没有实现类
 {
     public void convict(InetAddress ep);
 
