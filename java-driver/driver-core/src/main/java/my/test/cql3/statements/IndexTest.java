@@ -122,6 +122,13 @@ public class IndexTest extends TestBase {
         tryExecute("CREATE TABLE IF NOT EXISTS " + tableName //
                 + " (pk int,i int, c text, PRIMARY KEY(pk)) WITH COMPACT STORAGE");
         tryExecute("CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (c)");
+        
+        tableName = "IndexTest11";
+        //indexName = tableName + "_myindex";
+        //tryExecute("DROP TABLE IF EXISTS " + tableName);
+        tryExecute("CREATE TABLE IF NOT EXISTS " + tableName //
+                + " (pk int,i int, c text, PRIMARY KEY(pk)) WITH COMPACT STORAGE");
+        tryExecute("CREATE INDEX ON " + tableName + " (c)");
     }
 
     void createTest() throws Exception {

@@ -1342,6 +1342,8 @@ public final class CFMetaData
         Set<String> existingNames = existingIndexNames(null);
         for (ColumnDefinition column : allColumns())
         {
+            //如: CREATE INDEX ON testTable (c)
+            //此时未指定索引名，但是是允许的，这里会自动生成一个索引名
             if (column.getIndexType() != null && column.getIndexName() == null)
             {
                 String baseName = getDefaultIndexName(cfName, column.name);
