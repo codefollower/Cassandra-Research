@@ -33,6 +33,7 @@ import org.apache.cassandra.utils.Pair;
  *
  * Used by the partitioner and by map/reduce by-token range scans.
  */
+//必须注意是(left, right]
 public class Range<T extends RingPosition> extends AbstractBounds<T> implements Comparable<Range<T>>, Serializable
 {
     public static final long serialVersionUID = 1L;
