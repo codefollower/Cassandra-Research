@@ -46,6 +46,7 @@ import static org.apache.cassandra.io.sstable.Downsampling.BASE_SAMPLING_LEVEL;
  *     (This is necessary because keys can have different lengths.)
  *  2.  A sequence of (DecoratedKey, position) pairs, where position is the offset into the actual index file.
  */
+//IndexSummary中的数据使用off-heap(对应Memory)
 public class IndexSummary implements Closeable
 {
     private static final Logger logger = LoggerFactory.getLogger(IndexSummary.class);

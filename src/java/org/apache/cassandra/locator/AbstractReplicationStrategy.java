@@ -83,6 +83,8 @@ public abstract class AbstractReplicationStrategy
 
     public ArrayList<InetAddress> getCachedEndpoints(Token t)
     {
+        //return null; //我加上了，为了观察每次地址是如何选的
+
         long lastVersion = tokenMetadata.getRingVersion();
 
         if (lastVersion > clonedTokenMetadataVersion)
@@ -253,6 +255,9 @@ public abstract class AbstractReplicationStrategy
         Class [] parameterTypes = new Class[] {String.class, TokenMetadata.class, IEndpointSnitch.class, Map.class};
         try
         {
+            //从这里看出，要扩展出一个AbstractReplicationStrategy子类，
+            //子类的构造函数必须要有这样的参数:
+            //(String keyspaceName, TokenMetadata tokenMetadata, IEndpointSnitch snitch, Map<String, String> configOptions)
             Constructor<? extends AbstractReplicationStrategy> constructor = strategyClass.getConstructor(parameterTypes);
             strategy = constructor.newInstance(keyspaceName, tokenMetadata, snitch, strategyOptions);
         }
@@ -263,6 +268,7 @@ public abstract class AbstractReplicationStrategy
         return strategy;
     }
 
+    //与validateReplicationStrategy差不多，只不过会忽略不可识别的选项
     public static AbstractReplicationStrategy createReplicationStrategy(String keyspaceName,
                                                                         Class<? extends AbstractReplicationStrategy> strategyClass,
                                                                         TokenMetadata tokenMetadata,
@@ -299,8 +305,13 @@ public abstract class AbstractReplicationStrategy
                                                    IEndpointSnitch snitch,
                                                    Map<String, String> strategyOptions) throws ConfigurationException
     {
+        //会生成一个AbstractReplicationStrategy子类的实例，
+        //每个实例在调用AbstractReplicationStrategy的构造函数时会向TokenMetadata注册，
+        //所以TokenMetadata中会有多个子类的实例。
         AbstractReplicationStrategy strategy = createInternal(keyspaceName, strategyClass, tokenMetadata, snitch, strategyOptions);
+        //检查哪些选项是允许的，不过并不检查选项值是否合法(留到validateOptions检查)
         strategy.validateExpectedOptions();
+        //检查选项值是否合法
         strategy.validateOptions();
     }
 
@@ -330,6 +341,7 @@ public abstract class AbstractReplicationStrategy
         }
     }
 
+    //检查哪些选项是允许的，不过并不检查选项值是否合法(留到validateOptions检查)
     private void validateExpectedOptions() throws ConfigurationException
     {
         Collection expectedOptions = recognizedOptions();

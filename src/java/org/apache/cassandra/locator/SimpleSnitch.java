@@ -25,6 +25,7 @@ import java.util.List;
  * allowing non-read-repaired reads to prefer a single endpoint, which improves
  * cache locality.
  */
+//此类不考虑snitch，但是NetworkTopologyStrategy要考虑
 public class SimpleSnitch extends AbstractEndpointSnitch
 {
     public String getRack(InetAddress endpoint)

@@ -483,7 +483,9 @@ public class SSTableReader extends SSTable implements Closeable
      */
     private void load(boolean recreateBloomFilter, boolean saveSummaryIfCreated) throws IOException
     {
+        //索引构建器
         SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
+        //数据构建器
         SegmentedFile.Builder dbuilder = compression
                                          ? SegmentedFile.getCompressedBuilder()
                                          : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
@@ -552,6 +554,7 @@ public class SSTableReader extends SSTable implements Closeable
         last = getMinimalKey(last);
     }
 
+    //加载Summary.db文件
     public boolean loadSummary(SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder, CFMetaData metadata)
     {
         File summariesFile = new File(descriptor.filenameFor(Component.SUMMARY));

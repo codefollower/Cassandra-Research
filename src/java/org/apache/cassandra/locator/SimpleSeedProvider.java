@@ -35,13 +35,15 @@ public class SimpleSeedProvider implements SeedProvider
 
     public SimpleSeedProvider(Map<String, String> args)
     {
+        //见org.apache.cassandra.config.SeedProviderDef的注释
+        //如seeds: "127.0.0.1, 127.0.0.2"
         String[] hosts = args.get("seeds").split(",", -1);
         seeds = new ArrayList<InetAddress>(hosts.length);
         for (String host : hosts)
         {
             try
             {
-                seeds.add(InetAddress.getByName(host.trim()));
+                seeds.add(InetAddress.getByName(host.trim())); //可能有空格，所以要trim
             }
             catch (UnknownHostException ex)
             {
