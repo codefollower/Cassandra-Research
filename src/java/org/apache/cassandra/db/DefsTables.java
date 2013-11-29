@@ -109,7 +109,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *  => (column=cf:c:name, value="aGVsbG8=", timestamp=1327061105833119000)
  *  => (column=cf:c:validation_class, value="org.apache.cassandra.db.marshal.AsciiType", timestamp=1327061105833119000)
  */
-public class DefsTables
+public class DefsTables //都是static方法
 {
     private static final Logger logger = LoggerFactory.getLogger(DefsTables.class);
 
@@ -120,12 +120,14 @@ public class DefsTables
      */
     public static Collection<KSMetaData> loadFromKeyspace()
     {
+        //读取schema_keyspaces表中的记录，看看有哪些keyspace
         List<Row> serializedSchema = SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
 
         List<KSMetaData> keyspaces = new ArrayList<KSMetaData>(serializedSchema.size());
 
         for (Row row : serializedSchema)
         {
+            //忽略掉system和system_traces这两个keyspace
             if (Schema.invalidSchemaRow(row) || Schema.ignoredSchemaRow(row))
                 continue;
 
@@ -150,6 +152,7 @@ public class DefsTables
 
     private static Row serializedColumnFamilies(DecoratedKey ksNameKey)
     {
+        //查询schema_columnfamilies表
         ColumnFamilyStore cfsStore = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
         return new Row(ksNameKey, cfsStore.getColumnFamily(QueryFilter.getIdentityFilter(ksNameKey,
                                                                                          SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF,
@@ -168,7 +171,9 @@ public class DefsTables
     public static synchronized void mergeSchema(Collection<RowMutation> mutations) throws ConfigurationException, IOException
     {
         // current state of the schema
+        //获得schema_keyspaces表中的记录
         Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
+        //获得schema_columnfamilies表中的记录
         Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
         List<Row> oldTypes = SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF);
 
@@ -176,7 +181,7 @@ public class DefsTables
             mutation.apply();
 
         if (!StorageService.instance.isClientMode())
-            flushSchemaCFs();
+            flushSchemaCFs(); //会强制刷新memtable
 
         // with new data applied
         Map<DecoratedKey, ColumnFamily> newKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
@@ -209,6 +214,7 @@ public class DefsTables
 
             // we don't care about nested ColumnFamilies here because those are going to be processed separately
             if (!(ksAttrs.getColumnCount() == 0))
+                //前面调用mergeSchema时也执行了mutation.apply()，记录也存在system.schema_keyspaces表中了，KSMetaData.fromSchema中再次读出来
                 addKeyspace(KSMetaData.fromSchema(new Row(entry.getKey(), entry.getValue()), Collections.<CFMetaData>emptyList()));
         }
 
@@ -380,6 +386,7 @@ public class DefsTables
         if (!StorageService.instance.isClientMode())
         {
             Keyspace.open(ksm.name);
+            //通知所有IMigrationListener发生了CreateKeyspace事件
             MigrationManager.instance.notifyCreateKeyspace(ksm);
         }
     }

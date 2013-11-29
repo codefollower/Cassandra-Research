@@ -98,6 +98,7 @@ public class CommitLogSegment
     {
         id = getNextId();
         descriptor = new CommitLogDescriptor(id);
+        //例如: my-test-data\commitlog\CommitLog-3-1380549089549.log
         logFile = new File(DatabaseDescriptor.getCommitLogLocation(), descriptor.fileName());
         boolean isCreating = true;
 
@@ -123,10 +124,12 @@ public class CommitLogSegment
                 logger.debug("Creating new commit log segment {}", logFile.getPath());
 
             // Map the segment, extending or truncating it to the standard segment size
+            //默认32M
             logFileAccessor.setLength(DatabaseDescriptor.getCommitLogSegmentSize());
-
+            //直接映射到内存
             buffer = logFileAccessor.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, DatabaseDescriptor.getCommitLogSegmentSize());
             checksum = new PureJavaCrc32();
+            //使用ChecksummedOutputStream写数据时checksum也同时更新了
             bufferStream = new DataOutputStream(new ChecksummedOutputStream(new ByteBufferOutputStream(buffer), checksum));
             buffer.putInt(CommitLog.END_OF_SEGMENT_MARKER);
             buffer.position(0);
@@ -201,7 +204,7 @@ public class CommitLogSegment
             }
             else
             {
-                markCFDirty(cfm.cfId, repPos.position);
+                markCFDirty(cfm.cfId, repPos.position); //记下当前要写的column family在内存buffer中的位置
             }
         }
     }
@@ -222,10 +225,11 @@ public class CommitLogSegment
 
         // checksummed length
         int length = (int) RowMutation.serializer.serializedSize(mutation, MessagingService.current_version);
-        bufferStream.writeInt(length);
+        bufferStream.writeInt(length); //导致buffer的位置也向前移
         buffer.putLong(checksum.getValue());
 
         // checksummed mutation
+        //把RowMutation内容写到bufferStream
         RowMutation.serializer.serialize(mutation, bufferStream, MessagingService.current_version);
         buffer.putLong(checksum.getValue());
 
@@ -233,6 +237,7 @@ public class CommitLogSegment
         {
             // writes end of segment marker and rewinds back to position where it starts
             buffer.putInt(CommitLog.END_OF_SEGMENT_MARKER);
+            //位置往回退4个字节
             buffer.position(buffer.position() - CommitLog.END_OF_SEGMENT_MARKER_SIZE);
         }
 

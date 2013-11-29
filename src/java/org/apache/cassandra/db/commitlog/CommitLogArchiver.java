@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Strings;
 
+//运行OS本地命令归档提交日志文件(在conf目录下有个commitlog_archiving.properties文件，默认不执行)
 public class CommitLogArchiver
 {
     private static final Logger logger = LoggerFactory.getLogger(CommitLogArchiver.class);

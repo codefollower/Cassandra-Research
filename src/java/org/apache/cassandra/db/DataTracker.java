@@ -561,6 +561,7 @@ public class DataTracker
             return Sets.difference(ImmutableSet.copyOf(sstables), compacting);
         }
 
+        //相当于把原来的memtable放入memtablesPendingFlush，而newMemtable作为当前memtable
         public View switchMemtable(Memtable newMemtable)
         {
             Set<Memtable> newPending = ImmutableSet.<Memtable>builder().addAll(memtablesPendingFlush).add(memtable).build();

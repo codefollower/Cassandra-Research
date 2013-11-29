@@ -36,7 +36,7 @@ public class ColumnToCollectionType extends AbstractType<ByteBuffer>
     private static final Map<Map<ByteBuffer, CollectionType>, ColumnToCollectionType> instances = new HashMap<Map<ByteBuffer, CollectionType>, ColumnToCollectionType>();
 
     public final Map<ByteBuffer, CollectionType> defined;
-
+    //未使用
     public static ColumnToCollectionType getInstance(TypeParser parser) throws SyntaxException, ConfigurationException
     {
         return getInstance(parser.getCollectionsParameters());

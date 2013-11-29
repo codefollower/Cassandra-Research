@@ -93,6 +93,8 @@ public class Memtable
     // We index the memtable by RowPosition only for the purpose of being able
     // to select key range using Token.KeyBound. However put() ensures that we
     // actually only store DecoratedKey.
+
+    //AtomicSortedColumns只是针对一行的，代表某行中的所有列
     private final ConcurrentNavigableMap<RowPosition, AtomicSortedColumns> rows = new ConcurrentSkipListMap<RowPosition, AtomicSortedColumns>();
     public final ColumnFamilyStore cfs;
     private final long creationTime = System.currentTimeMillis();
@@ -180,6 +182,7 @@ public class Memtable
 
     private void resolve(DecoratedKey key, ColumnFamily cf, SecondaryIndexManager.Updater indexer)
     {
+        //会触发DecoratedKey的compareTo方法
         AtomicSortedColumns previous = rows.get(key);
 
         if (previous == null)

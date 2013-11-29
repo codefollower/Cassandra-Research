@@ -41,6 +41,7 @@ import org.apache.cassandra.utils.FBUtilities;
  * Commit Log tracks every write operation into the system. The aim of the commit log is to be able to
  * successfully recover data that was not stored to disk via the Memtable.
  */
+//对org.apache.cassandra.db.commitlog包中的类进行debug，直接打断点就可以了，Cassandra启动时会触发
 public class CommitLog implements CommitLogMBean
 {
     private static final Logger logger = LoggerFactory.getLogger(CommitLog.class);
@@ -333,12 +334,13 @@ public class CommitLog implements CommitLogMBean
         public void run()
         {
             long totalSize = RowMutation.serializer.serializedSize(rowMutation, MessagingService.current_version) + CommitLogSegment.ENTRY_OVERHEAD_SIZE;
+            //一条log大于32M(默认值)时直接忽略
             if (totalSize > DatabaseDescriptor.getCommitLogSegmentSize())
             {
                 logger.warn("Skipping commitlog append of extremely large mutation ({} bytes)", totalSize);
                 return;
             }
-
+            //如果当前日志文件无法容纳新的日志记录了，切换到新的日志文件
             if (!activeSegment.hasCapacityFor(totalSize))
             {
                 CommitLogSegment oldSegment = activeSegment;

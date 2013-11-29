@@ -89,6 +89,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     {
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, column));
         ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
+        //对于CompositesIndexOnRegular类型，makeIndexColumnName返回的只有rowKey
         ByteBuffer name = makeIndexColumnName(rowKey, column);
         assert name.remaining() > 0 && name.remaining() <= Column.MAX_NAME_LENGTH : name.remaining();
         if (column instanceof ExpiringColumn)

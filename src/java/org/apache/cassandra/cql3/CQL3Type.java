@@ -48,7 +48,7 @@ public interface CQL3Type
         TIMESTAMP(TimestampType.instance),
         UUID     (UUIDType.instance),
         VARCHAR  (UTF8Type.instance),
-        VARINT   (IntegerType.instance),
+        VARINT   (IntegerType.instance), //Int32Type对应int类型，而IntegerType对应BigInteger
         TIMEUUID (TimeUUIDType.instance);
 
         private final AbstractType<?> type;
@@ -85,6 +85,11 @@ public interface CQL3Type
         }
     }
 
+    //可以像这样定义字段类型:
+    //CREATE TABLE(f1 'org.apache.cassandra.db.marshal.UTF8Type');
+    //CREATE TABLE(f1 'UTF8Type');
+    //但是不能这样:
+    //CREATE TABLE(f1 UTF8Type); //要加引号
     public static class Custom implements CQL3Type
     {
         private final AbstractType<?> type;
@@ -142,6 +147,8 @@ public interface CQL3Type
         }
     }
 
+    //如: "CREATE TABLE IF NOT EXISTS test ( block_id uuid PRIMARY KEY, s set<int>, l list<int>, m map<text,int>)
+    //Collection类型的元素类型不能是couter类型和Collection类型
     public static class Collection implements CQL3Type
     {
         CollectionType type;

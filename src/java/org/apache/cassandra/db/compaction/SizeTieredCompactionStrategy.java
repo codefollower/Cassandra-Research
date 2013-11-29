@@ -74,8 +74,8 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             return Collections.emptyList();
 
         // make local copies so they can't be changed out from under us mid-method
-        int minThreshold = cfs.getMinimumCompactionThreshold();
-        int maxThreshold = cfs.getMaximumCompactionThreshold();
+        int minThreshold = cfs.getMinimumCompactionThreshold(); //默认是4
+        int maxThreshold = cfs.getMaximumCompactionThreshold(); //默认是32
 
         Iterable<SSTableReader> candidates = filterSuspectSSTables(cfs.getUncompactingSSTables());
         candidates = filterColdSSTables(Lists.newArrayList(candidates), options.coldReadsToOmit);

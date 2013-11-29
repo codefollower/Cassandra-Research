@@ -28,12 +28,15 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 
+//在org.apache.cassandra.service.CassandraDaemon.setup()
+//固定每隔1秒检查一下(不可配置的)
 public class MeteredFlusher implements Runnable
 {
     private static final Logger logger = LoggerFactory.getLogger(MeteredFlusher.class);
 
     public void run()
     {
+        //1048576L是1024*1024 = 1M
         long totalMemtableBytesAllowed = DatabaseDescriptor.getTotalMemtableSpaceInMB() * 1048576L;
 
         // first, find how much memory non-active memtables are using

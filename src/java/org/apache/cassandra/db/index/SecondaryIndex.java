@@ -265,10 +265,10 @@ public abstract class SecondaryIndex
      * @param value column value
      * @return decorated key
      */
-    public DecoratedKey getIndexKeyFor(ByteBuffer value)
+    public DecoratedKey getIndexKeyFor(ByteBuffer value) //value是索引字段值
     {
         // FIXME: this imply one column definition per index
-        ByteBuffer name = columnDefs.iterator().next().name.bytes;
+        ByteBuffer name = columnDefs.iterator().next().name.bytes; //索引字段名
         return new DecoratedKey(new LocalToken(baseCfs.metadata.getColumnDefinition(name).type, value), value);
     }
 

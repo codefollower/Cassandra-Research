@@ -96,7 +96,7 @@ public class Keyspace
     private static Keyspace open(String keyspaceName, Schema schema, boolean loadSSTables)
     {
         Keyspace keyspaceInstance = schema.getKeyspaceInstance(keyspaceName);
-
+        //因为Schema.keyspaceInstances字段是NonBlockingHashMap类型，是非线程安全的，所以要double check
         if (keyspaceInstance == null)
         {
             // instantiate the Keyspace.  we could use putIfAbsent but it's important to making sure it is only done once
@@ -258,6 +258,7 @@ public class Keyspace
 
     private Keyspace(String keyspaceName, boolean loadSSTables)
     {
+        //在org.apache.cassandra.config.DatabaseDescriptor.applyConfig方法中已经加入了KSMetaData
         metadata = Schema.instance.getKSMetaData(keyspaceName);
         assert metadata != null : "Unknown keyspace " + keyspaceName;
         createReplicationStrategy(metadata);

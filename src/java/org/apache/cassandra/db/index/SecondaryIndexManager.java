@@ -585,7 +585,7 @@ public class SecondaryIndexManager
 
         public StandardUpdater(DecoratedKey key, ColumnFamily cf)
         {
-            this.key = key;
+            this.key = key; //是rowkey
             this.cf = cf;
         }
 

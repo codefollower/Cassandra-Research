@@ -25,6 +25,7 @@ import org.apache.cassandra.serializers.Int32Serializer;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//Int32Type对应int类型，而IntegerType对应BigInteger
 public class Int32Type extends AbstractType<Integer>
 {
     public static final Int32Type instance = new Int32Type();

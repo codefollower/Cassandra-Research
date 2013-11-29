@@ -62,6 +62,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             for (Entry<String, String> entry : configOptions.entrySet())
             {
                 String dc = entry.getKey();
+                //支持<数据中心名称，int值>这样的选项值对，但是不允许出现replication_factor
                 if (dc.equalsIgnoreCase("replication_factor"))
                     throw new ConfigurationException("replication_factor is an option for SimpleStrategy, not NetworkTopologyStrategy");
                 Integer replicas = Integer.valueOf(entry.getValue());
@@ -85,6 +86,8 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
         Map<String, Set<InetAddress>> dcReplicas = new HashMap<String, Set<InetAddress>>(datacenters.size())
         {{
             for (Map.Entry<String, Integer> dc : datacenters.entrySet())
+                //dc.getValue()是复制的份数，此时充当HashSet初始大小
+                //dc.getValue()也可以看成是多少个InetAddress
                 put(dc.getKey(), new HashSet<InetAddress>(dc.getValue()));
         }};
         Topology topology = tokenMetadata.getTopology();

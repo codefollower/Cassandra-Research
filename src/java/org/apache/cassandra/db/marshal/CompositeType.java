@@ -321,7 +321,7 @@ public class CompositeType extends AbstractCompositeType
 
         private final List<ByteBuffer> components;
         private final byte[] endOfComponents;
-        private int serializedSize;
+        private int serializedSize; //没有地方赋值，就是0
 
         public Builder(CompositeType composite)
         {
@@ -421,7 +421,7 @@ public class CompositeType extends AbstractCompositeType
             return ByteBuffer.wrap(out.getData(), 0, out.getLength());
         }
 
-        public ByteBuffer buildAsEndOfRange()
+        public ByteBuffer buildAsEndOfRange() //相当于<或<=，正如方法名buildAsEndOfRange，意思就是把最后一项用end
         {
             if (components.isEmpty())
                 return ByteBufferUtil.EMPTY_BYTE_BUFFER;

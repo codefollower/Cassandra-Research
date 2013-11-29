@@ -171,6 +171,20 @@ public class Directories
         int idx = cfname.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
         if (idx > 0)
             // secondary index, goes in the same directory than the base cf
+            //例如cfname="schema_triggers.747269676765725f6e616d65"
+            //Directories内部得到directoryName=cfname.substring(0, idx)="schema_triggers"
+            //触发栈:
+            /*
+             *  at org.apache.cassandra.db.Directories.create(Directories.java:88)
+                at org.apache.cassandra.db.ColumnFamilyStore.scrubDataDirectories(ColumnFamilyStore.java:422)
+                at org.apache.cassandra.db.ColumnFamilyStore.scrubDataDirectories(ColumnFamilyStore.java:465)
+                at org.apache.cassandra.service.CassandraDaemon.setup(CassandraDaemon.java:228)
+                at org.apache.cassandra.service.CassandraDaemon.activate(CassandraDaemon.java:447)
+                at org.apache.cassandra.service.CassandraDaemon.main(CassandraDaemon.java:490)
+                at my.test.start.CassandraDaemonStart.main(CassandraDaemonStart.java:40)
+             */
+            //创建keyspacename/cfname.substring(0, idx)目录
+            // secondary index, goes in the same directory than the base cf
             return new Directories(keyspacename, cfname, cfname.substring(0, idx));
         else
             return new Directories(keyspacename, cfname, cfname);
@@ -421,6 +435,10 @@ public class Directories
                 public boolean accept(File file)
                 {
                     // we are only interested in the SSTable files that belong to the specific ColumnFamily
+                    //过滤到二级索引相关的文件
+                    //二级索引相关的文件类似这样:
+                    //mytest-keysindextest.KeysIndexTest_index_f1-ja-1-CompressionInfo.db
+                    //而sstablePrefix="mytest-keysindextest-"，所以不满足startsWith
                     if (file.isDirectory() || !file.getName().startsWith(sstablePrefix))
                         return false;
 

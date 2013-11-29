@@ -64,7 +64,7 @@ import static org.apache.cassandra.cql3.QueryProcessor.processInternal;
 public class SystemKeyspace
 {
     private static final Logger logger = LoggerFactory.getLogger(SystemKeyspace.class);
-
+    //对应system中的17个表(或称列族)
     // see CFMetaData for schema definitions
     public static final String PEERS_CF = "peers";
     public static final String PEER_EVENTS_CF = "peer_events";
@@ -519,6 +519,7 @@ public class SystemKeyspace
     public static int incrementAndGetGeneration()
     {
         String req = "SELECT gossip_generation FROM system.%s WHERE key='%s'";
+        //是: SELECT gossip_generation FROM system.local WHERE key='local'
         UntypedResultSet result = processInternal(String.format(req, LOCAL_CF, LOCAL_KEY));
 
         int generation;
@@ -723,6 +724,7 @@ public class SystemKeyspace
      * @param schemaCfName The name of the ColumnFamily responsible for part of the schema (keyspace, ColumnFamily, columns)
      * @return low-level schema representation (each row represents individual Keyspace or ColumnFamily)
      */
+    //相当于查询schemaCfName对应的ColumnFamilyStore中的记录
     public static List<Row> serializedSchema(String schemaCfName)
     {
         Token minToken = StorageService.getPartitioner().getMinimumToken();
@@ -772,7 +774,7 @@ public class SystemKeyspace
         return schema;
     }
 
-    public static ByteBuffer getSchemaKSKey(String ksName)
+    public static ByteBuffer getSchemaKSKey(String ksName) //以US-ASCII编码把String类型的ksName转成ByteBuffer
     {
         return AsciiType.instance.fromString(ksName);
     }

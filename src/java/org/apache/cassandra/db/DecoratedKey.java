@@ -43,8 +43,8 @@ public class DecoratedKey extends RowPosition
         }
     };
 
-    public final Token token;
-    public final ByteBuffer key;
+    public final Token token; //相当于机器位置
+    public final ByteBuffer key; //相当于HBase里的rowKey
 
     public DecoratedKey(Token token, ByteBuffer key)
     {

@@ -25,6 +25,8 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//Row相当于RowMutation的简化版，只有一个ColumnFamily
+//rowKey放在DecoratedKey中
 public class Row
 {
     public static final RowSerializer serializer = new RowSerializer();

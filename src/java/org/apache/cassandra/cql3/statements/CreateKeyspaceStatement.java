@@ -77,12 +77,12 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
      */
     public void validate(ClientState state) throws RequestValidationException
     {
-        ThriftValidation.validateKeyspaceNotSystem(name);
+        ThriftValidation.validateKeyspaceNotSystem(name); //不能使用"system"作为Keyspace名
 
         // keyspace name
         if (!name.matches("\\w+"))
             throw new InvalidRequestException(String.format("\"%s\" is not a valid keyspace name", name));
-        if (name.length() > Schema.NAME_LENGTH)
+        if (name.length() > Schema.NAME_LENGTH) //Keyspace的名称长度不能大于48
             throw new InvalidRequestException(String.format("Keyspace names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, name));
 
         attrs.validate();
@@ -93,6 +93,7 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
         // The strategy is validated through KSMetaData.validate() in announceNewKeyspace below.
         // However, for backward compatibility with thrift, this doesn't validate unexpected options yet,
         // so doing proper validation here.
+        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
         AbstractReplicationStrategy.validateReplicationStrategy(name,
                                                                 AbstractReplicationStrategy.getClass(attrs.getReplicationStrategyClass()),
                                                                 StorageService.instance.getTokenMetadata(),
