@@ -1,0 +1,17 @@
+*.class
+
+.settings
+.classpath
+.project
+target
+build
+my-test-data
+src/**/gen-java
+/src/resources/org/apache/cassandra/config
+
+/src/gen-java/org/apache/cassandra/cli
+
+/src/gen-java/org/apache/cassandra/cql
+
+/src/gen-java/org/apache/cassandra/cql3
+

@@ -649,12 +649,14 @@
                destdir="${build.classes.thrift}" includeantruntime="false" source="${source.version}" target="${target.version}">
             <src path="${interface.thrift.dir}/gen-java"/>
             <classpath refid="cassandra.classpath"/>
+			<compilerarg line="-encoding UTF-8"/>
         </javac>
         <javac debug="true" debuglevel="${debuglevel}"
                destdir="${build.classes.main}" includeantruntime="false" source="${source.version}" target="${target.version}">
             <src path="${build.src.java}"/>
             <src path="${build.src.gen-java}"/>
             <classpath refid="cassandra.classpath"/>
+			<compilerarg line="-encoding UTF-8"/>
         </javac>
         <antcall target="createVersionPropFile"/>
         <copy todir="${build.classes.main}">
@@ -682,6 +684,7 @@
                     </fileset>
                 </path>
             </classpath>
+			<compilerarg line="-encoding UTF-8"/>
         </javac>
     </target>
 
@@ -995,6 +998,7 @@
       </classpath>
       <src path="${test.unit.src}"/>
       <src path="${test.long.src}"/>
+	  <compilerarg line="-encoding UTF-8"/>
     </javac>
 
     <!-- Non-java resources needed by the test suite -->
@@ -1228,7 +1232,7 @@
     <echo file=".project"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
   <!-- <name>${eclipse.project.name}</name> -->
-  <name>cassandra-trunk</name>
+  <name>cassandra-research</name>
   <comment></comment>
   <projects>
   </projects>
