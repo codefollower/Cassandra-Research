@@ -53,6 +53,9 @@ public final class KSMetaData
             cfmap.put(cfm.cfName, cfm);
         this.cfMetaData = Collections.unmodifiableMap(cfmap);
         this.durableWrites = durableWrites;
+        //我加上的
+        //for (CFMetaData cfm : cfDefs)
+        //    System.out.println(cfm);
     }
 
     // For new user created keyspaces (through CQL)
@@ -201,12 +204,15 @@ public final class KSMetaData
 
     public KSMetaData validate() throws ConfigurationException
     {
-        if (!CFMetaData.isNameValid(name))
+        if (!CFMetaData.isNameValid(name)) //最大长度是48个字符
             throw new ConfigurationException(String.format("Keyspace name must not be empty, more than %s characters long, or contain non-alphanumeric-underscore characters (got \"%s\")", Schema.NAME_LENGTH, name));
 
         // Attempt to instantiate the ARS, which will throw a ConfigException if the strategy_options aren't fully formed
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
         IEndpointSnitch eps = DatabaseDescriptor.getEndpointSnitch();
+        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
+        //CreateKeyspaceStatement.validate(ClientState)那里也调用了一次，
+        //不过 因为这个方法不一定由CreateKeyspaceStatement.validate触发，所以多调用一次也是没关系的
         AbstractReplicationStrategy.validateReplicationStrategy(name, strategyClass, tmd, eps, strategyOptions);
 
         for (CFMetaData cfm : cfMetaData.values())
@@ -239,6 +245,9 @@ public final class KSMetaData
 
     public RowMutation toSchema(long timestamp)
     {
+        //SystemKeyspace.getSchemaKSKey(name)以US-ASCII编码把String类型的name转成ByteBuffer
+        //新建的Keyspace会对应system.schema_keyspaces表中的一条记录，Keyspace.name为system.schema_keyspaces表的主键
+        //RowMutation就代表一条即将存入的记录
         RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(name));
         ColumnFamily cf = rm.addOrGet(CFMetaData.SchemaKeyspacesCf);
 
@@ -261,6 +270,7 @@ public final class KSMetaData
      */
     public static KSMetaData fromSchema(Row row, Iterable<CFMetaData> cfms)
     {
+        //row相当于一个where条件
         UntypedResultSet.Row result = QueryProcessor.resultify("SELECT * FROM system.schema_keyspaces", row).one();
         try
         {

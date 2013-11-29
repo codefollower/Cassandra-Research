@@ -46,6 +46,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
      */
     private URL getStorageConfigURL() throws ConfigurationException
     {
+        //读取cassandra.yaml文件，可通过System.setProperty("cassandra.config", "xxx")来设置
         String configUrl = System.getProperty("cassandra.config");
         if (configUrl == null)
             configUrl = DEFAULT_CONFIGURATION;

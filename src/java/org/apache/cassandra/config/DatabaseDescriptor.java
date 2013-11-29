@@ -53,6 +53,7 @@ import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.FBUtilities;
 
+//重点关注applyConfig、loadSchemas两个方法
 public class DatabaseDescriptor
 {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseDescriptor.class);
@@ -68,6 +69,8 @@ public class DatabaseDescriptor
     private static InetAddress broadcastAddress;
     private static InetAddress rpcAddress;
     private static SeedProvider seedProvider;
+
+    //实现类只有org.apache.cassandra.auth.AllowAllInternodeAuthenticator，什么都不做
     private static IInternodeAuthenticator internodeAuthenticator;
 
     /* Hashing strategy Random or OPHF */
@@ -78,14 +81,19 @@ public class DatabaseDescriptor
 
     private static Config conf;
 
-    private static IAuthenticator authenticator = new AllowAllAuthenticator();
-    private static IAuthorizer authorizer = new AllowAllAuthorizer();
+    private static IAuthenticator authenticator = new AllowAllAuthenticator(); //认证
+    private static IAuthorizer authorizer = new AllowAllAuthorizer(); //受权
 
     private static IRequestScheduler requestScheduler;
-    private static RequestSchedulerId requestSchedulerId;
-    private static RequestSchedulerOptions requestSchedulerOptions;
+    private static RequestSchedulerId requestSchedulerId; //枚举类型，只有一个值: keyspace
+    private static RequestSchedulerOptions requestSchedulerOptions; //未见使用
 
     private static long keyCacheSizeInMB;
+    //实现类有:
+    //org.apache.cassandra.io.util.NativeAllocator
+    //org.apache.cassandra.io.util.JEMallocAllocator
+    //默认是NativeAllocator
+    //用来实现off-heap(离线堆)
     private static IAllocator memoryAllocator;
     private static long indexSummaryCapacityInMB;
 
@@ -101,11 +109,11 @@ public class DatabaseDescriptor
         // should be used with care.
         try
         {
-            if (Config.isClientMode())
+            if (Config.isClientMode()) //默认是false，如果是true，那么就不读配置文件了
             {
                 conf = new Config();
                 // at least we have to set memoryAllocator to open SSTable in client mode
-                memoryAllocator = FBUtilities.newOffHeapAllocator(conf.memory_allocator);
+                memoryAllocator = FBUtilities.newOffHeapAllocator(conf.memory_allocator); //是NativeAllocator
             }
             else
             {
@@ -129,6 +137,8 @@ public class DatabaseDescriptor
     @VisibleForTesting
     static Config loadConfig() throws ConfigurationException
     {
+        //可以通过系统属性"cassandra.config.loader"来自定义配置装载器
+        //只要实现org.apache.cassandra.config.ConfigurationLoader接口
         String loaderClass = System.getProperty("cassandra.config.loader");
         ConfigurationLoader loader = loaderClass == null
                                    ? new YamlConfigurationLoader()
@@ -143,13 +153,14 @@ public class DatabaseDescriptor
         logger.info("Data files directories: {}", Arrays.toString(conf.data_file_directories));
         logger.info("Commit log directory: {}", conf.commitlog_directory);
 
-        if (conf.commitlog_sync == null)
+        if (conf.commitlog_sync == null) //必须配置commitlog_sync参数
         {
             throw new ConfigurationException("Missing required directive CommitLogSync");
         }
 
         if (conf.commitlog_sync == Config.CommitLogSync.batch)
         {
+            //commitlog_sync_batch_window_in_ms与commitlog_sync_period_in_ms二选一
             if (conf.commitlog_sync_batch_window_in_ms == null)
             {
                 throw new ConfigurationException("Missing value for commitlog_sync_batch_window_in_ms: Double expected.");
@@ -177,6 +188,7 @@ public class DatabaseDescriptor
             conf.commitlog_total_space_in_mb = System.getProperty("os.arch").contains("64") ? 1024 : 32;
 
         /* evaluate the DiskAccessMode Config directive, which also affects indexAccessMode selection */
+        //自动侦测，64位系统使用mmap
         if (conf.disk_access_mode == Config.DiskAccessMode.auto)
         {
             conf.disk_access_mode = System.getProperty("os.arch").contains("64") ? Config.DiskAccessMode.mmap : Config.DiskAccessMode.standard;
@@ -203,7 +215,7 @@ public class DatabaseDescriptor
 
         if (conf.authorizer != null)
             authorizer = FBUtilities.newAuthorizer(conf.authorizer);
-
+        //AllowAllAuthenticator与AllowAllAuthorizer必须同时使用
         if (authenticator instanceof AllowAllAuthenticator && !(authorizer instanceof AllowAllAuthorizer))
             throw new ConfigurationException("AllowAllAuthenticator can't be used with " +  conf.authorizer);
 
@@ -253,7 +265,7 @@ public class DatabaseDescriptor
             throw new ConfigurationException("concurrent_replicates must be at least 2");
         }
 
-        if (conf.file_cache_size_in_mb == null)
+        if (conf.file_cache_size_in_mb == null) //最大内存的1/3，1048576=1024*1024=1M
             conf.file_cache_size_in_mb = Math.min(512, (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576)));
 
         if (conf.memtable_total_space_in_mb == null)
@@ -334,7 +346,7 @@ public class DatabaseDescriptor
             throw new ConfigurationException("Missing endpoint_snitch directive");
         }
         snitch = createEndpointSnitch(conf.endpoint_snitch);
-        EndpointSnitchInfo.create();
+        EndpointSnitchInfo.create(); //注册MBean
 
         localDC = snitch.getDatacenter(FBUtilities.getBroadcastAddress());
         localComparator = new Comparator<InetAddress>()
@@ -385,7 +397,7 @@ public class DatabaseDescriptor
         else
         {
             // Default to Keyspace
-            requestSchedulerId = RequestSchedulerId.keyspace;
+            requestSchedulerId = RequestSchedulerId.keyspace; //只有一个keyspace
         }
 
         if (logger.isDebugEnabled() && conf.auto_bootstrap != null)
@@ -405,6 +417,7 @@ public class DatabaseDescriptor
             throw new ConfigurationException("concurrent_compactors should be strictly greater than 0");
 
         /* data file and commit log directories. they get created later, when they're needed. */
+        //这三个参数不能指向同一目录
         if (conf.commitlog_directory != null && conf.data_file_directories != null && conf.saved_caches_directory != null)
         {
             for (String datadir : conf.data_file_directories)
@@ -438,7 +451,7 @@ public class DatabaseDescriptor
         try
         {
             // if key_cache_size_in_mb option was set to "auto" then size of the cache should be "min(5% of Heap (in MB), 100MB)
-            keyCacheSizeInMB = (conf.key_cache_size_in_mb == null)
+            keyCacheSizeInMB = (conf.key_cache_size_in_mb == null) //默认是总内存的5%
                 ? Math.min(Math.max(1, (int) (Runtime.getRuntime().totalMemory() * 0.05 / 1024 / 1024)), 100)
                 : conf.key_cache_size_in_mb;
 
@@ -475,8 +488,10 @@ public class DatabaseDescriptor
         memtableAllocator = FBUtilities.classForName(allocatorClass, "allocator");
 
         // Hardcoded system keyspaces
+        //指system和system_traces，不包含system_auth
         List<KSMetaData> systemKeyspaces = Arrays.asList(KSMetaData.systemKeyspace());
         assert systemKeyspaces.size() == Schema.systemKeyspaceNames.size();
+        //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
         for (KSMetaData ksmd : systemKeyspaces)
             Schema.instance.load(ksmd);
 
@@ -513,11 +528,11 @@ public class DatabaseDescriptor
     public static void loadSchemas()
     {
         Schema.instance.loadUserTypes();
-
+        //读取schema_keyspaces表
         ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_CF);
 
         // if keyspace with definitions is empty try loading the old way
-        if (schemaCFS.estimateKeys() == 0)
+        if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录
         {
             logger.info("Couldn't detect any schema definitions in local storage.");
             // peek around the data directories to see if anything is there.
@@ -647,7 +662,7 @@ public class DatabaseDescriptor
         return requestScheduler;
     }
 
-    public static RequestSchedulerOptions getRequestSchedulerOptions()
+    public static RequestSchedulerOptions getRequestSchedulerOptions() //未见使用
     {
         return requestSchedulerOptions;
     }
