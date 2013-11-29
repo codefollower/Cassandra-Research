@@ -43,6 +43,8 @@ public class IndexSummaryBuilder
     private long indexIntervalMatches = 0;
     private long offheapSize = 0;
 
+    //indexInterval默认是128个，见org.apache.cassandra.config.CFMetaData.indexInterval
+    //samplingLevel默认也是128个，见org.apache.cassandra.io.sstable.Downsampling.BASE_SAMPLING_LEVEL
     public IndexSummaryBuilder(long expectedKeys, int indexInterval, int samplingLevel)
     {
         this.indexInterval = indexInterval;

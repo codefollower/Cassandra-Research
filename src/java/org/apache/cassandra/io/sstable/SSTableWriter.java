@@ -42,8 +42,8 @@ import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.StreamingHistogram;
 
 //总共9个Component类型对应9种不同的文件。
-//SSTableWriter构造函数负责:data、COMPRESSION_INFO、CRC、DIGEST，其中的CRC、DIGEST在DataIntegrityMetadata.ChecksumWriter
-//IndexWriter里负责: index、summary、FILTER
+//SSTableWriter构造函数负责:DATA、COMPRESSION_INFO、CRC、DIGEST，其中的CRC、DIGEST在DataIntegrityMetadata.ChecksumWriter
+//IndexWriter里负责: INDEX、SUMMARY、FILTER
 //closeAndOpenReader里负责:STATS、TOC
 public class SSTableWriter extends SSTable
 {
@@ -68,7 +68,7 @@ public class SSTableWriter extends SSTable
              SSTableMetadata.createCollector(Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)).comparator));
     }
 
-    //10个Component类型，这里不包含COMPACTED_MARKER，要么选COMPRESSION_INFO要么选DIGEST和CRC
+    //9个Component类型，要么选COMPRESSION_INFO要么选DIGEST和CRC
     private static Set<Component> components(CFMetaData metadata)
     {
         Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,
@@ -100,7 +100,7 @@ public class SSTableWriter extends SSTable
                          IPartitioner<?> partitioner,
                          SSTableMetadata.Collector sstableMetadataCollector)
     {
-        super(Descriptor.fromFilename(filename),
+        super(Descriptor.fromFilename(filename), //不包含component部分
               components(metadata),
               metadata,
               partitioner);
