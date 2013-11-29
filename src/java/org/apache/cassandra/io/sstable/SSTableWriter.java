@@ -41,10 +41,10 @@ import org.apache.cassandra.utils.IFilter;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.StreamingHistogram;
 
+//总共9个Component类型对应9种不同的文件。
 //SSTableWriter构造函数负责:data、COMPRESSION_INFO、CRC、DIGEST，其中的CRC、DIGEST在DataIntegrityMetadata.ChecksumWriter
 //IndexWriter里负责: index、summary、FILTER
 //closeAndOpenReader里负责:STATS、TOC
-//10个Component类型只有COMPACTED_MARKER没有
 public class SSTableWriter extends SSTable
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableWriter.class);
