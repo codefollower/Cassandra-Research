@@ -112,11 +112,29 @@ public class Component
 
     /**
      * Filename of the form "<ksname>/<cfname>-[tmp-][<version>-]<gen>-<component>",
+     * 
      * @return A Descriptor for the SSTable, and a Component for this particular file.
      * TODO move descriptor into Component field
      */
+    //上面的注释是错的，不是<ksname>/<cfname>是<ksname>-<cfname>
+    //文件名的格式是: "<ksname>-<cfname>-[tmp-][<version>-]<gen>-<component>"
+    //例如:
+    //directory = my-test-data\cluster\node1\data\system\schema_triggers
+    //name = system-schema_triggers-jc-5-Data.db
+    //directory中的"my-test-data\cluster\node1\data"对应cassandra.yaml配置文件中的data_file_directories参数
+    //"system\schema_triggers"对应"<ksname>\<cfname>"
+    //对于name，"system"对应<ksname>、"schema_triggers"对应<cfname>、"jc"对应<version>、"5"对应<gen>、"Data.db"对应<component>
+    //[tmp-]是可选的，这里没有，
+    //如果name是这样: 
+    //name = system-schema_triggers-tmp-jc-5-Data.db，那么就有[tmp-]了
     public static Pair<Descriptor,Component> fromFilename(File directory, String name)
     {
+        //例如:
+        //directory = my-test-data\cluster\node1\data\system\schema_triggers
+        //name = system-schema_triggers-jc-5-Data.db
+        //那么Pair<Descriptor,String>就是:
+        //左边 = my-test-data\cluster\node1\data\system\schema_triggers\system-schema_triggers-jc-5
+        //右边 = Data.db
         Pair<Descriptor,String> path = Descriptor.fromFilename(directory, name);
 
         // parse the component suffix

@@ -44,6 +44,7 @@ public class Descriptor
     public static class Version
     {
         // This needs to be at the beginning for initialization sake
+        //之前的版本号是用字符串表示的(可查看2013-4-27的git提交记录)，现在大大地简化了，只判断一下jc和ja就可以了
         public static final String current_version = "jc";
 
         // ic (1.2.5): omits per-row bloom filter of column names
@@ -130,6 +131,7 @@ public class Descriptor
         }
     }
 
+    //不包含component部分
     public final File directory;
     /** version has the following format: <code>[a-z]+</code> */
     public final Version version;
@@ -169,12 +171,12 @@ public class Descriptor
         return new Descriptor(version, directory, ksname, cfname, newGeneration, temporary);
     }
 
-    public String filenameFor(Component component)
+    public String filenameFor(Component component) //包含component
     {
         return filenameFor(component.name());
     }
 
-    public String baseFilename()
+    public String baseFilename() //不包含component
     {
         StringBuilder buff = new StringBuilder();
         buff.append(directory).append(File.separatorChar);
@@ -215,6 +217,7 @@ public class Descriptor
      *
      * @return A Descriptor for the SSTable, and the Component remainder.
      */
+    //见Component.fromFilename(File, String)中的注释
     public static Pair<Descriptor,String> fromFilename(File directory, String name)
     {
         // tokenize the filename
@@ -276,7 +279,7 @@ public class Descriptor
     }
 
     @Override
-    public String toString()
+    public String toString() //不包含component
     {
         return baseFilename();
     }
