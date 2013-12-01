@@ -252,6 +252,7 @@ public class ArrayBackedSortedColumns extends AbstractThreadUnsafeSortedColumns
         // If reversed, the element are sorted reversely, so we could expect
         // to return *this*, but *this* redefine the iterator to be in sorted
         // order, so we need a collection that uses the super constructor
+        //如果reversed是true，调用getReverseSortedColumns说明是两次reversed了，反反就是正了，所以用ForwardSortedCollection()
         return reversed ? new ForwardSortedCollection() : new ReverseSortedCollection();
     }
 
@@ -345,6 +346,7 @@ public class ArrayBackedSortedColumns extends AbstractThreadUnsafeSortedColumns
         }
     }
 
+    //从后往前遍历
     private class ReverseSortedCollection extends AbstractCollection<Column>
     {
         public int size()
@@ -376,6 +378,7 @@ public class ArrayBackedSortedColumns extends AbstractThreadUnsafeSortedColumns
         }
     }
 
+    //从前往后遍历
     private class ForwardSortedCollection extends AbstractCollection<Column>
     {
         public int size()

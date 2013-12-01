@@ -158,6 +158,7 @@ public class ColumnIndex
          * columns shadowed by expired tombstone).  Thus, it is the caller's responsibility
          * to decide whether to write the header for an empty row.
          */
+        //在进行Compaction时使用
         public ColumnIndex buildForCompaction(Iterator<OnDiskAtom> columns) throws IOException
         {
             while (columns.hasNext())

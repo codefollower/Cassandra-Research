@@ -52,6 +52,7 @@ public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumn
     private TreeMapBackedSortedColumns(CFMetaData metadata)
     {
         super(metadata);
+        //org.apache.cassandra.db.marshal.AbstractType类实现了java.util.Comparator接口
         this.map = new TreeMap<ByteBuffer, Column>(metadata.comparator);
     }
 

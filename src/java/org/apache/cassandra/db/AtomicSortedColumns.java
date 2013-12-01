@@ -323,7 +323,7 @@ public class AtomicSortedColumns extends ColumnFamily
                 Column oldColumn = map.putIfAbsent(name, column);
                 if (oldColumn == null)
                 {
-                    indexer.insert(column);
+                    indexer.insert(column); //是一个新列，所以要insert
                     return column.dataSize();
                 }
 

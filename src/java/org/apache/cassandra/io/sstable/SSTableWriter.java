@@ -165,6 +165,7 @@ public class SSTableWriter extends SSTable
      * @param row
      * @return null if the row was compacted away entirely; otherwise, the PK index entry for this row
      */
+    //在进行Compaction时使用
     public RowIndexEntry append(AbstractCompactedRow row)
     {
         long currentPosition = beforeAppend(row.key);
@@ -205,9 +206,10 @@ public class SSTableWriter extends SSTable
         assert cf.getColumnCount() > 0 || cf.isMarkedForDelete();
 
         ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, key.key, out);
-        ColumnIndex index = builder.build(cf);
+        ColumnIndex index = builder.build(cf); //里面会往Data.db文件中写一行数据
 
-        out.writeShort(END_OF_ROW);
+        out.writeShort(END_OF_ROW); //行结束标志
+        //返回的RowIndexEntry用于Index.db文件
         return RowIndexEntry.create(startPosition, cf.deletionInfo().getTopLevelDeletion(), index);
     }
 

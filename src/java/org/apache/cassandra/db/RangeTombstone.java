@@ -36,6 +36,7 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
 {
     public static final Serializer serializer = new Serializer();
 
+    //start和stop是指开始和结束的列名
     public RangeTombstone(ByteBuffer start, ByteBuffer stop, long markedForDeleteAt, int localDeletionTime)
     {
         this(start, stop, new DeletionTime(markedForDeleteAt, localDeletionTime));
@@ -74,6 +75,7 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
     public long serializedSizeForSSTable()
     {
         TypeSizes typeSizes = TypeSizes.NATIVE;
+        //因为列名的最大长度是65535(0xffff)个字节，所以这里转成short
         return typeSizes.sizeof((short)min.remaining()) + min.remaining()
              + 1 // serialization flag
              + typeSizes.sizeof((short)max.remaining()) + max.remaining()
@@ -106,8 +108,13 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
      * This tombstone supersedes another one if it is more recent and cover a
      * bigger range than rt.
      */
-    //判断this是否包含rt，this.markedForDeleteAt>=rt.markedForDeleteAt且
-    //this.min<=rt.min且this.max>=rt.max
+    //supersede: 代替, 取代, 接替
+    //判断this是否能代替rt，
+    //相当于this[min, max]包含rt[min, max]并且this.markedForDeleteAt>=rt.markedForDeleteAt
+    //markedForDeleteAt表示删除某个时间点以前的，
+    //比如rt.markedForDeleteAt是10号18点，this.markedForDeleteAt是11号18点，
+    //显然当要删除11号18点前的记录时肯定包含rt.markedForDeleteAt
+    //[min, max]标识要删除的字段范围，min和max都是字段名
     public boolean supersedes(RangeTombstone rt, Comparator<ByteBuffer> comparator)
     {
         if (rt.data.markedForDeleteAt > data.markedForDeleteAt)

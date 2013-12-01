@@ -52,6 +52,15 @@ import org.apache.cassandra.utils.*;
  * Whether the implementation is thread safe or not is left to the
  * implementing classes.
  */
+//5个子类: 
+//AbstractThreadUnsafeSortedColumns (线程不安全)
+//  ArrayBackedSortedColumns
+//  EmptyColumns
+//  TreeMapBackedSortedColumns
+//  UnsortedColumns
+//AtomicSortedColumns (线程安全)
+
+//注意: 每个ColumnFamily的子类实例都只是存放一行记录
 public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
 {
     /* The column serializer for this Column Family. Create based on config. */

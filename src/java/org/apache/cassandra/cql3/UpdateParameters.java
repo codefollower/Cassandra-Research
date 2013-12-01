@@ -35,9 +35,9 @@ public class UpdateParameters
 {
     public final CFMetaData metadata;
     public final List<ByteBuffer> variables;
-    public final long timestamp;
+    public final long timestamp; //有可能是client端指定的时间
     private final int ttl;
-    public final int localDeletionTime;
+    public final int localDeletionTime; //server端的当前时间(以秒为单位)
 
     // For lists operation that require a read-before-write. Will be null otherwise.
     private final Map<ByteBuffer, ColumnGroupMap> prefetchedLists;

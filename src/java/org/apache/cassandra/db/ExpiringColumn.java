@@ -44,7 +44,7 @@ public class ExpiringColumn extends Column
 {
     public static final int MAX_TTL = 20 * 365 * 24 * 60 * 60; // 20 years in seconds
 
-    private final int localExpirationTime;
+    private final int localExpirationTime; //什么时候过期(当前时间+TTL)
     private final int timeToLive;
 
     public ExpiringColumn(ByteBuffer name, ByteBuffer value, long timestamp, int timeToLive)
