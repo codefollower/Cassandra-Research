@@ -39,6 +39,7 @@ import org.apache.cassandra.utils.HeapAllocator;
  * we can't mix it with the timestamp field, which is client-supplied and whose resolution we
  * can't assume anything about.)
  */
+//设置了TTL的列
 public class ExpiringColumn extends Column
 {
     public static final int MAX_TTL = 20 * 365 * 24 * 60 * 60; // 20 years in seconds

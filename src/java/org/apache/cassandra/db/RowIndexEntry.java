@@ -53,6 +53,7 @@ public class RowIndexEntry implements IMeasurableMemory
         return 0;
     }
 
+    //position是指些行在Data.db文件的开始位置
     public static RowIndexEntry create(long position, DeletionTime deletionTime, ColumnIndex index)
     {
         assert index != null;
@@ -148,7 +149,7 @@ public class RowIndexEntry implements IMeasurableMemory
     /**
      * An entry in the row index for a row whose columns are indexed.
      */
-    //一行有多列时才用这个类，否则直接用RowIndexEntry
+    //一行有多列，并且这些列的总长度大于配置参数column_index_size_in_kb(默认64kb)时才用这个类，否则直接用RowIndexEntry
     private static class IndexedEntry extends RowIndexEntry
     {
         private final DeletionTime deletionTime;

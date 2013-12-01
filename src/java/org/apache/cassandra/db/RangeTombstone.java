@@ -106,7 +106,7 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
      * This tombstone supersedes another one if it is more recent and cover a
      * bigger range than rt.
      */
-    //片段this是否包含rt，this.markedForDeleteAt>=rt.markedForDeleteAt且
+    //判断this是否包含rt，this.markedForDeleteAt>=rt.markedForDeleteAt且
     //this.min<=rt.min且this.max>=rt.max
     public boolean supersedes(RangeTombstone rt, Comparator<ByteBuffer> comparator)
     {

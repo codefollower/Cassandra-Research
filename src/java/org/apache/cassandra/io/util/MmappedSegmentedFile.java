@@ -172,7 +172,7 @@ public class MmappedSegmentedFile extends SegmentedFile
 
         private Segment[] createSegments(String path)
         {
-            int segcount = boundaries.size() - 1; //因为get(0)是开始位置，当要计算片段个数是必须建1
+            int segcount = boundaries.size() - 1; //因为get(0)是开始位置，当要计算片段个数时必须减1
             Segment[] segments = new Segment[segcount];
             RandomAccessFile raf;
 

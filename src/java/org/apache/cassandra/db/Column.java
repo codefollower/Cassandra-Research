@@ -44,13 +44,14 @@ import org.apache.cassandra.utils.HeapAllocator;
  */
 public class Column implements OnDiskAtom
 {
+    //列名的最大长度是65535(0xffff)个字节
     public static final int MAX_NAME_LENGTH = FBUtilities.MAX_UNSIGNED_SHORT;
 
     public static final ColumnSerializer serializer = new ColumnSerializer();
 
     public static OnDiskAtom.Serializer onDiskSerializer()
     {
-        return OnDiskAtom.Serializer.instance;
+        return OnDiskAtom.Serializer.instance; //OnDiskAtom.Serializer会回过来使用ColumnSerializer serializer
     }
 
     /**
@@ -177,6 +178,7 @@ public class Column implements OnDiskAtom
         */
         int nameSize = name.remaining();
         int valueSize = value.remaining();
+        //因为列名的最大长度是65535(0xffff)个字节，所以这里转成short
         return typeSizes.sizeof((short) nameSize) + nameSize + 1 + typeSizes.sizeof(timestamp) + typeSizes.sizeof(valueSize) + valueSize;
     }
 
@@ -190,6 +192,7 @@ public class Column implements OnDiskAtom
         return 0;
     }
 
+    //如果当前列的时间戳小于参数column，则返回此参数column，否则返回null
     public Column diff(Column column)
     {
         if (timestamp() < column.timestamp())
@@ -197,6 +200,7 @@ public class Column implements OnDiskAtom
         return null;
     }
 
+    //摘要包括列名、列值、时间戳、列MASK标志(列MASK见org.apache.cassandra.db.ColumnSerializer中的常量)
     public void updateDigest(MessageDigest digest)
     {
         digest.update(name.duplicate());
@@ -215,7 +219,7 @@ public class Column implements OnDiskAtom
         digest.update(buffer.getData(), 0, buffer.getLength());
     }
 
-    public int getLocalDeletionTime()
+    public int getLocalDeletionTime() //子类DeletedColumn、ExpiringColumn会覆盖此方法
     {
         return Integer.MAX_VALUE;
     }
@@ -225,6 +229,8 @@ public class Column implements OnDiskAtom
         return reconcile(column, HeapAllocator.instance);
     }
 
+    //reconcile: 使和解, 使和谐, 使顺从
+    //从当前列和参数column中选一个
     public Column reconcile(Column column, Allocator allocator)
     {
         // tombstones take precedence.  (if both are tombstones, then it doesn't matter which one we use.)
@@ -318,6 +324,7 @@ public class Column implements OnDiskAtom
                : new Column(name, value, timestamp);
     }
 
+    //下面几个create方法都一样，只是value的类型不同
     public static Column create(String value, long timestamp, String... names)
     {
         return new Column(decomposeName(names), UTF8Type.instance.decompose(value), timestamp);
@@ -348,6 +355,8 @@ public class Column implements OnDiskAtom
         return new Column(decomposeName(names), InetAddressType.instance.decompose(value), timestamp);
     }
 
+    //名字有点难理解，见org.apache.cassandra.db.marshal.AbstractType.compose(ByteBuffer)中的注释
+    //做的事其实就是把多个name组合成一个
     static ByteBuffer decomposeName(String... names)
     {
         assert names.length > 0;

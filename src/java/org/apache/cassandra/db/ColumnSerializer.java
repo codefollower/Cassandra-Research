@@ -29,11 +29,12 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class ColumnSerializer implements ISerializer<Column>
 {
-    public final static int DELETION_MASK        = 0x01;
-    public final static int EXPIRATION_MASK      = 0x02;
-    public final static int COUNTER_MASK         = 0x04;
-    public final static int COUNTER_UPDATE_MASK  = 0x08;
-    public final static int RANGE_TOMBSTONE_MASK = 0x10;
+    //org.apache.cassandra.db.Column的MASK是0
+    public final static int DELETION_MASK        = 0x01; //对应DeletedColumn
+    public final static int EXPIRATION_MASK      = 0x02; //对应ExpiringColumn
+    public final static int COUNTER_MASK         = 0x04; //对应CounterColumn
+    public final static int COUNTER_UPDATE_MASK  = 0x08; //对应CounterUpdateColumn
+    public final static int RANGE_TOMBSTONE_MASK = 0x10; //对应RangeTombstone
 
     /**
      * Flag affecting deserialization behavior.

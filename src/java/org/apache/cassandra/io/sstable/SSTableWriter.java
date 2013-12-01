@@ -186,6 +186,7 @@ public class SSTableWriter extends SSTable
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf)
     {
+        //beforeAppend返回的是Data.db文件的当前位置，decoratedKey就从这个位置开始存放
         long startPosition = beforeAppend(decoratedKey);
         try
         {
