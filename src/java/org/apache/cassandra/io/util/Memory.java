@@ -27,7 +27,21 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 public class Memory
 {
     private static final Unsafe unsafe = NativeAllocator.unsafe;
+    //默认是NativeAllocator
     private static final IAllocator allocator = DatabaseDescriptor.getoffHeapMemoryAllocator();
+    
+    //这是sun.misc.Unsafe中的注释
+    //    /**
+    //     * Report the offset of the first element in the storage allocation of a
+    //     * given array class.  If {@link #arrayIndexScale} returns a non-zero value
+    //     * for the same class, you may use that scale factor, together with this
+    //     * base offset, to form new offsets to access elements of arrays of the
+    //     * given class.
+    //     *
+    //     * @see #getInt(Object, long)
+    //     * @see #putInt(Object, long, int)
+    //     */
+    //    public native int arrayBaseOffset(Class arrayClass);
     private static final long BYTE_ARRAY_BASE_OFFSET = unsafe.arrayBaseOffset(byte[].class);
 
     protected long peer;
@@ -37,7 +51,7 @@ public class Memory
     protected Memory(long bytes)
     {
         size = bytes;
-        peer = allocator.allocate(size);
+        peer = allocator.allocate(size); //peer是allocate返回的本地内存地址
     }
 
     public static Memory allocate(long bytes)
@@ -54,6 +68,7 @@ public class Memory
         unsafe.putByte(peer + offset, b);
     }
 
+    //把offset开始的bytes个字节的值都设成b
     public void setMemory(long offset, long bytes, byte b)
     {
         // check if the last element will fit into the memory

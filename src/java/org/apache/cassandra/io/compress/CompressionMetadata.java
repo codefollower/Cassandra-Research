@@ -82,6 +82,7 @@ public class CompressionMetadata
 
         try
         {
+            //格式见: CompressionParameters.Serializer.serialize(CompressionParameters, DataOutput, int)
             String compressorName = stream.readUTF();
             int optionCount = stream.readInt();
             Map<String, String> options = new HashMap<String, String>();
@@ -258,7 +259,7 @@ public class CompressionMetadata
                 }
 
                 // store the length of the chunk
-                writeInt(parameters.chunkLength());
+                writeInt(parameters.chunkLength()); //默认64K
                 // store position and reserve a place for uncompressed data length and chunks count
                 dataLengthOffset = getFilePointer();
                 writeLong(-1);

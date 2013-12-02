@@ -43,9 +43,9 @@ public class NativeAllocator implements IAllocator
         return unsafe.allocateMemory(size);
     }
 
-    public void free(long peer)
+    public void free(long peer) //peer是allocate返回的本地内存地址
     {
-        unsafe.freeMemory(peer);
+        unsafe.freeMemory(peer); //sun.misc.Unsafe中的方法声明: public native void freeMemory(long address);
     }
 
 }

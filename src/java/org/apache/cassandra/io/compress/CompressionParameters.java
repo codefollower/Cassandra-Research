@@ -47,6 +47,7 @@ public class CompressionParameters
     public static final String CHUNK_LENGTH_KB = "chunk_length_kb";
     public static final String CRC_CHECK_CHANCE = "crc_check_chance";
 
+    //所有的ICompressor接口实现类默认都支持crc_check_chance选项
     public static final Set<String> GLOBAL_OPTIONS = ImmutableSet.of(CRC_CHECK_CHANCE);
 
     public final ICompressor sstableCompressor;
@@ -167,6 +168,7 @@ public class CompressionParameters
             Method method = compressorClass.getMethod("create", Map.class);
             ICompressor compressor = (ICompressor)method.invoke(null, compressionOptions);
             // Check for unknown options
+            //所有的ICompressor接口实现类默认都支持crc_check_chance选项
             AbstractSet<String> supportedOpts = Sets.union(compressor.supportedOptions(), GLOBAL_OPTIONS);
             for (String provided : compressionOptions.keySet())
                 if (!supportedOpts.contains(provided))

@@ -51,10 +51,12 @@ import org.apache.cassandra.utils.Pair;
 //其余的都在此类中使用，
 //在cassandra.yaml中配置disk_access_mode为mmap时使用MmappedSegmentedFile，其他的使用BufferedPoolingSegmentedFile，
 //如果使用了压缩，那么使用CompressedPoolingSegmentedFile(通过调用getCompressedBuilder()，而不管disk_access_mode参数)
+
+//子类要实现的抽象方法有两个: getSegment、cleanup
 public abstract class SegmentedFile
 {
-    public final String path;
-    public final long length;
+    public final String path; //要读的文件
+    public final long length; //未压缩的长度，length与onDiskLength只有在未压缩时才相等
 
     // This differs from length for compressed files (but we still need length for
     // SegmentIterator because offsets in the file are relative to the uncompressed size)
@@ -90,6 +92,8 @@ public abstract class SegmentedFile
         return new CompressedPoolingSegmentedFile.Builder();
     }
 
+    //注意并不是返回Segment类的实例，而是FileDataInput
+    //方法名起得并不那么直观
     public abstract FileDataInput getSegment(long position);
 
     /**

@@ -38,6 +38,7 @@ public class SnappyCompressor implements ICompressor
             logger.warn("Cannot initialize native Snappy library. Compression on new sstables will be disabled.");
     }
 
+    //CompressionParameters.createCompressor里通过反射调用
     public static SnappyCompressor create(Map<String, String> compressionOptions)
     {
         // this would throw java.lang.NoClassDefFoundError if Snappy class

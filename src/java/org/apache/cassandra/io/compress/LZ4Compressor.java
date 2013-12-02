@@ -32,6 +32,7 @@ public class LZ4Compressor implements ICompressor
     private static final int INTEGER_BYTES = 4;
     private static final LZ4Compressor instance = new LZ4Compressor();
 
+    //CompressionParameters.createCompressor里通过反射调用
     public static LZ4Compressor create(Map<String, String> args)
     {
         return instance;

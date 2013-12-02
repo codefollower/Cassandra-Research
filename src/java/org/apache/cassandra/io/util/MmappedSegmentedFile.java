@@ -35,7 +35,7 @@ public class MmappedSegmentedFile extends SegmentedFile
 
     // in a perfect world, MAX_SEGMENT_SIZE would be final, but we need to test with a smaller size to stay sane.
     //JVM最大内存映射是2G，而2G = 2 * 1024 * 1024 * 1024 = 2,147,483,648 = 2的31次方{约等于Integer.MAX_VALUE(2的31次方-1)}
-    public static long MAX_SEGMENT_SIZE = Integer.MAX_VALUE;
+    public static long MAX_SEGMENT_SIZE = Integer.MAX_VALUE; //2,147,483,647 = 2的31次方-1
 
     /**
      * Sorted array of segment offsets and MappedByteBuffers for segments. If mmap is completely disabled, or if the

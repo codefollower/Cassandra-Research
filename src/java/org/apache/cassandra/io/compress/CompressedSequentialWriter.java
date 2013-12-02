@@ -21,7 +21,6 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.util.zip.Adler32;
-import java.util.zip.CRC32;
 import java.util.zip.Checksum;
 
 import org.apache.cassandra.io.FSReadError;
@@ -116,6 +115,8 @@ public class CompressedSequentialWriter extends SequentialWriter
         try
         {
             // compressing data with buffer re-use
+            //把buffer字节数组从0开始的validBufferBytes个字节进行压缩，
+            //然后从0开始的位置放到compressed数组中
             compressedLength = compressor.compress(buffer, 0, validBufferBytes, compressed, 0);
         }
         catch (IOException e)
@@ -127,6 +128,9 @@ public class CompressedSequentialWriter extends SequentialWriter
         compressedSize += compressedLength;
 
         // update checksum
+        //CRC用的是java.util.zip.Adler32.Adler32()
+        //而不使用压缩时，用的是org.apache.cassandra.utils.PureJavaCrc32
+        //这里的CRC是直接写到压缩文件中的，而不使用压缩时是放到独立的CRC.db文件中
         checksum.update(compressed.buffer, 0, compressedLength);
 
         try
@@ -151,7 +155,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         checksum.reset();
 
         // next chunk should be written right after current + length of the checksum (int)
-        chunkOffset += compressedLength + 4;
+        chunkOffset += compressedLength + 4; //checksum占了4字节
     }
 
     @Override

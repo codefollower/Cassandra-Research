@@ -25,6 +25,8 @@ import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.utils.CLibrary;
 
+//先写到一个64K的buffer，然后再同步到硬盘
+//写满buffer时会自动触发一次内部flush(reBuffer=>flushInternal)
 public class SequentialWriter extends OutputStream
 {
     // isDirty - true if this.buffer contains any un-synced bytes
@@ -36,17 +38,21 @@ public class SequentialWriter extends OutputStream
     // so we can use the write(int) path w/o tons of new byte[] allocations
     private final byte[] singleByteBuffer = new byte[1];
 
-    protected byte[] buffer;
+    protected byte[] buffer; //默认64K
     private final boolean skipIOCache;
     private final int fd;
     private final int directoryFD;
     // directory should be synced only after first file sync, in other words, only once per file
     private boolean directorySynced = false;
 
+    //bufferOffset是递增的，并不是byte[] buffer中的某个位置，因为byte[] buffer会指向不同的byte[]数组，
+    //所以bufferOffset是指这些过往的不同byte[]数组的相对位置，
+    //而current呢，也是指在这些byte[]数组中的累加位置，并且是当前位置
+    //如果写满byte[] buffer时，bufferOffset就指向current, bufferOffset总是小于current
     protected long current = 0, bufferOffset;
     protected int validBufferBytes;
 
-    protected final RandomAccessFile out;
+    protected final RandomAccessFile out; //这才是真写到文件
 
     // used if skip I/O cache was enabled
     private long ioCacheStartOffset = 0, bytesSinceCacheFlush = 0;
@@ -57,8 +63,14 @@ public class SequentialWriter extends OutputStream
     private int trickleFsyncByteInterval;
     private int bytesSinceTrickleFsync = 0;
 
-    public final DataOutputStream stream;
+    public final DataOutputStream stream; //只是写到buffer
+
+    //写CRC.db和Digest.sha1文件, ChecksumWriter内部也是用SequentialWriter来写这两个文件，
+    //但是因为没调用setDataIntegrityWriter，所以metadata字段是null，
+    //这样就不会再为CRC.db和Digest.sha1文件本身又生成CRC.db和Digest.sha1文件了，
+    //只有Data.db才需要，STableWriter类的构造函数就就调用了setDataIntegrityWriter方法
     private DataIntegrityMetadata.ChecksumWriter metadata;
+    
 
     public SequentialWriter(File file, int bufferSize, boolean skipIOCache)
     {
@@ -139,7 +151,11 @@ public class SequentialWriter extends OutputStream
      */
     private int writeAtMost(byte[] data, int offset, int length)
     {
-        if (current >= bufferOffset + buffer.length)
+        //相当于 current-bufferOffset >= buffer.length
+        //也就是bufferCursor() >= buffer.length
+        //bufferCursor()总是代表当前buffer中已填充的字节数
+        //这个if就是判断buffer是否写满
+        if (current >= bufferOffset + buffer.length) //写满buffer时会触发一次内部flush(reBuffer=>flushInternal)
             reBuffer();
 
         assert current < bufferOffset + buffer.length
@@ -184,10 +200,10 @@ public class SequentialWriter extends OutputStream
     {
         if (syncNeeded)
         {
-            flushInternal();
+            flushInternal(); //默认情况下，当期用trickleFsync并且写够10M时，flushInternal内部也会调用syncDataOnlyInternal
             syncDataOnlyInternal();
 
-            if (!directorySynced)
+            if (!directorySynced) //只可能调用一次，directorySynced初始时为false，除这里之外，没有在其他地方改变过
             {
                 CLibrary.trySync(directoryFD);
                 directorySynced = true;
@@ -196,6 +212,8 @@ public class SequentialWriter extends OutputStream
             syncNeeded = false;
         }
     }
+
+    //调用下面flush方法与调用上面的sync方法的差别是，sync一定触发sync，而flush不一定
 
     /**
      * If buffer is dirty, flush it's contents to the operating system. Does not imply fsync().
@@ -212,12 +230,12 @@ public class SequentialWriter extends OutputStream
     {
         if (isDirty)
         {
-            flushData();
+            flushData(); //把buffer的数据写到硬盘
 
             if (trickleFsync)
             {
                 bytesSinceTrickleFsync += validBufferBytes;
-                if (bytesSinceTrickleFsync >= trickleFsyncByteInterval)
+                if (bytesSinceTrickleFsync >= trickleFsyncByteInterval) //默认每隔10M调用一次sync
                 {
                     syncDataOnlyInternal();
                     bytesSinceTrickleFsync = 0;
@@ -233,8 +251,10 @@ public class SequentialWriter extends OutputStream
                 // periodically we update this starting offset
                 bytesSinceCacheFlush += validBufferBytes;
 
+                //默认128M
                 if (bytesSinceCacheFlush >= RandomAccessReader.CACHE_FLUSH_INTERVAL_IN_BYTES)
                 {
+                    //只对Linux有效
                     CLibrary.trySkipCache(this.fd, ioCacheStartOffset, 0);
                     ioCacheStartOffset = bufferOffset;
                     bytesSinceCacheFlush = 0;
@@ -242,7 +262,7 @@ public class SequentialWriter extends OutputStream
             }
 
             // Remember that we wrote, so we don't write it again on next flush().
-            resetBuffer();
+            resetBuffer(); //把validBufferBytes置0，说明flush过了
 
             isDirty = false;
         }
@@ -313,7 +333,7 @@ public class SequentialWriter extends OutputStream
         validBufferBytes = 0;
     }
 
-    private int bufferCursor()
+    private int bufferCursor() //bufferCursor()总是代表当前buffer中已填充的字节数
     {
         return (int) (current - bufferOffset);
     }

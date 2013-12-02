@@ -31,6 +31,7 @@ public class MappedFileDataInput extends AbstractDataInput implements FileDataIn
     private final long segmentOffset;
     private int position;
 
+    //未使用
     public MappedFileDataInput(FileInputStream stream, String filename, long segmentOffset, int position) throws IOException
     {
         FileChannel channel = stream.getChannel();

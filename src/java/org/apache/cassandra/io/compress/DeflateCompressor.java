@@ -32,6 +32,7 @@ public class DeflateCompressor implements ICompressor
     private final ThreadLocal<Deflater> deflater;
     private final ThreadLocal<Inflater> inflater;
 
+    //CompressionParameters.createCompressor里通过反射调用
     public static DeflateCompressor create(Map<String, String> compressionOptions)
     {
         // no specific options supported so far

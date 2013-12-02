@@ -22,6 +22,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UTFDataFormatException;
 
+//java.io.DataOutput接口有14个方法，其中8个对应8种基本类型(writeXXX，例如writeByte、writeInt)
+//还有另外6个: 3个write、writeBytes、writeChars、writeUTF
+
+//此类只有一个子类: org.apache.cassandra.utils.vint.EncodedDataOutputStream
 public abstract class AbstractDataOutput extends OutputStream implements DataOutput
 {
     /*
@@ -257,7 +261,7 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
      */
-    public final void writeUTF(String str) throws IOException {
+    public final void writeUTF(String str) throws IOException { //使用修改过的UTF-8，可以参考JVM规范
         int utfCount = 0, length = str.length();
         for (int i = 0; i < length; i++) {
             int charValue = str.charAt(i);
