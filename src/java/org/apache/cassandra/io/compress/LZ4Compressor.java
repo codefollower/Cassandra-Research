@@ -29,6 +29,7 @@ import net.jpountz.lz4.LZ4Factory;
 public class LZ4Compressor implements ICompressor
 {
 
+    //前4字节用于存放未压缩时的数据长度
     private static final int INTEGER_BYTES = 4;
     private static final LZ4Compressor instance = new LZ4Compressor();
 

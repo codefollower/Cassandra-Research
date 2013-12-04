@@ -23,6 +23,7 @@ import com.google.common.collect.AbstractIterator;
 
 import org.apache.cassandra.db.OnDiskAtom;
 
+//目前没有子类
 public abstract class SimpleAbstractColumnIterator extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
 {
     public void close() throws IOException {}

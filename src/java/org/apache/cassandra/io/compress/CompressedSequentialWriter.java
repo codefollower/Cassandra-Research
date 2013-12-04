@@ -128,7 +128,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         compressedSize += compressedLength;
 
         // update checksum
-        //CRC用的是java.util.zip.Adler32.Adler32()
+        //CRC.db用的是java.util.zip.Adler32.Adler32()
         //而不使用压缩时，用的是org.apache.cassandra.utils.PureJavaCrc32
         //这里的CRC是直接写到压缩文件中的，而不使用压缩时是放到独立的CRC.db文件中
         checksum.update(compressed.buffer, 0, compressedLength);

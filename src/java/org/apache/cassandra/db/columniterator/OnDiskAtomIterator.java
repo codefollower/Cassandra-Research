@@ -23,6 +23,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.utils.CloseableIterator;
 
+//此接口的实现类都是遍历一行记录中的列(注意，是一行记录，在ColumnFamily中，rowKey可以从getKey()得到)
 public interface OnDiskAtomIterator extends CloseableIterator<OnDiskAtom>
 {
     /**

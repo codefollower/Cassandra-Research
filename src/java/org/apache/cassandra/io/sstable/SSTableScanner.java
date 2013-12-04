@@ -201,6 +201,7 @@ public class SSTableScanner implements ICompactionScanner
         private DecoratedKey currentKey;
         private RowIndexEntry currentEntry;
 
+        //只是读一行
         protected OnDiskAtomIterator computeNext()
         {
             try
@@ -257,8 +258,9 @@ public class SSTableScanner implements ICompactionScanner
                     ByteBufferUtil.readWithShortLength(dfile); // key
                     if (sstable.descriptor.version.hasRowSizeAndColumnCount)
                         dfile.readLong();
+                    //readEnd是下一行的开始位置
                     long dataSize = readEnd - dfile.getFilePointer();
-                    return new SSTableIdentityIterator(sstable, dfile, currentKey, dataSize);
+                    return new SSTableIdentityIterator(sstable, dfile, currentKey, dataSize); //只是读一行
                 }
 
                 return new LazyColumnIterator(currentKey, new IColumnIteratorFactory()

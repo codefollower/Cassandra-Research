@@ -31,23 +31,31 @@ org.apache.cassandra.db.Column的MASK是0
 
 文件格式
 =================
-<Column> {
-	2字节:              列名.length
-	列名.length个字节:  列名
-	1字节:              列MASK
-	
-	如果是CounterColumn {
-	8字节:              timestampOfLastDelete
-	}
+<Row> {
+	2字节:                 key.length
+	key.length个字节:      key本身的字节
+	DeletionTime {
+		4字节:                          localDeletionTime
+		8字节:                          markedForDeleteAt
+	} 见: org.apache.cassandra.db.DeletionTime.Serializer.serialize(DeletionTime, DataOutput)
 
-	如果是ExpiringColumn {
-	4字节:              timeToLive
-	4字节:              localDeletionTime
-	}
+	多个<Column> {
+		2字节:              列名.length
+		列名.length个字节:  列名
+		1字节:              列MASK
+		
+		如果是CounterColumn {
+		8字节:              timestampOfLastDelete
+		}
 
-	8字节:              timestamp
-	4字节:              列值.length
-	列值.length个字节:  列值
-} 见: org.apache.cassandra.db.ColumnSerializer.serialize(Column, DataOutput)
+		如果是ExpiringColumn {
+		4字节:              timeToLive
+		4字节:              localDeletionTime
+		}
 
+		8字节:              timestamp
+		4字节:              列值.length
+		列值.length个字节:  列值
+	} 见: org.apache.cassandra.db.ColumnSerializer.serialize(Column, DataOutput)
+} 见: org.apache.cassandra.db.ColumnIndex.Builder的build和add
 

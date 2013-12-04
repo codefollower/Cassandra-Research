@@ -20,6 +20,7 @@ package org.apache.cassandra.io.compress;
 import java.io.IOException;
 import java.util.Set;
 
+//支持LZ4、Snappy、Deflate(ZLIB)压缩
 public interface ICompressor
 {
     public int initialCompressedBufferLength(int chunkLength);

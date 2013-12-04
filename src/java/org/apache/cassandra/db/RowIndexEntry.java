@@ -53,7 +53,7 @@ public class RowIndexEntry implements IMeasurableMemory
         return 0;
     }
 
-    //position是指些行在Data.db文件的开始位置
+    //position是指此行在Data.db文件的开始位置
     public static RowIndexEntry create(long position, DeletionTime deletionTime, ColumnIndex index)
     {
         assert index != null;

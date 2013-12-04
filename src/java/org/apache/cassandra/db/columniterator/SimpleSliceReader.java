@@ -34,6 +34,7 @@ import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//遍历一行记录，直到碰到的字段名>=finishColumn为止
 class SimpleSliceReader extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
 {
     private static final Logger logger = LoggerFactory.getLogger(SimpleSliceReader.class);
@@ -54,7 +55,7 @@ class SimpleSliceReader extends AbstractIterator<OnDiskAtom> implements OnDiskAt
         {
             if (input == null)
             {
-                this.file = sstable.getFileDataInput(indexEntry.position);
+                this.file = sstable.getFileDataInput(indexEntry.position); //indexEntry.position是此行在Data.db文件的开始位置
                 this.needsClosing = true;
             }
             else

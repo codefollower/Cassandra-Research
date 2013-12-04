@@ -82,7 +82,7 @@ public class CompressionMetadata
 
         try
         {
-            //格式见: CompressionParameters.Serializer.serialize(CompressionParameters, DataOutput, int)
+            //格式见: org.apache.cassandra.io.compress.CompressionMetadata.Writer.writeHeader(CompressionParameters)
             String compressorName = stream.readUTF();
             int optionCount = stream.readInt();
             Map<String, String> options = new HashMap<String, String>();
@@ -262,6 +262,8 @@ public class CompressionMetadata
                 writeInt(parameters.chunkLength()); //默认64K
                 // store position and reserve a place for uncompressed data length and chunks count
                 dataLengthOffset = getFilePointer();
+                //先记下dataLengthOffset，
+                //然后在finalizeHeader中回填
                 writeLong(-1);
                 writeInt(-1);
             }
