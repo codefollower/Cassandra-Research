@@ -20,6 +20,7 @@ package org.apache.cassandra.db.columniterator;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//包含所有列
 public class IdentityQueryFilter extends SliceQueryFilter
 {
     /**

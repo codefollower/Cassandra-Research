@@ -115,11 +115,12 @@ public class ColumnCounter
             ByteBuffer[] current = type.split(column.name());
             assert current.length >= toGroup;
 
-            if (last != null)
+            if (last != null) //如果复合列名与上一个一样则不计入live个数
             {
                 boolean isSameGroup = true;
                 for (int i = 0; i < toGroup; i++)
                 {
+                    //复合列名中的每个都必须一样
                     if (ByteBufferUtil.compareUnsigned(last[i], current[i]) != 0)
                     {
                         isSameGroup = false;

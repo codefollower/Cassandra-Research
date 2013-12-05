@@ -37,6 +37,8 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.tracing.Tracing;
 
+//按指定的连续的列名区间来过滤
+//列如，如果有a到z这些列名，可以按[a, i]来提取a到i(包含两端)这个区间中的所有列
 public class SliceQueryFilter implements IDiskAtomFilter
 {
     private static final Logger logger = LoggerFactory.getLogger(SliceQueryFilter.class);

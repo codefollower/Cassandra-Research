@@ -94,6 +94,7 @@ public class QueryFilter
         collateColumns(returnCF, toCollate, filter, gcBefore, timestamp);
     }
 
+    //把toCollate中的放到returnCF中
     public static void collateColumns(final ColumnFamily returnCF, List<? extends Iterator<Column>> toCollate, IDiskAtomFilter filter, int gcBefore, long timestamp)
     {
         final Comparator<Column> fcomp = filter.getColumnComparator(returnCF.getComparator());
@@ -103,7 +104,7 @@ public class QueryFilter
         {
             Column current;
 
-            public void reduce(Column next)
+            public void reduce(Column next) //Column next是从toCollate中取的
             {
                 assert current == null || fcomp.compare(current, next) == 0;
                 current = current == null ? next : current.reconcile(next, HeapAllocator.instance);
@@ -126,6 +127,8 @@ public class QueryFilter
      * Given an iterator of on disk atom, returns an iterator that filters the tombstone range
      * markers adding them to {@code returnCF} and returns the normal column.
      */
+    //遍历iter，过滤到Tombstone并把它们放到returnCF，
+    //而next()返回非Tombstone
     public static Iterator<Column> gatherTombstones(final ColumnFamily returnCF, final Iterator<? extends OnDiskAtom> iter)
     {
         return new Iterator<Column>()

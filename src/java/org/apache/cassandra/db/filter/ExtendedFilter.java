@@ -387,6 +387,7 @@ public abstract class ExtendedFilter
             return null;
         }
 
+        //prune 剪除
         public ColumnFamily prune(DecoratedKey rowKey, ColumnFamily data)
         {
             return data;

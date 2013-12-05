@@ -30,6 +30,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//代表列名区间
 public class ColumnSlice
 {
     public static final Serializer serializer = new Serializer();
@@ -40,6 +41,7 @@ public class ColumnSlice
     public final ByteBuffer start;
     public final ByteBuffer finish;
 
+    //start和finish都是列名
     public ColumnSlice(ByteBuffer start, ByteBuffer finish)
     {
         assert start != null && finish != null;
@@ -47,13 +49,14 @@ public class ColumnSlice
         this.finish = finish;
     }
 
+    //当start大于finish时认为是空
     public boolean isAlwaysEmpty(AbstractType<?> comparator, boolean reversed)
     {
         Comparator<ByteBuffer> orderedComparator = reversed ? comparator.reverseComparator : comparator;
         return (start.remaining() > 0 && finish.remaining() > 0 && orderedComparator.compare(start, finish) > 0);
     }
 
-    //name在[start, finish]这个闭区间中
+    //name在[start, finish]这个闭区间或者在[start, 无穷大)这个区间中
     public boolean includes(Comparator<ByteBuffer> cmp, ByteBuffer name)
     {
         return cmp.compare(start, name) <= 0 && (finish.equals(ByteBufferUtil.EMPTY_BYTE_BUFFER) || cmp.compare(finish, name) >= 0);
@@ -111,6 +114,8 @@ public class ColumnSlice
             int finishSize = cs.finish.remaining();
 
             int size = 0;
+            //列名的长度不能大于64K，所以要转short
+            //见org.apache.cassandra.db.Column.MAX_NAME_LENGTH
             size += sizes.sizeof((short) startSize) + startSize;
             size += sizes.sizeof((short) finishSize) + finishSize;
             return size;
@@ -125,6 +130,7 @@ public class ColumnSlice
         private int idx = 0;
         private Iterator<Column> currentSlice;
 
+        //按ColumnSlice[] slices来遍历有序map中的列
         public NavigableMapIterator(NavigableMap<ByteBuffer, Column> map, ColumnSlice[] slices)
         {
             this.map = map;
@@ -144,16 +150,17 @@ public class ColumnSlice
                 if (slice.start.remaining() == 0)
                 {
                     if (slice.finish.remaining() == 0)
-                        currentSlice = map.values().iterator();
-                    else
+                        currentSlice = map.values().iterator(); //start和finish都是空，则用整个map
+                    else //start空，finish不空，则用finish(包含它)之前的map
                         currentSlice = map.headMap(slice.finish, true).values().iterator();
                 }
-                else if (slice.finish.remaining() == 0)
+                else if (slice.finish.remaining() == 0) //start不空，finish空，则用start开始(包含它)之后的map
                 {
                     currentSlice = map.tailMap(slice.start, true).values().iterator();
                 }
                 else
                 {
+                    //start和finish都不空，则用start开始(包含它)到finish(包含它)之间的map
                     currentSlice = map.subMap(slice.start, true, slice.finish, true).values().iterator();
                 }
             }
