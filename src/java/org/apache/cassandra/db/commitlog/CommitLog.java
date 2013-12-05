@@ -21,7 +21,6 @@ import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import javax.management.MBeanServer;
@@ -57,6 +56,7 @@ public class CommitLog implements CommitLogMBean
 
     // we only permit records HALF the size of a commit log, to ensure we don't spin allocating many mostly
     // empty segments when writing large records
+    //默认32M
     private static final long MAX_MUTATION_SIZE = DatabaseDescriptor.getCommitLogSegmentSize() >> 1;
 
     public final CommitLogSegmentManager allocator;

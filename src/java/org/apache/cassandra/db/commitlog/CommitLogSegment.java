@@ -124,7 +124,6 @@ public class CommitLogSegment
     {
         id = getNextId();
         descriptor = new CommitLogDescriptor(id);
-        //例如: my-test-data\commitlog\CommitLog-3-1380549089549.log
         logFile = new File(DatabaseDescriptor.getCommitLogLocation(), descriptor.fileName());
         boolean isCreating = true;
 
@@ -152,10 +151,9 @@ public class CommitLogSegment
             // Map the segment, extending or truncating it to the standard segment size.
             // (We may have restarted after a segment size configuration change, leaving "incorrectly"
             // sized segments on disk.)
-            logFileAccessor.setLength(DatabaseDescriptor.getCommitLogSegmentSize()); //默认32M
-            //直接映射到内存
-            buffer = logFileAccessor.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, DatabaseDescriptor.getCommitLogSegmentSize());
+            logFileAccessor.setLength(DatabaseDescriptor.getCommitLogSegmentSize());
 
+            buffer = logFileAccessor.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, DatabaseDescriptor.getCommitLogSegmentSize());
             // mark the initial header as uninitialised
             buffer.putInt(0, 0);
             buffer.putLong(4, 0);

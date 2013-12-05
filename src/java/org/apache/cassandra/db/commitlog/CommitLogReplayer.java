@@ -442,12 +442,4 @@ public class CommitLogReplayer
         }
         return false;
     }
-
-    private ColumnFamily getCFToRecover(String cfName, Collection<ColumnFamily> cfs)
-    {
-        for (ColumnFamily cf : cfs)
-            if (cf.metadata().cfName.equals(cfName))
-                return cf;
-        return null;
-    }
 }
