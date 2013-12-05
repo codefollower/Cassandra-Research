@@ -1699,7 +1699,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                     removeDroppedColumns(data);
 
-                    if (!filter.isSatisfiedBy(rawRow.key, data, null))
+                    if (!filter.isSatisfiedBy(rawRow.key, data, null, null))
                         continue;
 
                     logger.trace("{} satisfies all filter expressions", data);

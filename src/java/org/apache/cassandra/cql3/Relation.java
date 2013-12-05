@@ -38,7 +38,20 @@ public class Relation
 
     public static enum Type
     {
-        EQ, LT, LTE, GTE, GT, IN;
+        EQ, LT, LTE, GTE, GT, IN, CONTAINS, CONTAINS_KEY;
+
+        public boolean allowsIndexQuery()
+        {
+            switch (this)
+            {
+                case EQ:
+                case CONTAINS:
+                case CONTAINS_KEY:
+                    return true;
+                default:
+                    return false;
+            }
+        }
     }
 
     //WHERE token(user_id,f1) > 10时会分开成两次，entity分别是user_id和f1，值都是10
