@@ -58,7 +58,7 @@ public abstract class PerColumnSecondaryIndex extends SecondaryIndex
     }
 
     @Override
-    public boolean validate(Column column)
+    public boolean validate(Column column) //Thrift才用(列值长度不能大于64K)，但是CQL没有限制
     {
         return column.value().remaining() < FBUtilities.MAX_UNSIGNED_SHORT;
     }

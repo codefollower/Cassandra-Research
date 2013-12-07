@@ -47,6 +47,8 @@ import org.apache.cassandra.db.marshal.*;
  */
 public class CompositesIndexOnClusteringKey extends CompositesIndex
 {
+    //生成的CompositeType包括keyComparator和clustering中除columnDef以外的字段的类型
+    //对应下面的makeIndexColumnNameBuilder方法
     public static CompositeType buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
     {
         // Index cell names are rk ck_0 ... ck_{i-1} ck_{i+1} ck_n, so n
@@ -69,6 +71,8 @@ public class CompositesIndexOnClusteringKey extends CompositesIndex
         return components[columnDef.position()];
     }
 
+    //生成的列名包括rowKey和clustering中除columnName以外的字段
+    //对应上面的buildIndexComparator方法
     protected ColumnNameBuilder makeIndexColumnNameBuilder(ByteBuffer rowKey, ByteBuffer columnName)
     {
         int ckCount = baseCfs.metadata.clusteringColumns().size();
@@ -77,6 +81,7 @@ public class CompositesIndexOnClusteringKey extends CompositesIndex
         CompositeType.Builder builder = getIndexComparator().builder();
         builder.add(rowKey);
 
+        //组装clustering中除columnName以外的字段
         for (int i = 0; i < Math.min(components.length, columnDef.position()); i++)
             builder.add(components[i]);
         for (int i = columnDef.position() + 1; i < Math.min(components.length, ckCount); i++)

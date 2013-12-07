@@ -55,6 +55,8 @@ public abstract class SecondaryIndex
 
     public static final String CUSTOM_INDEX_OPTION_NAME = "class_name";
 
+    //preservesOrder返回true的只有:
+    //AbstractByteOrderedPartitioner(ByteOrderedPartitioner)、LocalPartitioner、OrderPreservingPartitioner
     public static final AbstractType<?> keyComparator = StorageService.getPartitioner().preservesOrder()
                                                       ? BytesType.instance
                                                       : new LocalByPartionerType(StorageService.getPartitioner());
@@ -62,7 +64,7 @@ public abstract class SecondaryIndex
     /**
      * Base CF that has many indexes
      */
-    protected ColumnFamilyStore baseCfs;
+    protected ColumnFamilyStore baseCfs; //索引所在的表对应的列族
 
 
     /**
@@ -174,7 +176,7 @@ public abstract class SecondaryIndex
      * Builds the index using the data in the underlying CFS
      * Blocks till it's complete
      */
-    protected void buildIndexBlocking()
+    protected void buildIndexBlocking() //以同步阻塞的方式构建索引
     {
         logger.info(String.format("Submitting index build of %s for data in %s",
                 getIndexName(), StringUtils.join(baseCfs.getSSTables(), ", ")));
@@ -198,7 +200,7 @@ public abstract class SecondaryIndex
      *
      * @return A future object which the caller can block on (optional)
      */
-    public Future<?> buildIndexAsync()
+    public Future<?> buildIndexAsync() //以异步的方式构建索引
     {
         // if we're just linking in the index to indexedColumns on an already-built index post-restart, we're done
         boolean allAreBuilt = true;
@@ -265,6 +267,7 @@ public abstract class SecondaryIndex
      * @param value column value
      * @return decorated key
      */
+    //子类AbstractSimplePerColumnSecondaryIndex覆盖了此方法
     public DecoratedKey getIndexKeyFor(ByteBuffer value) //value是索引字段值
     {
         // FIXME: this imply one column definition per index
@@ -298,6 +301,7 @@ public abstract class SecondaryIndex
      * @return The secondary index instance for this column
      * @throws ConfigurationException
      */
+    //由SecondaryIndexManager.addIndexedColumn和CFMetaData validate触发
     public static SecondaryIndex createInstance(ColumnFamilyStore baseCfs, ColumnDefinition cdef) throws ConfigurationException
     {
         SecondaryIndex index;
@@ -323,8 +327,8 @@ public abstract class SecondaryIndex
                 throw new RuntimeException(e);
             }
             break;
-            default:
-                throw new RuntimeException("Unknown index type: " + cdef.getIndexName());
+        default:
+            throw new RuntimeException("Unknown index type: " + cdef.getIndexName());
         }
 
         index.addColumnDef(cdef);
@@ -334,7 +338,7 @@ public abstract class SecondaryIndex
         return index;
     }
 
-    public abstract boolean validate(Column column);
+    public abstract boolean validate(Column column); //Thrift才用(列值长度不能大于64K)，但是CQL没有限制
 
     /**
      * Returns the index comparator for index backed by CFS, or null.

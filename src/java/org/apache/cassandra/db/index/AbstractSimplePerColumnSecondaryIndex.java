@@ -32,7 +32,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  */
 public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSecondaryIndex
 {
-    protected ColumnFamilyStore indexCfs;
+    protected ColumnFamilyStore indexCfs; //并不是索引所在的表对应的列族，而是index自己的列族
 
     // SecondaryIndex "forces" a set of ColumnDefinition. However this class (and thus it's subclass)
     // only support one def per index. So inline it in a field for 1) convenience and 2) avoid creating
@@ -47,6 +47,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         columnDef = columnDefs.iterator().next();
 
         AbstractType indexComparator = SecondaryIndex.getIndexComparator(baseCfs.metadata, columnDef);
+        //索引实际上在内部也是当成一个列族存储的，
+        //只不过这个列族名比较特殊，
+        //此列族名为: 索引字段所在列族名 + "." + 索引名(如果没有索引名，就用索引字段名，建索引时可以不指定索引名)
         CFMetaData indexedCfMetadata = CFMetaData.newIndexMetadata(baseCfs.metadata, columnDef, indexComparator);
         indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
                                                              indexedCfMetadata.cfName,
@@ -98,9 +101,11 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
     public void insert(ByteBuffer rowKey, Column column)
     {
+        //valueKey是索引字段值
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, column));
         ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
         //对于CompositesIndexOnRegular类型，makeIndexColumnName返回的只有rowKey
+        //对于KeysIndex，name其实就是rowKey
         ByteBuffer name = makeIndexColumnName(rowKey, column);
         assert name.remaining() > 0 && name.remaining() <= Column.MAX_NAME_LENGTH : name.remaining();
         if (column instanceof ExpiringColumn)
@@ -115,7 +120,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         if (logger.isDebugEnabled())
             logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.key), cfi);
 
-        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater);
+        //从上面的valueKey和name对应rowKey作为一个Column放到ColumnFamily看出来
+        //这里会保存valueKey和name，所以当按索引字段查找时，就能从valueKey中找到对应的name(就是rowKey)
+        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater); //传递nullUpdater时不会再进一步触发索引相关操作'
     }
 
     public void update(ByteBuffer rowKey, Column col)

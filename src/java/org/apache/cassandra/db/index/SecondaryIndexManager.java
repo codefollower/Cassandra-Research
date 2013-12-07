@@ -40,24 +40,30 @@ import org.apache.cassandra.utils.FBUtilities;
  * Manages all the indexes associated with a given CFS
  * Different types of indexes can be created across the same CF
  */
+//每个ColumnFamilyStore对应一个SecondaryIndexManager
+//SecondaryIndexManager用来管理一个表中的所有索引
 public class SecondaryIndexManager
 {
     private static final Logger logger = LoggerFactory.getLogger(SecondaryIndexManager.class);
 
+    //因为索引本身也是当成一个列族存储的，这个nullUpdater用于索引列族，以便有保存索引记录时不会触发任何操作。
     public static final Updater nullUpdater = new Updater()
     {
+        //前面三个用于PerColumnSecondaryIndex的子类
         public void insert(Column column) { }
 
         public void update(Column oldColumn, Column column) { }
 
         public void remove(Column current) { }
 
+        //只有这个用于PerRowSecondaryIndex的子类
         public void updateRowLevelIndexes() {}
     };
 
     /**
      * Organizes the indexes by column name
      */
+    //存放PerColumnSecondaryIndex的子类，是列索引
     private final ConcurrentNavigableMap<ByteBuffer, SecondaryIndex> indexesByColumn;
 
 
@@ -67,6 +73,7 @@ public class SecondaryIndexManager
      *
      * This allows updates to happen to an entire row at once
      */
+    //存放PerRowSecondaryIndex的子类，是行索引，只用于测试
     private final Map<Class<? extends SecondaryIndex>,SecondaryIndex> rowLevelIndexMap;
 
 
@@ -144,11 +151,13 @@ public class SecondaryIndexManager
         logger.info("Index build of {} complete", idxNames);
     }
 
+    //indexes中是否包含以name为索引字段的索引
     public boolean indexes(ByteBuffer name, Collection<SecondaryIndex> indexes)
     {
         return !indexFor(name, indexes).isEmpty();
     }
 
+    //返回indexes中以name为索引字段的索引
     public List<SecondaryIndex> indexFor(ByteBuffer name, Collection<SecondaryIndex> indexes)
     {
         List<SecondaryIndex> matching = null;
@@ -485,6 +494,7 @@ public class SecondaryIndexManager
      */
     public List<SecondaryIndexSearcher> getIndexSearchersForQuery(List<IndexExpression> clause)
     {
+        //一个索引子类名对应多个clause中的列(IndexExpression.column)
         Map<String, Set<ByteBuffer>> groupByIndexType = new HashMap<>();
 
         //Group columns by type
@@ -586,7 +596,7 @@ public class SecondaryIndexManager
         public StandardUpdater(DecoratedKey key, ColumnFamily cf)
         {
             this.key = key; //是rowkey
-            this.cf = cf;
+            this.cf = cf; //只用于行索引，行索引只在测试代码中用到
         }
 
         public void insert(Column column)

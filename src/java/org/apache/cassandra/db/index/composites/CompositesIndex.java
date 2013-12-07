@@ -156,6 +156,7 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
         // We used to have an option called "prefix_size" so skip it silently for backward compatibility sake.
         options.remove("prefix_size");
 
+        //在org.apache.cassandra.cql3.statements.CreateIndexStatement.announceMigration()加入"index_values"
         if (columnDef.type.isCollection())
             options.remove("index_values");
 
