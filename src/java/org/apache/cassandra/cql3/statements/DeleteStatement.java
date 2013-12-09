@@ -51,7 +51,9 @@ public class DeleteStatement extends ModificationStatement
         ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
         List<Operation> deletions = getOperations();
 
-        boolean fullKey = builder.componentCount() == cfm.clusteringColumns().size(); //只与clustering key相关
+        //只与CLUSTERING_COLUMN相关，看看where中是否指定了所有的CLUSTERING_COLUMN
+        //builder参数中已放了where中指定的CLUSTERING_COLUMN
+        boolean fullKey = builder.componentCount() == cfm.clusteringColumns().size();
         boolean isRange = cfm.isDense() ? !fullKey : (!fullKey || deletions.isEmpty());
 
 
@@ -68,7 +70,7 @@ public class DeleteStatement extends ModificationStatement
         }
         else //有clustering key或者delete xxx from的场景
         {
-            if (isRange)
+            if (isRange) //如果CLUSTERING_COLUMN有a、b，那么delete from t where a=x and b=y就是一个range删除
             {
                 assert deletions.isEmpty();
                 ByteBuffer start = builder.build();
@@ -78,13 +80,15 @@ public class DeleteStatement extends ModificationStatement
             else
             {
                 // Delete specific columns
-                if (cfm.isDense())
+                if (cfm.isDense()) //见UpdateStatement.addUpdateForKey的isDense
                 {
                     ByteBuffer columnName = builder.build();
                     cf.addColumn(params.makeTombstone(columnName));
                 }
                 else
                 {
+                    //如: delete a from t where a=x and b=y
+                    //删除具体的列，并且全指定了所有的CLUSTERING_COLUMN
                     for (Operation deletion : deletions)
                         deletion.execute(key, cf, builder.copy(), params);
                 }
@@ -110,6 +114,7 @@ public class DeleteStatement extends ModificationStatement
             this.whereClause = whereClause;
         }
 
+        //不能用delete xxx from这种格式删除PARTITION_KEY和CLUSTERING_COLUMN这两种字段
         protected ModificationStatement prepareInternal(CFMetaData cfm, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException
         {
             DeleteStatement stmt = new DeleteStatement(boundNames.size(), cfm, attrs);

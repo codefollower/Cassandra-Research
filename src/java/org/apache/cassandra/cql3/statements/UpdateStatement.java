@@ -78,6 +78,10 @@ public class UpdateStatement extends ModificationStatement
 
             // An empty name for the compact value is what we use to recognize the case where there is not column
             // outside the PK, see CreateStatement.
+            //列如: CREATE TABLE IF NOT EXISTS t ( block_id int, f2 int, PRIMARY KEY (block_id, f2)) WITH COMPACT STORAGE
+            //然后: INSERT INTO t(block_id, f2) VALUES (1, 2)
+            //见CreateTableStatement.valueAlias的注释
+            //插入的列名是f2的值，列值是空字节数组
             if (!cfm.compactValueColumn().name.bytes.hasRemaining())
             {
                 // There is no column outside the PK. So no operation could have passed through validation

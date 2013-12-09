@@ -9,6 +9,9 @@ Insert
 Delete
 ====================
 必须指定where
+不能用delete xxx from这种格式删除PARTITION_KEY和CLUSTERING_COLUMN这两种字段
+
+where中必须指定PARTITION_KEY
 
 
 Update和Delete的where子句必须包含，where子句中只支持and，

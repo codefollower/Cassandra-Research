@@ -186,13 +186,13 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                     }
                     else if (def.kind == ColumnDefinition.Kind.PARTITION_KEY && rel.operator() == Relation.Type.IN)
                     {
-                        if (rel.getValue() != null)
+                        if (rel.getValue() != null) //in里只有一个值
                         {
                             Term t = rel.getValue().prepare(def);
                             t.collectMarkerSpecification(names);
                             restriction = Restriction.IN.create(t);
                         }
-                        else
+                        else //in里只有多个值
                         {
                             List<Term> values = new ArrayList<Term>(rel.getInValues().size());
                             for (Term.Raw raw : rel.getInValues())
@@ -218,6 +218,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         }
     }
 
+    //where中必须指定PARTITION_KEY
     public List<ByteBuffer> buildPartitionKeyNames(List<ByteBuffer> variables)
     throws InvalidRequestException
     {
