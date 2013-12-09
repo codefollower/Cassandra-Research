@@ -61,6 +61,8 @@ public class UpdateStatement extends ModificationStatement
         // 'DELETE FROM t WHERE k = 1' does remove the row entirely)
         //
         // We never insert markers for Super CF as this would confuse the thrift side.
+        //见CreateTableStatement类中comparator字段的注释，只有2和4.2满足这整个if条件
+        //插入一个列名和列值都为空的空列
         if (cfm.hasCompositeComparator() && !cfm.isDense() && !cfm.isSuper())
         {
             ByteBuffer name = builder.copy().add(ByteBufferUtil.EMPTY_BYTE_BUFFER).build();

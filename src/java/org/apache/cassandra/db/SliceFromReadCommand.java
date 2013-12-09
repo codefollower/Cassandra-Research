@@ -32,6 +32,7 @@ import org.apache.cassandra.service.RowDataResolver;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//只查找key对应的那行，并且返回的列可以指定，这些列是连续的，是一个区间，比如有a到z这么多列，可以返回[a, f]
 public class SliceFromReadCommand extends ReadCommand
 {
     static final SliceFromReadCommandSerializer serializer = new SliceFromReadCommandSerializer();

@@ -298,6 +298,7 @@ public abstract class Constants
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, ColumnNameBuilder prefix, UpdateParameters params) throws InvalidRequestException
         {
+            //对于COMPACT_VALUE列，columnName为null
             ByteBuffer cname = columnName == null ? prefix.build() : prefix.add(columnName).build();
             ByteBuffer value = t.bindAndGet(params.variables);
             //生成一个org.apache.cassandra.db.Column或其子类的实例

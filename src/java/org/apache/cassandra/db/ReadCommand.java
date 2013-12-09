@@ -33,6 +33,9 @@ import org.apache.cassandra.service.IReadCommand;
 import org.apache.cassandra.service.RowDataResolver;
 import org.apache.cassandra.service.pager.Pageable;
 
+//ReadCommand的子类都是只查一个rowKey，
+//而AbstractRangeCommand的子类都是查一个rowKey范围的，名字都含有Range，
+//ReadCommand和AbstractRangeCommand都能配不同的IDiskAtomFilter
 public abstract class ReadCommand implements IReadCommand, Pageable
 {
     public enum Type

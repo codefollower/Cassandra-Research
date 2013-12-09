@@ -59,6 +59,7 @@ public abstract class Operation
      * @return whether the operation requires a read of the previous value to be executed
      * (only lists setterByIdx, discard and discardByIdx requires that).
      */
+    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex需要读
     public boolean requiresRead()
     {
         return false;
@@ -85,6 +86,8 @@ public abstract class Operation
      * the ColumnNameBuilder they pass here).
      * @param params parameters of the update.
      */
+    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex用了rowKey参数，其他的实现类都没用到
+    //用来调用UpdateParameters.getPrefetchedList(ByteBuffer, ColumnIdentifier)，通过rowKey和列名预先抓取字段
     public abstract void execute(ByteBuffer rowKey, ColumnFamily cf, ColumnNameBuilder namePrefix, UpdateParameters params) throws InvalidRequestException;
 
     /**

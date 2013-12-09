@@ -29,6 +29,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//只查找key对应的那行，并且返回的列可以指定，这些列可以不连续，比如有a到z这么多列，可以返回a、d、g
 public class SliceByNamesReadCommand extends ReadCommand
 {
     static final SliceByNamesReadCommandSerializer serializer = new SliceByNamesReadCommandSerializer();

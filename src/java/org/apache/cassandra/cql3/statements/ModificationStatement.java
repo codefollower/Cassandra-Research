@@ -290,6 +290,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         return null;
     }
 
+    //在executeWithoutCondition时使用，但是在executeWithCondition时不使用
+    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex需要读
     protected Map<ByteBuffer, ColumnGroupMap> readRequiredRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {
@@ -393,7 +395,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             StorageProxy.mutateWithTriggers(mutations, cl, false);
 
         //我加上的，用于测试，触发memtable的flush
-        //Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
+        Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
         return null;
     }
 
@@ -503,6 +505,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
      * @return list of the mutations
      * @throws InvalidRequestException on invalid requests
      */
+    //在executeWithoutCondition时使用，但是在executeWithCondition时不使用
     public Collection<? extends IMutation> getMutations(List<ByteBuffer> variables, boolean local, ConsistencyLevel cl, long now, boolean isBatch)
     throws RequestExecutionException, RequestValidationException
     {

@@ -141,11 +141,11 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         int limit = getLimit(variables);
         long now = System.currentTimeMillis();
         Pageable command;
-        if (isKeyRange || usesSecondaryIndexing)
+        if (isKeyRange || usesSecondaryIndexing) //查询一个范围
         {
             command = getRangeCommand(variables, limit, now);
         }
-        else
+        else //查询具体的某一行
         {
             List<ReadCommand> commands = getSliceCommands(variables, limit, now);
             command = commands == null ? null : new Pageable.ReadCommands(commands);
@@ -528,8 +528,10 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not dense, composite).
         // Static CF (non dense but non composite) never entails a column slice however
+        //见CreateTableStatement类中comparator字段的注释，
+        //除3和4.1之外，所有其他情况都满足这个if条件
         if (!cfm.isDense()) //列族不是密集型的
-            return cfm.hasCompositeComparator();
+            return cfm.hasCompositeComparator(); //运行到这里时只有2和4.2满足
 
         // Otherwise (i.e. for compact table where we don't have a row marker anyway and thus don't care about CASSANDRA-5762),
         // it is a range query if it has at least one the column alias for which no relation is defined or is not EQ.

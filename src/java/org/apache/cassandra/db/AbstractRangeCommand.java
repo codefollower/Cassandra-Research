@@ -25,6 +25,9 @@ import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.service.IReadCommand;
 
+//它的子类都是查一个rowKey范围的，名字都含有Range
+//而ReadCommand的子类都是只查一个rowKey，
+//ReadCommand和AbstractRangeCommand都能配不同的IDiskAtomFilter
 public abstract class AbstractRangeCommand implements IReadCommand
 {
     public final String keyspace;

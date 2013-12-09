@@ -60,12 +60,13 @@ public class DeleteStatement extends ModificationStatement
             throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.get(0).columnName));
 
         //没有指定clustering key列并且不是删除具体的某列时就表示删除整行
-        if (deletions.isEmpty() && builder.componentCount() == 0)
+        //delete语句必须指定where，所以如要没有clustering key列时肯定指定了PartitionKey
+        if (deletions.isEmpty() && builder.componentCount() == 0) //按PartitionKey删
         {
             // No columns specified, delete the row
             cf.delete(new DeletionInfo(params.timestamp, params.localDeletionTime));
         }
-        else
+        else //有clustering key或者delete xxx from的场景
         {
             if (isRange)
             {

@@ -2026,7 +2026,7 @@ public final class CFMetaData
         return getCollectionType() != null;
     }
 
-    public boolean hasCompositeComparator()
+    public boolean hasCompositeComparator()  //见CreateTableStatement类中comparator字段的注释，除1和3外的都满足
     {
         return comparator instanceof CompositeType;
     }
@@ -2092,7 +2092,7 @@ public final class CFMetaData
     }
 
     // See above.
-    public boolean isDense()
+    public boolean isDense() //见CreateTableStatement类中comparator字段的注释，只有3和4.1满足
     {
         return clusteringColumns.size() == comparator.componentsCount();
     }
