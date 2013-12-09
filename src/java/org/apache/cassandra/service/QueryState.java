@@ -53,7 +53,7 @@ public class QueryState
      * This clock guarantees that updates for the same QueryState will be ordered
      * in the sequence seen, even if multiple updates happen in the same millisecond.
      */
-    public long getTimestamp()
+    public long getTimestamp() //纳秒
     {
         long current = System.currentTimeMillis() * 1000;
         clock = clock >= current ? clock + 1 : current;

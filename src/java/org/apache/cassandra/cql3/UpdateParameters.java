@@ -46,9 +46,9 @@ public class UpdateParameters
     {
         this.metadata = metadata;
         this.variables = variables;
-        this.timestamp = timestamp;
+        this.timestamp = timestamp; //纳秒
         this.ttl = ttl;
-        this.localDeletionTime = (int)(System.currentTimeMillis() / 1000);
+        this.localDeletionTime = (int)(System.currentTimeMillis() / 1000); //秒
         this.prefetchedLists = prefetchedLists;
     }
 

@@ -72,6 +72,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         return meter.measureDeep(this) - meter.measureDeep(cfm);
     }
 
+    //update和insert返回true，delete返回false
     public abstract boolean requireFullClusteringKey();
     public abstract ColumnFamily updateForKey(ByteBuffer key, ColumnNameBuilder builder, UpdateParameters params) throws InvalidRequestException;
 
@@ -218,7 +219,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         }
     }
 
-    //where中必须指定PARTITION_KEY
+    //执行Insert、Update、Delete时都必须指定PARTITION_KEY
     public List<ByteBuffer> buildPartitionKeyNames(List<ByteBuffer> variables)
     throws InvalidRequestException
     {
@@ -232,6 +233,9 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
             List<ByteBuffer> values = r.values(variables);
 
+            //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
+            //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
+            //就会得到两个PARTITION_KEY: (x,y)和(x,z)
             if (keyBuilder.remainingCount() == 1)
             {
                 for (ByteBuffer val : values)
@@ -265,10 +269,11 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             if (r == null)
             {
                 firstEmptyKey = def;
+                //满足这个if条件的只有update语句，并且是CreateTableStatement.comparator中的第4种情况
                 if (requireFullClusteringKey() && cfm.hasCompositeComparator() && !cfm.isDense())
                     throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
             }
-            else if (firstEmptyKey != null)
+            else if (firstEmptyKey != null) //CLUSTERING_COLUMN中最前面的字段不允许为空，比如a、b两字段，不能只出现b
             {
                 throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s since %s is set", firstEmptyKey.name, def.name));
             }
@@ -400,7 +405,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             StorageProxy.mutateWithTriggers(mutations, cl, false);
 
         //我加上的，用于测试，触发memtable的flush
-        Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
+        //Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
         return null;
     }
 
@@ -419,12 +424,12 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         ThriftValidation.validateKey(cfm, key);
 
         UpdateParameters updParams = new UpdateParameters(cfm, variables, queryState.getTimestamp(), getTimeToLive(variables), null);
-        ColumnFamily updates = updateForKey(key, clusteringPrefix, updParams);
+        ColumnFamily updates = updateForKey(key, clusteringPrefix, updParams); //更新字段
 
         // When building the conditions, we should not use the TTL. It's not useful, and if a very low ttl (1 seconds) is used, it's possible
         // for it to expire before actually build the conditions which would break since we would then test for the presence of tombstones.
         UpdateParameters condParams = new UpdateParameters(cfm, variables, queryState.getTimestamp(), 0, null);
-        ColumnFamily expected = buildConditions(key, clusteringPrefix, condParams);
+        ColumnFamily expected = buildConditions(key, clusteringPrefix, condParams); //条件字段
 
         ColumnFamily result = StorageProxy.cas(keyspace(),
                                                columnFamily(),
@@ -445,6 +450,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         ResultSet.Metadata metadata = new ResultSet.Metadata(Collections.singletonList(spec));
         List<List<ByteBuffer>> rows = Collections.singletonList(Collections.singletonList(BooleanType.instance.decompose(success)));
 
+        //只是一个默认结果集，占位
         ResultSet rs = new ResultSet(metadata, rows);
         return success ? rs : merge(rs, buildCasFailureResultSet(key, cf));
     }
@@ -591,6 +597,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             return new ParsedStatement.Prepared(statement, boundNames);
         }
 
+        //PARTITION_KEY和CLUSTERING_COLUMN不能出现在if子句中
         public ModificationStatement prepare(VariableSpecifications boundNames) throws InvalidRequestException
         {
             CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());

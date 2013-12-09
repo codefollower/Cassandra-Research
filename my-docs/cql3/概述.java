@@ -20,3 +20,9 @@ Update和Delete的where子句必须包含，where子句中只支持and，
 并且只有PARTITION_KEY能使用"in"操作符。
 
 
+执行Insert、Update、Delete时都必须指定PARTITION_KEY
+
+
+Insert可以使用IF NOT EXISTS
+而Update、Delete可以使用if子句
+PARTITION_KEY和CLUSTERING_COLUMN不能出现在if子句中
