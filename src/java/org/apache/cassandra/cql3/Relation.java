@@ -38,6 +38,7 @@ public class Relation
 
     public static enum Type
     {
+        //CONTAINS, CONTAINS_KEY是CASSANDRA-4511新加的，见:https://issues.apache.org/jira/browse/CASSANDRA-4511
         EQ, LT, LTE, GTE, GT, IN, CONTAINS, CONTAINS_KEY;
 
         public boolean allowsIndexQuery()

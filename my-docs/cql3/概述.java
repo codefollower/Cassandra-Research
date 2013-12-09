@@ -10,3 +10,10 @@ Delete
 ====================
 必须指定where
 
+
+Update和Delete的where子句必须包含，where子句中只支持and，
+并且只能出现PARTITION_KEY和CLUSTERING_COLUMN，
+并且只有PARTITION_KEY和CLUSTERING_COLUMN能使用"="操作符，
+并且只有PARTITION_KEY能使用"in"操作符。
+
+
