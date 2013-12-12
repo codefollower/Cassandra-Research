@@ -24,6 +24,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Hex;
 
+//用于ByteOrderedPartitioner
 public class BytesToken extends Token<byte[]>
 {
     static final long serialVersionUID = -2630749093733680626L;

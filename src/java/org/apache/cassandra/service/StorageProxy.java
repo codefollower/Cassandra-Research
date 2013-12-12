@@ -221,7 +221,7 @@ public class StorageProxy implements StorageProxyMBean
         CFMetaData metadata = Schema.instance.getCFMetaData(keyspaceName, cfName);
 
         long start = System.nanoTime();
-        long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getCasContentionTimeout());
+        long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getCasContentionTimeout()); //默认是1秒
         while (System.nanoTime() - start < timeout)
         {
             // for simplicity, we'll do a single liveness check at the start of each attempt
@@ -262,6 +262,7 @@ public class StorageProxy implements StorageProxyMBean
             Tracing.trace("CAS precondition is met; proposing client-requested updates for {}", ballot);
             if (proposePaxos(proposal, liveEndpoints, requiredParticipants, true))
             {
+                //最后在org.apache.cassandra.service.paxos.PaxosState.commit(Commit)中执行更新操作
                 if (consistencyForCommit == ConsistencyLevel.ANY)
                     sendCommit(proposal, liveEndpoints);
                 else
@@ -1238,7 +1239,7 @@ public class StorageProxy implements StorageProxyMBean
     private static List<Row> fetchRows(List<ReadCommand> initialCommands, ConsistencyLevel consistencyLevel)
     throws UnavailableException, ReadTimeoutException
     {
-        List<Row> rows = new ArrayList<>(initialCommands.size());
+        List<Row> rows = new ArrayList<>(initialCommands.size()); //ReadCommand的子类都是只查一个rowKey
         // (avoid allocating a new list in the common case of nothing-to-retry)
         List<ReadCommand> commandsToRetry = Collections.emptyList();
 

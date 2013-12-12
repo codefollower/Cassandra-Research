@@ -646,6 +646,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return false;
     }
 
+    //根据PARTITION_KEY和CLUSTERING_COLUMN构建start和end
     private List<ByteBuffer> buildBound(Bound bound,
                                         Collection<ColumnDefinition> defs,
                                         Restriction[] restrictions,

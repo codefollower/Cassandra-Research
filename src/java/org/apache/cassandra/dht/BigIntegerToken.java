@@ -19,6 +19,7 @@ package org.apache.cassandra.dht;
 
 import java.math.BigInteger;
 
+//用于RandomPartitioner
 public class BigIntegerToken extends Token<BigInteger>
 {
     static final long serialVersionUID = -5833589141319293006L;

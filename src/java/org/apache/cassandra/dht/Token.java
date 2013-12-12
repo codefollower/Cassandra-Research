@@ -107,7 +107,7 @@ public abstract class Token<T> implements RingPosition<Token<T>>, Serializable
         }
     }
 
-    public Token<T> getToken()
+    public Token<T> getToken() //没用子类覆盖
     {
         return this;
     }

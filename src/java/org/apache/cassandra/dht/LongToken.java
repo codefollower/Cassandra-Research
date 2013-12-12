@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.dht;
 
+//用于Murmur3Partitioner
 public class LongToken extends Token<Long>
 {
     static final long serialVersionUID = -5833580143318243006L;

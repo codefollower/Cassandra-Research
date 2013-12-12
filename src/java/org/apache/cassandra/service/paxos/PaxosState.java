@@ -23,9 +23,6 @@ package org.apache.cassandra.service.paxos;
 
 import java.nio.ByteBuffer;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.RowMutation;
 import org.apache.cassandra.db.Keyspace;
@@ -34,8 +31,6 @@ import org.apache.cassandra.tracing.Tracing;
 
 public class PaxosState
 {
-    private static final Logger logger = LoggerFactory.getLogger(PaxosState.class);
-
     private static final Object[] locks;
     static
     {
@@ -72,6 +67,7 @@ public class PaxosState
         synchronized (lockFor(toPrepare.key))
         {
             PaxosState state = SystemKeyspace.loadPaxosState(toPrepare.key, toPrepare.update.metadata());
+            //toPrepare的时间戳比state的大
             if (toPrepare.isAfter(state.promised))
             {
                 Tracing.trace("Promising ballot {}", toPrepare.ballot);

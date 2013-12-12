@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 
+//用于LocalPartitioner
 public class LocalToken extends Token<ByteBuffer>
 {
     static final long serialVersionUID = 8437543776403014875L;

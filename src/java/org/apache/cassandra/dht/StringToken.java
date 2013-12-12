@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.dht;
 
-
+//用于OrderPreservingPartitioner
 public class StringToken extends Token<String>
 {
     static final long serialVersionUID = 5464084395277974963L;
