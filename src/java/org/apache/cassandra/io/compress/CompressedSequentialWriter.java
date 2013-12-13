@@ -26,7 +26,7 @@ import java.util.zip.Checksum;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
-import org.apache.cassandra.io.sstable.SSTableMetadata.Collector;
+import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.SequentialWriter;
 
@@ -36,7 +36,7 @@ public class CompressedSequentialWriter extends SequentialWriter
                                         String indexFilePath,
                                         boolean skipIOCache,
                                         CompressionParameters parameters,
-                                        Collector sstableMetadataCollector)
+                                        MetadataCollector sstableMetadataCollector)
     {
         return new CompressedSequentialWriter(new File(dataFilePath), indexFilePath, skipIOCache, parameters, sstableMetadataCollector);
     }
@@ -59,13 +59,13 @@ public class CompressedSequentialWriter extends SequentialWriter
 
     private long originalSize = 0, compressedSize = 0;
 
-    private final Collector sstableMetadataCollector;
+    private final MetadataCollector sstableMetadataCollector;
 
     public CompressedSequentialWriter(File file,
                                       String indexFilePath,
                                       boolean skipIOCache,
                                       CompressionParameters parameters,
-                                      Collector sstableMetadataCollector)
+                                      MetadataCollector sstableMetadataCollector)
     {
         super(file, parameters.chunkLength(), skipIOCache);
         this.compressor = parameters.sstableCompressor;
