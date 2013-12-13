@@ -24,6 +24,7 @@ import org.apache.cassandra.db.filter.ColumnCounter;
  *
  * For use by MultiPartitionPager.
  */
+//只用于单rowKey查询
 public interface SinglePartitionPager extends QueryPager
 {
     public ColumnCounter columnCounter();

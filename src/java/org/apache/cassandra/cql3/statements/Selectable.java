@@ -84,7 +84,7 @@ public interface Selectable
         public final Selectable selected;
         public final ColumnIdentifier field;
 
-        //此构造函数没有见到在哪里调用
+        //此构造函数在org.apache.cassandra.cql3.CqlParser.unaliasedSelector()调用
         public WithFieldSelection(Selectable selected, ColumnIdentifier field)
         {
             this.selected = selected;

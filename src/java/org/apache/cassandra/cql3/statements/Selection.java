@@ -63,6 +63,7 @@ public abstract class Selection
     public static Selection wildcard(CFMetaData cfm)
     {
         List<ColumnDefinition> all = new ArrayList<ColumnDefinition>(cfm.allColumns().size());
+        //all一开始是空的，把cfm.allColumnsInSelectOrder()中的东要加到all中
         Iterators.addAll(all, cfm.allColumnsInSelectOrder());
         return new SimpleSelection(all);
     }
@@ -226,6 +227,7 @@ public abstract class Selection
                 if (def == null)
                     throw new InvalidRequestException(String.format("Undefined name %s in selection clause", rawSelector.selectable));
                 defs.add(def);
+                //有别名就以别名为准
                 metadata.add(rawSelector.alias == null ? def : makeAliasSpec(cfm, def.type, rawSelector.alias));
             }
             return new SimpleSelection(defs, metadata);

@@ -27,9 +27,9 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class IndexExpression
 {
-    public final ByteBuffer column;
+    public final ByteBuffer column; //列名
     public final Operator operator;
-    public final ByteBuffer value;
+    public final ByteBuffer value; //列值
 
     public IndexExpression(ByteBuffer column, Operator operator, ByteBuffer value)
     {

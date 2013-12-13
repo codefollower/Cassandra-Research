@@ -38,6 +38,7 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
  * cfs meanRowSize to decide if parallelizing some of the command might be worth it while being confident we don't
  * blow out memory.
  */
+//只用于单rowKey查询
 class MultiPartitionPager implements QueryPager
 {
     private final SinglePartitionPager[] pagers;

@@ -33,6 +33,7 @@ import org.apache.cassandra.service.StorageService;
  * Note: this only work for CQL3 queries for now (because thrift queries expect
  * a different limit on the rows than on the columns, which complicates it).
  */
+//按rowKey范围查询
 public class RangeSliceQueryPager extends AbstractQueryPager
 {
     private final RangeSliceCommand command;

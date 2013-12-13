@@ -35,6 +35,7 @@ import org.apache.cassandra.service.StorageService;
  * that the counter returned by columnCounter() will count 1 for each internal
  * row.
  */
+//按rowKey范围查询
 public class RangeNamesQueryPager extends AbstractQueryPager
 {
     private final RangeSliceCommand command;
