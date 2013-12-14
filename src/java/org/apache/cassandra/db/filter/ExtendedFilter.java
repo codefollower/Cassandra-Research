@@ -19,7 +19,6 @@ package org.apache.cassandra.db.filter;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;

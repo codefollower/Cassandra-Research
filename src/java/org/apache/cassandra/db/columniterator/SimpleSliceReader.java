@@ -22,9 +22,6 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 
 import com.google.common.collect.AbstractIterator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
@@ -37,8 +34,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 //遍历一行记录，直到碰到的字段名>=finishColumn为止
 class SimpleSliceReader extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
 {
-    private static final Logger logger = LoggerFactory.getLogger(SimpleSliceReader.class);
-
     private final FileDataInput file;
     private final boolean needsClosing;
     private final ByteBuffer finishColumn;

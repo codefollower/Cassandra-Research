@@ -1,3 +1,5 @@
+更详细的内容见: doc\native_protocol_v2.spec
+
 Client端:
 ===================================
 	com.datastax.driver.core.Message.Request:

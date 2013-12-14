@@ -32,6 +32,7 @@ selector is:
 | (function (selector , selector, ...) )
 function is a timeuuid function, a token function, or a blob conversion function.
  */
+//在CqlParser中生成下面这些类的实例
 public interface Selectable
 {
     public static class WritetimeOrTTL implements Selectable

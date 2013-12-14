@@ -17,10 +17,7 @@
  */
 package org.apache.cassandra.transport.messages;
 
-import java.nio.ByteBuffer;
-
 import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +28,6 @@ import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.ServerError;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.MD5Digest;
 
 /**
@@ -158,6 +154,9 @@ public class ErrorMessage extends Message.Response
                     CBUtil.writeString(aee.ksName, dest);
                     CBUtil.writeString(aee.cfName, dest);
                     break;
+                default:
+                    break;
+                    //throw new AssertionError(); //我加上的
             }
         }
 
@@ -186,6 +185,9 @@ public class ErrorMessage extends Message.Response
                     size += CBUtil.sizeOfString(aee.ksName);
                     size += CBUtil.sizeOfString(aee.cfName);
                     break;
+                default:
+                    break;
+                    //throw new AssertionError(); //我加上的
             }
             return size;
         }
@@ -234,6 +236,7 @@ public class ErrorMessage extends Message.Response
         return new WrappedException(t, streamId);
     }
 
+    @SuppressWarnings("serial")
     private static class WrappedException extends RuntimeException
     {
         private final int streamId;
