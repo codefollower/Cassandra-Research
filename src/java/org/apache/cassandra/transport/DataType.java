@@ -30,6 +30,7 @@ import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.utils.Pair;
 
+@SuppressWarnings({"rawtypes", "unchecked"})
 public enum DataType implements OptionCodec.Codecable<DataType>
 {
     CUSTOM   (0,  null),
@@ -117,6 +118,8 @@ public enum DataType implements OptionCodec.Codecable<DataType>
                 codec.writeOne(DataType.fromType(l.get(0)), cb);
                 codec.writeOne(DataType.fromType(l.get(1)), cb);
                 break;
+            default:
+                break; //我加上的
         }
     }
 

@@ -26,6 +26,7 @@ import org.xerial.snappy.SnappyError;
 import net.jpountz.lz4.LZ4Exception;
 import net.jpountz.lz4.LZ4Factory;
 
+@SuppressWarnings("deprecation")
 public interface FrameCompressor
 {
     public Frame compress(Frame frame) throws IOException;

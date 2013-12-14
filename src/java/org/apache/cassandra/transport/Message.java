@@ -255,6 +255,7 @@ public abstract class Message
 
             EnumSet<Frame.Header.Flag> flags = EnumSet.noneOf(Frame.Header.Flag.class);
 
+            @SuppressWarnings("unchecked")
             Codec<Message> codec = (Codec<Message>)message.type.codec;
             int messageSize = codec.encodedSize(message, version);
             ChannelBuffer body;

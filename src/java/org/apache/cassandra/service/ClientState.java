@@ -109,6 +109,7 @@ public class ClientState
     /**
      * @return a ClientState object for external clients (thrift/native protocol users).
      */
+    //只在org.apache.cassandra.transport.ServerConnection.ServerConnection(Channel, int, Tracker)中有调用
     public static ClientState forExternalCalls(SocketAddress remoteAddress)
     {
         return new ClientState(remoteAddress);

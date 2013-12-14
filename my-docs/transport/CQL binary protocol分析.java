@@ -1,5 +1,40 @@
 更详细的内容见: doc\native_protocol_v2.spec
 
+总共有17种消息(Message)，分两大类: REQUEST、RESPONSE
+======================================================================
+	REQUEST消息(有9个):
+	===================================
+        STARTUP        (1,  Direction.REQUEST,  StartupMessage.codec),
+        CREDENTIALS    (4,  Direction.REQUEST,  CredentialsMessage.codec),
+        OPTIONS        (5,  Direction.REQUEST,  OptionsMessage.codec),
+        QUERY          (7,  Direction.REQUEST,  QueryMessage.codec),
+        PREPARE        (9,  Direction.REQUEST,  PrepareMessage.codec),
+        EXECUTE        (10, Direction.REQUEST,  ExecuteMessage.codec),
+        REGISTER       (11, Direction.REQUEST,  RegisterMessage.codec),
+        BATCH          (13, Direction.REQUEST,  BatchMessage.codec),
+        AUTH_RESPONSE  (15, Direction.REQUEST,  AuthResponse.codec),
+	===================================
+
+	RESPONSE消息(有8个):
+	===================================
+        ERROR          (0,  Direction.RESPONSE, ErrorMessage.codec),
+        READY          (2,  Direction.RESPONSE, ReadyMessage.codec),
+        AUTHENTICATE   (3,  Direction.RESPONSE, AuthenticateMessage.codec),
+        SUPPORTED      (6,  Direction.RESPONSE, SupportedMessage.codec),
+        RESULT         (8,  Direction.RESPONSE, ResultMessage.codec),
+        EVENT          (12, Direction.RESPONSE, EventMessage.codec),
+        AUTH_CHALLENGE (14, Direction.RESPONSE, AuthChallenge.codec),
+        AUTH_SUCCESS   (16, Direction.RESPONSE, AuthSuccess.codec);
+	===================================
+======================================================================
+
+请求=>响应
+
+请求        响应
+======================================================================
+STARTUP     正常: READY  需要认证: AUTHENTICATE  发生错误: ERROR
+
+
 Client端:
 ===================================
 	com.datastax.driver.core.Message.Request:
@@ -58,7 +93,7 @@ Client端:
 Server端:
 ===================================
 Server端的解码器调用顺序:
-org.apache.cassandra.transport.Frame.Decoder (由字节注构造出Frame)
+org.apache.cassandra.transport.Frame.Decoder (由字节流构造出Frame)
 org.apache.cassandra.transport.Frame.Decompressor (对Frame体解压缩)
 org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Request)
 org.apache.cassandra.transport.Message.Dispatcher (分发Request)

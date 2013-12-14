@@ -120,6 +120,7 @@ public class Frame
 
     public static class Decoder extends FrameDecoder
     {
+        //默认一个frame最大为256M
         private static final int MAX_FRAME_LENGTH = DatabaseDescriptor.getNativeTransportMaxFrameSize();
 
         private boolean discardingTooLongFrame;
