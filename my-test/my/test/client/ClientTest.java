@@ -21,11 +21,13 @@ package my.test.client;
 
 import org.apache.cassandra.transport.Client;
 
+//加-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
 public class ClientTest {
 
-    /**
-     * @param args
-     */
+    //提示>>后，
+	//先输入: startup lz4
+	//authenticate username=cassandra password=cassandra
+	//query SELECT schema_version FROM system.local WHERE key='local'
     public static void main(String[] args) {
         try {
             Client.main(new String[] { "localhost", "9042" });

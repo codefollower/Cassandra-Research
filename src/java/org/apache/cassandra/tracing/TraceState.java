@@ -40,6 +40,7 @@ import org.apache.cassandra.utils.WrappedRunnable;
  * ThreadLocal state for a tracing session. The presence of an instance of this class as a ThreadLocal denotes that an
  * operation is being traced.
  */
+@SuppressWarnings("deprecation")
 public class TraceState
 {
     public final UUID sessionId;

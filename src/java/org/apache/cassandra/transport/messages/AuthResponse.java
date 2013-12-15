@@ -75,6 +75,8 @@ public class AuthResponse extends Message.Request
         try
         {
             SaslAuthenticator authenticator = ((ServerConnection) connection).getAuthenticator();
+            //这个类执行evaluateResponse时isComplete()肯定返回true
+            //org.apache.cassandra.auth.PasswordAuthenticator.PlainTextSaslAuthenticator
             byte[] challenge = authenticator.evaluateResponse(token == null ? new byte[0] : token);
             if (authenticator.isComplete())
             {

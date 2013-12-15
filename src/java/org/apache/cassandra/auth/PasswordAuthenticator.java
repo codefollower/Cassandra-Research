@@ -318,6 +318,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
          * @throws javax.security.sasl.SaslException
          */
         //编码方式见com.datastax.driver.core.PlainTextAuthProvider.PlainTextAuthenticator.initialResponse()
+        //在org.apache.cassandra.transport.Client.encodeCredentialsForSasl(Map<String, String>)也有
         private Map<String, String> decodeCredentials(byte[] bytes) throws AuthenticationException
         {
             logger.debug("Decoding credentials from client token");

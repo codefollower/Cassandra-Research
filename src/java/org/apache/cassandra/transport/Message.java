@@ -195,6 +195,7 @@ public abstract class Message
         }
     }
 
+    //能同时用于server和client端，能同时处理请求和响应
     public static class ProtocolDecoder extends OneToOneDecoder
     {
         //注意: 这个方法不单纯只负责Request，还负责Response的解码
@@ -241,6 +242,7 @@ public abstract class Message
         }
     }
 
+    //能同时用于server和client端，能同时处理请求和响应
     public static class ProtocolEncoder extends OneToOneEncoder
     {
         public Object encode(ChannelHandlerContext ctx, Channel channel, Object msg)
@@ -251,6 +253,8 @@ public abstract class Message
 
             Connection connection = (Connection)channel.getAttachment();
             // The only case the connection can be null is when we send the initial STARTUP message (client side thus)
+            //从client发送STARTUP时，connection还为null，
+            //当从server收到第一个响应后才在Frame.Decoder.decode中生成一个新的connection并作为channel的attachment
             int version = connection == null ? Server.CURRENT_VERSION : connection.getVersion();
 
             EnumSet<Frame.Header.Flag> flags = EnumSet.noneOf(Frame.Header.Flag.class);
@@ -286,6 +290,7 @@ public abstract class Message
         }
     }
 
+    //只用于server端，只能处理请求
     public static class Dispatcher extends SimpleChannelUpstreamHandler
     {
         @Override

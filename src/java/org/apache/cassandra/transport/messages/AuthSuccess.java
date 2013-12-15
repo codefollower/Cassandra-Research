@@ -35,7 +35,16 @@ public class AuthSuccess extends Message.Response
     {
         public AuthSuccess decode(ChannelBuffer body, int version)
         {
+            //            ByteBuffer b = CBUtil.readValue(body);
+            //            byte[] token = new byte[b.remaining()];
+            //            b.get(token);
+            //            return new AuthSuccess(token);
+
+            //我加上的，源代码会抛出java.lang.NullPointerException
             ByteBuffer b = CBUtil.readValue(body);
+            if (b == null)
+                return new AuthSuccess(null);
+
             byte[] token = new byte[b.remaining()];
             b.get(token);
             return new AuthSuccess(token);

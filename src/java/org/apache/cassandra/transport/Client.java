@@ -42,9 +42,17 @@ import org.apache.cassandra.utils.MD5Digest;
 
 import static org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 
+//如果不想用正式的java-driver，可以通过这类个做些简单的测试，
 public class Client extends SimpleClient
 {
-    public Client(String host, int port, ClientEncryptionOptions encryptionOptions)
+	 //我加上的
+    private static int streamId = 1;
+
+    private static synchronized int nextStreamId() { //我加上的
+        return streamId++;
+    }
+
+	public Client(String host, int port, ClientEncryptionOptions encryptionOptions)
     {
         super(host, port, encryptionOptions);
     }
@@ -75,6 +83,9 @@ public class Client extends SimpleClient
 
             try
             {
+            	req.setTracingRequested(); //我加上的
+            	req.setStreamId(nextStreamId()); //我加上的
+
                 Message.Response resp = execute(req);
                 System.out.println("-> " + resp);
             }
@@ -105,6 +116,11 @@ public class Client extends SimpleClient
                {
                    options.put(StartupMessage.COMPRESSION, "snappy");
                    connection.setCompressor(FrameCompressor.SnappyCompressor.instance);
+               }
+               else if (next.toLowerCase().equals("lz4")) //我加上的
+               {
+                   options.put(StartupMessage.COMPRESSION, "lz4");
+                   connection.setCompressor(FrameCompressor.LZ4Compressor.instance);
                }
             }
             return new StartupMessage(options);
@@ -217,6 +233,7 @@ public class Client extends SimpleClient
         return credentials;
     }
 
+    //编码格式是: 0 + username的字节 + 0 + password的字节
     private byte[] encodeCredentialsForSasl(Map<String, String> credentials)
     {
         byte[] username = credentials.get(IAuthenticator.USERNAME_KEY).getBytes(StandardCharsets.UTF_8);

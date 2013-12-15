@@ -201,8 +201,9 @@ public class Frame
             Connection connection = (Connection)channel.getAttachment();
             if (connection == null)
             {
+            	//见org.apache.cassandra.transport.Message.ProtocolEncoder.encode中的注释
                 // First message seen on this channel, attach the connection object
-                connection = factory.newConnection(channel, version);
+                connection = factory.newConnection(channel, version); //如果是server端，在这里生成ClientState的实例
                 channel.setAttachment(connection);
             }
             else if (connection.getVersion() != version)
@@ -285,6 +286,8 @@ public class Frame
             Connection connection = (Connection)channel.getAttachment();
 
             // Never compress STARTUP messages
+            //第一次发STARTUP消息时，connection也为null
+            //第二次发STARTUP消息时虽然connection不为null，但是server端会报错，STARTUP只能发一次
             if (frame.header.type == Message.Type.STARTUP || connection == null)
                 return frame;
 

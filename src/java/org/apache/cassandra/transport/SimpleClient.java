@@ -60,6 +60,7 @@ import org.jboss.netty.logging.InternalLoggerFactory;
 import org.jboss.netty.logging.Slf4JLoggerFactory;
 import static org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 
+//如果不想用正式的java-driver，可以通过这类个做些简单的测试，
 public class SimpleClient
 {
     static

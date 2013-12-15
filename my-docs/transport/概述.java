@@ -30,9 +30,17 @@
 
 请求=>响应
 
-请求        响应
+请求             响应
 ======================================================================
-STARTUP     正常: READY  需要认证: AUTHENTICATE  发生错误: ERROR
+STARTUP          正常: READY  需要认证: AUTHENTICATE  发生错误: ERROR(以下都一样，只要发生错误就返回ERROR)
+AUTH_RESPONSE    AuthSuccess  AuthChallenge
+CREDENTIALS      READY
+OPTIONS          SUPPORTED
+REGISTER         READY
+PREPARE          RESULT
+EXECUTE          RESULT
+BATCH            RESULT
+======================================================================
 
 
 Client端:
@@ -92,11 +100,30 @@ Client端:
 
 Server端:
 ===================================
-Server端的解码器调用顺序:
+Server端对请求解码时的调用顺序:
 org.apache.cassandra.transport.Frame.Decoder (由字节流构造出Frame)
 org.apache.cassandra.transport.Frame.Decompressor (对Frame体解压缩)
-org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Request)
+org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Request子类)
 org.apache.cassandra.transport.Message.Dispatcher (分发Request)
+
+Server端对响应编码时的调用顺序:
+org.apache.cassandra.transport.Message.ProtocolEncoder (将Response子类编码为Frame)
+org.apache.cassandra.transport.Frame.Compressor (对Frame体压缩)
+org.apache.cassandra.transport.Frame.Encoder (将Frame编码为字节流)
+
+
+
+Client端:
+===================================
+Client端对请求编码时的调用顺序:
+org.apache.cassandra.transport.Message.ProtocolEncoder (将Request子类编码为Frame)
+org.apache.cassandra.transport.Frame.Compressor (对Frame体压缩)
+org.apache.cassandra.transport.Frame.Encoder (将Frame编码为字节流)
+
+Client端对响应解码时的调用顺序:
+org.apache.cassandra.transport.Frame.Decoder (由字节流构造出Frame)
+org.apache.cassandra.transport.Frame.Decompressor (对Frame体解压缩)
+org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Response子类)
 
 
 从Client发送给Server端的第一个消息必须是STARTUP或OPTIONS
