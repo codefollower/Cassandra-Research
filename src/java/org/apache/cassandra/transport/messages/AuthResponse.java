@@ -87,7 +87,7 @@ public class AuthResponse extends Message.Request
             }
             else
             {
-                return new AuthChallenge(challenge);
+                return new AuthChallenge(challenge); //可以实现个SaslAuthenticator子类让它的isComplete返回false
             }
         }
         catch (AuthenticationException e)

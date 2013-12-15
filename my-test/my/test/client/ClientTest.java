@@ -27,7 +27,9 @@ public class ClientTest {
     //提示>>后，
 	//先输入: startup lz4
 	//authenticate username=cassandra password=cassandra
+	//register status_change
 	//query SELECT schema_version FROM system.local WHERE key='local'
+	//或 query SELECT schema_version FROM system.local WHERE key='local' !10 (感叹号是分隔符，后面是pageSize，感叹号跟数字之间没有空格)
     public static void main(String[] args) {
         try {
             Client.main(new String[] { "localhost", "9042" });

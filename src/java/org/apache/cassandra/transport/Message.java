@@ -40,6 +40,9 @@ public abstract class Message
 
     public interface Codec<M extends Message> extends CBCodec<M> {}
 
+    //Direction与version在Frame header中占一字节，
+    //这个字节的第1位如果是0代表REQUEST，如果是1代表RESPONSE，
+    //其余7位代表version(协议版本)
     public enum Direction
     {
         REQUEST, RESPONSE;
@@ -118,7 +121,7 @@ public abstract class Message
 
     public final Type type;
     protected volatile Connection connection;
-    private volatile int streamId;
+    private volatile int streamId; //用于异步消息处理
 
     protected Message(Type type)
     {
@@ -208,6 +211,7 @@ public abstract class Message
             boolean isTracing = frame.header.flags.contains(Frame.Header.Flag.TRACING);
 
             //只有Response并且有Flag.TRACING时才有tracingId
+            //tracingId是从server发给client的，所以对Request解码时是没意义的
             UUID tracingId = isRequest || !isTracing ? null : CBUtil.readUUID(frame.body);
 
             try
@@ -265,7 +269,8 @@ public abstract class Message
             ChannelBuffer body;
             if (message instanceof Response)
             {
-                UUID tracingId = ((Response)message).getTracingId();
+                //执行QueryMessage、PrepareMessage、ExecuteMessage、BatchMessage时才有可能返回不为null的tracingId
+                UUID tracingId = ((Response)message).getTracingId(); //tracingId的长度是16字节
                 if (tracingId != null)
                 {
                     body = ChannelBuffers.buffer(CBUtil.sizeOfUUID(tracingId) + messageSize);

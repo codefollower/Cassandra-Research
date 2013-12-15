@@ -32,6 +32,7 @@ import org.apache.cassandra.transport.Message;
 /**
  * Message to indicate that the server is ready to receive requests.
  */
+//只用于支持旧版本，被废弃了，用AUTH_RESPONSE替换
 public class CredentialsMessage extends Message.Request
 {
     public static final Message.Codec<CredentialsMessage> codec = new Message.Codec<CredentialsMessage>()

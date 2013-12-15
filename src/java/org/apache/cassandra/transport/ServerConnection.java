@@ -41,6 +41,7 @@ public class ServerConnection extends Connection
     //key是streamId
     private final ConcurrentMap<Integer, QueryState> queryStates = new NonBlockingHashMap<Integer, QueryState>();
 
+    //在Frame.Decoder.decode调用
     public ServerConnection(Channel channel, int version, Connection.Tracker tracker)
     {
         super(channel, version, tracker);
@@ -61,6 +62,8 @@ public class ServerConnection extends Connection
         return qState;
     }
 
+    //在Message.Dispatcher.messageReceived调用
+    //type是请求消息类型
     public QueryState validateNewMessage(Message.Type type, int version, int streamId)
     {
         switch (state)
@@ -76,7 +79,7 @@ public class ServerConnection extends Connection
                     throw new ProtocolException(String.format("Unexpected message %s, expecting %s", type, version == 1 ? "CREDENTIALS" : "SASL_RESPONSE"));
                 break;
             case READY:
-                if (type == Message.Type.STARTUP)
+                if (type == Message.Type.STARTUP) //STARTUP这个请求消息只能发一次
                     throw new ProtocolException("Unexpected message STARTUP, the connection is already initialized");
                 break;
             default:
@@ -85,6 +88,7 @@ public class ServerConnection extends Connection
         return getQueryState(streamId);
     }
 
+    //在Message.Dispatcher.messageReceived调用
     public void applyStateTransition(Message.Type requestType, Message.Type responseType)
     {
         switch (state)
@@ -116,6 +120,7 @@ public class ServerConnection extends Connection
         }
     }
 
+    //在org.apache.cassandra.transport.messages.AuthResponse.execute(QueryState)调用
     public SaslAuthenticator getAuthenticator()
     {
         if (saslAuthenticator == null)

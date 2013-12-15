@@ -131,6 +131,8 @@ public class Client extends SimpleClient
             // Ugly hack to allow setting a page size, but that's playground code anyway
             String query = line;
             int pageSize = -1;
+            //如query SELECT schema_version FROM system.local WHERE key='local' !10
+            //(感叹号是分隔符，后面是pageSize，感叹号跟数字之间没有空格
             if (line.matches(".+ !\\d+$"))
             {
                 int idx = line.lastIndexOf('!');
@@ -216,6 +218,8 @@ public class Client extends SimpleClient
         return null;
     }
 
+    //如: authenticate username=cassandra password=cassandra
+    //或: credentials username=cassandra password=cassandra
     private Map<String, String> readCredentials(Iterator<String> iter)
     {
         final Map<String, String> credentials = new HashMap<String, String>();

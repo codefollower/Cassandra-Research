@@ -25,6 +25,7 @@ import org.apache.cassandra.utils.FBUtilities;
 /**
  * Represents the state related to a given query.
  */
+//每个streamId对应一个QueryState，每个ClientState对应一个连接
 public class QueryState
 {
     private final ClientState clientState;

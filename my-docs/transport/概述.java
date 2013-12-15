@@ -5,7 +5,7 @@
 	REQUEST消息(有9个):
 	===================================
         STARTUP        (1,  Direction.REQUEST,  StartupMessage.codec),
-        CREDENTIALS    (4,  Direction.REQUEST,  CredentialsMessage.codec),
+        CREDENTIALS    (4,  Direction.REQUEST,  CredentialsMessage.codec), //只用于支持旧版本，被废弃了，用AUTH_RESPONSE替换
         OPTIONS        (5,  Direction.REQUEST,  OptionsMessage.codec),
         QUERY          (7,  Direction.REQUEST,  QueryMessage.codec),
         PREPARE        (9,  Direction.REQUEST,  PrepareMessage.codec),
@@ -33,15 +33,20 @@
 请求             响应
 ======================================================================
 STARTUP          正常: READY  需要认证: AUTHENTICATE  发生错误: ERROR(以下都一样，只要发生错误就返回ERROR)
-AUTH_RESPONSE    AuthSuccess  AuthChallenge
-CREDENTIALS      READY
 OPTIONS          SUPPORTED
+AUTH_RESPONSE    AuthSuccess 或 AuthChallenge(需要client进一步提供信息)，目前没用到AuthChallenge
+CREDENTIALS      READY
 REGISTER         READY
+QUERY            RESULT
 PREPARE          RESULT
 EXECUTE          RESULT
 BATCH            RESULT
 ======================================================================
 
+从Client发送给Server端的第一个消息必须是STARTUP或OPTIONS，
+给Server端发送OPTIONS消息叫Server返回SUPPORTED消息,
+SUPPORTED消息包括CQL_VERSION和COMPRESSION两个参数，
+CQL_VERSION代表server端的当前CQL协议版本，COMPRESSION代表server端支持的压缩算法名(目前支持snappy和lz4)
 
 Client端:
 ===================================
@@ -98,32 +103,36 @@ Client端:
 
 
 
-Server端:
-===================================
-Server端对请求解码时的调用顺序:
-org.apache.cassandra.transport.Frame.Decoder (由字节流构造出Frame)
-org.apache.cassandra.transport.Frame.Decompressor (对Frame体解压缩)
-org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Request子类)
-org.apache.cassandra.transport.Message.Dispatcher (分发Request)
-
-Server端对响应编码时的调用顺序:
-org.apache.cassandra.transport.Message.ProtocolEncoder (将Response子类编码为Frame)
-org.apache.cassandra.transport.Frame.Compressor (对Frame体压缩)
-org.apache.cassandra.transport.Frame.Encoder (将Frame编码为字节流)
-
-
 
 Client端:
 ===================================
-Client端对请求编码时的调用顺序:
+(1) Client端对请求编码时的调用顺序:
+
 org.apache.cassandra.transport.Message.ProtocolEncoder (将Request子类编码为Frame)
 org.apache.cassandra.transport.Frame.Compressor (对Frame体压缩)
 org.apache.cassandra.transport.Frame.Encoder (将Frame编码为字节流)
 
-Client端对响应解码时的调用顺序:
+(4) Client端对响应解码时的调用顺序:
+
 org.apache.cassandra.transport.Frame.Decoder (由字节流构造出Frame)
 org.apache.cassandra.transport.Frame.Decompressor (对Frame体解压缩)
 org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Response子类)
 
 
 从Client发送给Server端的第一个消息必须是STARTUP或OPTIONS
+
+
+Server端:
+===================================
+(2) Server端对请求解码时的调用顺序:
+
+org.apache.cassandra.transport.Frame.Decoder (由字节流构造出Frame)
+org.apache.cassandra.transport.Frame.Decompressor (对Frame体解压缩)
+org.apache.cassandra.transport.Message.ProtocolDecoder (由Frame得到具体的Request子类)
+org.apache.cassandra.transport.Message.Dispatcher (分发Request)
+
+(3) Server端对响应编码时的调用顺序:
+
+org.apache.cassandra.transport.Message.ProtocolEncoder (将Response子类编码为Frame)
+org.apache.cassandra.transport.Frame.Compressor (对Frame体压缩)
+org.apache.cassandra.transport.Frame.Encoder (将Frame编码为字节流)

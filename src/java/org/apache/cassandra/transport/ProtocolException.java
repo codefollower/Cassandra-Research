@@ -25,8 +25,6 @@ import org.apache.cassandra.exceptions.TransportException;
  */
 public class ProtocolException extends RuntimeException implements TransportException
 {
-    private static final long serialVersionUID = 1L;
-
     public ProtocolException(String msg)
     {
         super(msg);

@@ -43,6 +43,7 @@ import org.apache.cassandra.utils.SemanticVersion;
 /**
  * State related to a client connection.
  */
+//每个streamId对应一个QueryState，每个ClientState对应一个连接
 public class ClientState
 {
     public static final SemanticVersion DEFAULT_CQL_VERSION = org.apache.cassandra.cql3.QueryProcessor.CQL_VERSION;
