@@ -33,7 +33,7 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 //index/trigger没有alter
 
 //通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
-//调用顺序prepareKeyspace->prepare->checkAccess->validate->execute
+//调用顺序setBoundVariables->prepareKeyspace->prepare->getBoundsTerms->checkAccess->validate->execute
 public abstract class SchemaAlteringStatement extends CFStatement implements CQLStatement
 {
     private final boolean isColumnFamilyLevel;

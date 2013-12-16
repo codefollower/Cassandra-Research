@@ -42,7 +42,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MD5Digest;
 import org.apache.cassandra.utils.SemanticVersion;
 
-public class QueryProcessor
+public class QueryProcessor //全是static方法
 {
     public static final SemanticVersion CQL_VERSION = new SemanticVersion("3.1.2");
 
@@ -74,6 +74,7 @@ public class QueryProcessor
 
     static
     {
+        //要加-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
         if (MemoryMeter.isInitialized())
         {
             preparedStatements = new ConcurrentLinkedHashMap.Builder<MD5Digest, CQLStatement>()
@@ -222,6 +223,7 @@ public class QueryProcessor
         return processStatement(prepared, queryState, options, queryString);
     }
 
+    //执行batch时调用
     public static CQLStatement parseStatement(String queryStr, QueryState queryState) throws RequestValidationException
     {
         return getStatement(queryStr, queryState.getClientState()).statement;
@@ -292,7 +294,7 @@ public class QueryProcessor
     {
         ParsedStatement.Prepared prepared = getStatement(queryString, clientState);
         int bountTerms = prepared.statement.getBoundsTerms();
-        if (bountTerms > FBUtilities.MAX_UNSIGNED_SHORT)
+        if (bountTerms > FBUtilities.MAX_UNSIGNED_SHORT) //占位符不能超过65535个
             throw new InvalidRequestException(String.format("Too many markers(?). %d markers exceed the allowed maximum of %d", bountTerms, FBUtilities.MAX_UNSIGNED_SHORT));
         assert bountTerms == prepared.boundNames.size();
 
@@ -394,6 +396,7 @@ public class QueryProcessor
             hook.processBatch(batch, context);
     }
 
+    //会进行prepare
     public static ParsedStatement.Prepared getStatement(String queryStr, ClientState clientState)
     throws RequestValidationException
     {
@@ -401,13 +404,18 @@ public class QueryProcessor
         ParsedStatement statement = parseStatement(queryStr);
 
         // Set keyspace for statement that require login
-        if (statement instanceof CFStatement)
+        if (statement instanceof CFStatement) //比如AuthorizationStatement和AuthenticationStatement的子类就没有CF
             ((CFStatement)statement).prepareKeyspace(clientState);
 
         Tracing.trace("Preparing statement");
         return statement.prepare();
     }
 
+    //ANTLR相关的词法语法解析(CharStream=>CqlLexer=>TokenStream=>CqlParser)
+    //只是得到一个解析后的ParsedStatement，并未进行prepare
+    //比如对于insert，就得到一个org.apache.cassandra.cql3.statements.UpdateStatement.ParsedInsert的实例
+
+    //ParsedStatement和CQLStatement是平行的两个类或接口，只不过有些子类同时实现了CQLStatement并继承自ParsedStatement 
     public static ParsedStatement parseStatement(String queryStr) throws SyntaxException
     {
         try
@@ -423,6 +431,7 @@ public class QueryProcessor
 
             // The lexer and parser queue up any errors they may have encountered
             // along the way, if necessary, we turn them into exceptions here.
+            //都在Cql.g文件中定义
             lexer.throwLastRecognitionError();
             parser.throwLastRecognitionError();
 

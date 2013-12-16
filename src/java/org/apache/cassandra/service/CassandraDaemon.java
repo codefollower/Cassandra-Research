@@ -413,7 +413,7 @@ public class CassandraDaemon
                 //Allow the server to start even if the bean can't be registered
             }
             
-            setup();
+            setup(); //在里面会完成整个Cassandra的初始化
 
             if (pidFile != null)
             {

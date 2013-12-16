@@ -29,12 +29,15 @@ public class CFName
     private String ksName;
     private String cfName;
 
+    //在CqlParser中调用，如果Keyspace名加了引号，那么keepCase为true
+    //在org.apache.cassandra.cql3.statements.CFStatement.prepareKeyspace(ClientState)中也调用了
+    //如果未指定Keyspace名，那么必须使用USE来指明，这时就会触发
     public void setKeyspace(String ks, boolean keepCase)
     {
         ksName = keepCase ? ks : ks.toLowerCase(Locale.US);
     }
 
-    public void setColumnFamily(String cf, boolean keepCase)
+    public void setColumnFamily(String cf, boolean keepCase) //在CqlParser中调用，如果列族名加了引号，那么keepCase为true
     {
         cfName = keepCase ? cf : cf.toLowerCase(Locale.US);
     }

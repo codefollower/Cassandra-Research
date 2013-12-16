@@ -68,6 +68,7 @@ public class QueryState
             return true;
         }
 
+        //默认是0.0
         double tracingProbability = StorageService.instance.getTracingProbability();
         return tracingProbability != 0 && FBUtilities.threadLocalRandom().nextDouble() < tracingProbability;
     }

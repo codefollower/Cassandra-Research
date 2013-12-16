@@ -64,7 +64,7 @@ public abstract class ResultMessage extends Message.Response
         public final int id;
         public final Message.Codec<ResultMessage> subcodec;
 
-        private static final Kind[] ids;
+        private static final Kind[] ids; //0号位置为null，从1开始
         static
         {
             int maxId = -1;
@@ -143,6 +143,7 @@ public abstract class ResultMessage extends Message.Response
         }
     }
 
+    //用于USE语句
     public static class SetKeyspace extends ResultMessage
     {
         public final String keyspace;
