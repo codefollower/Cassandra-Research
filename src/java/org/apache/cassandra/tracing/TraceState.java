@@ -40,6 +40,8 @@ import org.apache.cassandra.utils.WrappedRunnable;
  * ThreadLocal state for a tracing session. The presence of an instance of this class as a ThreadLocal denotes that an
  * operation is being traced.
  */
+//对应system_traces.events表
+//表里的记录有效期只有一天
 @SuppressWarnings("deprecation")
 public class TraceState
 {
@@ -86,6 +88,19 @@ public class TraceState
         TraceState.trace(sessionIdBytes, message, elapsed());
     }
 
+    //往system_traces.events表中插入一条记录，
+    //其中event_id是CLUSTERING_COLUMN列，会放在普通列之前，所以下面没有包含它
+    //普通列有4个，session_id是PARTITION_KEY，
+    //system_traces.events是system_traces.sessions表的从表
+    //       CREATE TABLE events (
+    //            session_id uuid,
+    //            event_id timeuuid,
+    //            source inet,
+    //            thread text,
+    //            activity text,
+    //            source_elapsed int,
+    //            PRIMARY KEY (session_id, event_id)
+    //        )
     public static void trace(final ByteBuffer sessionIdBytes, final String message, final int elapsed)
     {
         final ByteBuffer eventId = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes());

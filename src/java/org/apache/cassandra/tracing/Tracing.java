@@ -52,6 +52,8 @@ import static org.apache.cassandra.utils.ByteBufferUtil.bytes;
  * A trace session context. Able to track and store trace sessions. A session is usually a user initiated query, and may
  * have multiple local and remote events before it is completed. All events and sessions are stored at keyspace.
  */
+//对应system_traces.sessions表
+//表里的记录有效期只有一天
 public class Tracing
 {
     public static final String TRACE_KS = "system_traces";
@@ -59,7 +61,7 @@ public class Tracing
     public static final String SESSIONS_CF = "sessions";
     public static final String TRACE_HEADER = "TraceSession";
 
-    private static final int TTL = 24 * 3600;
+    private static final int TTL = 24 * 3600; //表里的记录有效期只有一天
 
     private static final Logger logger = LoggerFactory.getLogger(Tracing.class);
 
@@ -151,6 +153,8 @@ public class Tracing
     /**
      * Stop the session and record its complete.  Called by coodinator when request is complete.
      */
+    //往system_traces.sessions表中插入一条记录
+    //此次插入的记录只包含duration字段，其他字段在会在begin方法中加入
     public void stopSession()
     {
         TraceState state = this.state.get();
@@ -194,6 +198,16 @@ public class Tracing
         state.set(tls);
     }
 
+    //往system_traces.sessions表中插入一条记录
+    //此次插入的记录不包含duration字段，会在stopSession()中加入
+    //        CREATE TABLE sessions (
+    //            session_id uuid PRIMARY KEY,
+    //            coordinator inet,
+    //            request text,
+    //            started_at timestamp,
+    //            parameters map<text, text>,
+    //            duration int
+    //        ) WITH COMMENT='traced sessions'
     public void begin(final String request, final Map<String, String> parameters)
     {
         assert isTracing();
@@ -221,6 +235,7 @@ public class Tracing
      * 
      * @param message The internode message
      */
+    //用在org.apache.cassandra.net.MessagingService.receive(MessageIn, int, long)
     public TraceState initializeFromMessage(final MessageIn<?> message)
     {
         final byte[] sessionBytes = message.parameters.get(Tracing.TRACE_HEADER);

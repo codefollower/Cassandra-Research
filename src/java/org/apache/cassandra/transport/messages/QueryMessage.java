@@ -88,6 +88,7 @@ public class QueryMessage extends Message.Request
         this.options = options;
     }
 
+    //QueryState的实例在org.apache.cassandra.transport.ServerConnection.validateNewMessage(Type, int, int)中生成
     public Message.Response execute(QueryState state)
     {
         try
@@ -96,7 +97,7 @@ public class QueryMessage extends Message.Request
                 throw new ProtocolException("The page size cannot be 0");
 
             UUID tracingId = null;
-            if (isTracingRequested())
+            if (isTracingRequested()) //生成一个tracingId，作为system_traces.sessions表session_id字段的值
             {
                 tracingId = UUIDGen.getTimeUUID();
                 state.prepareTracingSession(tracingId);
@@ -106,11 +107,13 @@ public class QueryMessage extends Message.Request
             {
                 state.createTracingSession();
 
+                //builder会构建一个Map，作为system_traces.sessions表parameters字段的值
                 ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
                 builder.put("query", query);
                 if (options.getPageSize() > 0)
                     builder.put("page_size", Integer.toString(options.getPageSize()));
 
+                //往system_traces.sessions表插入一条记录
                 Tracing.instance.begin("Execute CQL3 query", builder.build());
             }
 
@@ -131,6 +134,8 @@ public class QueryMessage extends Message.Request
         }
         finally
         {
+            //往system_traces.sessions表插入一条记录，实际上只填补duration字段
+            //用来记录执行时间的长度
             Tracing.instance.stopSession();
         }
     }
