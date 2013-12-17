@@ -28,6 +28,7 @@ import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
 //对应LIST USERS命令
+//只查system_auth.users表
 public class ListUsersStatement extends AuthenticationStatement
 {
     public void validate(ClientState state)

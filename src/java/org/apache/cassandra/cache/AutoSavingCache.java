@@ -18,7 +18,6 @@
 package org.apache.cassandra.cache;
 
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
@@ -43,7 +42,6 @@ import org.apache.cassandra.io.util.LengthAvailableInputStream;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
 //会把缓存内容定期保存到硬盘

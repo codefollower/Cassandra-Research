@@ -81,12 +81,13 @@ public class AlterUserStatement extends AuthenticationStatement
         }
     }
 
+    //事务问题同CreateUserStatement.execute(ClientState)
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
         if (!opts.isEmpty())
-            DatabaseDescriptor.getAuthenticator().alter(username, opts.getOptions());
+            DatabaseDescriptor.getAuthenticator().alter(username, opts.getOptions()); //这里是用UPDATE
         if (superuser != null)
-            Auth.insertUser(username, superuser.booleanValue());
+            Auth.insertUser(username, superuser.booleanValue()); //没有更新操作，还是用insert
         return null;
     }
 }

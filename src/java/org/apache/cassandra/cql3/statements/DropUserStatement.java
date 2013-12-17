@@ -45,19 +45,23 @@ public class DropUserStatement extends AuthenticationStatement
             throw new InvalidRequestException(String.format("User %s doesn't exist", username));
 
         AuthenticatedUser user = state.getUser();
+        //当前用户不能删除自己
         if (user != null && user.getName().equals(username))
             throw new InvalidRequestException("Users aren't allowed to DROP themselves");
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException
     {
+        //只有超级用户才有drop user的权限
         if (!state.getUser().isSuper())
             throw new UnauthorizedException("Only superusers are allowed to perform DROP USER queries");
     }
 
+    //事务问题同CreateUserStatement.execute(ClientState)
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
         // clean up permissions after the dropped user.
+        //删除permissions、users、credentials三个表中与username相关的记录
         DatabaseDescriptor.getAuthorizer().revokeAll(username);
         Auth.deleteUser(username);
         DatabaseDescriptor.getAuthenticator().drop(username);

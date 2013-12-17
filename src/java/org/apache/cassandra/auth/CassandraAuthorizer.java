@@ -33,7 +33,6 @@ import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.exceptions.*;
-import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -42,6 +41,13 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * CassandraAuthorizer is an IAuthorizer implementation that keeps
  * permissions internally in C* - in system_auth.permissions CQL3 table.
  */
+////对应system_auth.permissions表
+//    CREATE TABLE system_auth.permissions (
+//        username text,
+//        resource text,
+//        permissions set<text>,
+//        PRIMARY KEY(username, resource)
+//    ) WITH gc_grace_seconds=90 * 24 * 60 * 60 // 3 months
 public class CassandraAuthorizer implements IAuthorizer
 {
     private static final Logger logger = LoggerFactory.getLogger(CassandraAuthorizer.class);
@@ -100,16 +106,18 @@ public class CassandraAuthorizer implements IAuthorizer
     }
 
     //performer参数未使用
+    //把resource上的permissions付给to
     public void grant(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String to)
     throws RequestExecutionException
     {
-        modify(permissions, resource, to, "+");
+        modify(permissions, resource, to, "+"); //permissions字段是set类型，所以用"+"
     }
 
+    //把from上对resource的permissions撤消
     public void revoke(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String from)
     throws RequestExecutionException
     {
-        modify(permissions, resource, from, "-");
+        modify(permissions, resource, from, "-"); //permissions字段是set类型，所以用"-"
     }
 
     // Adds or removes permissions from user's 'permissions' set (adds if op is "+", removes if op is "-")
@@ -128,10 +136,11 @@ public class CassandraAuthorizer implements IAuthorizer
     // If the user requesting 'LIST PERMISSIONS' is not a superuser OR his username doesn't match 'of', we
     // throw UnauthorizedException. So only a superuser can view everybody's permissions. Regular users are only
     // allowed to see their own permissions.
+    //查看用户"of"在指定资源"resource"上的权限细节(权限类型只限定在Set<Permission> permissions中指定的类型)
     public Set<PermissionDetails> list(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String of)
     throws RequestValidationException, RequestExecutionException
     {
-        //不能看自己的权限，想看别人的自己必须是超级用户
+        //如果不是超级用户，不能看别人的权限，只能看自己的。
         if (!performer.isSuper() && !performer.getName().equals(of))
             throw new UnauthorizedException(String.format("You are not authorized to view %s's permissions",
                                                           of == null ? "everyone" : of));
@@ -178,6 +187,8 @@ public class CassandraAuthorizer implements IAuthorizer
         if (!conditions.isEmpty())
             query += " WHERE " + StringUtils.join(conditions, " AND ");
 
+        //因为username字段是PARTITION_KEY，而resource字段是CLUSTERING_COLUMN，
+        //如果没指定username，那么必须加"ALLOW FILTERING"
         if (resource != null && of == null)
             query += " ALLOW FILTERING";
 
@@ -205,6 +216,7 @@ public class CassandraAuthorizer implements IAuthorizer
         try
         {
             // TODO: switch to secondary index on 'resource' once https://issues.apache.org/jira/browse/CASSANDRA-5125 is resolved.
+            //1. 先找到拥有droppedResource这个资源权限的所有用户
             rows = process(String.format("SELECT username FROM %s.%s WHERE resource = '%s' ALLOW FILTERING",
                                          Auth.AUTH_KS,
                                          PERMISSIONS_CF,
@@ -216,6 +228,7 @@ public class CassandraAuthorizer implements IAuthorizer
             return;
         }
 
+        //2. 然后再一条条删除
         for (UntypedResultSet.Row row : rows)
         {
             try
@@ -242,13 +255,13 @@ public class CassandraAuthorizer implements IAuthorizer
     {
     }
 
-    public void setup()
+    public void setup() //由Auth.setup()触发
     {
         if (Schema.instance.getCFMetaData(Auth.AUTH_KS, PERMISSIONS_CF) == null)
         {
             try
             {
-                process(PERMISSIONS_CF_SCHEMA);
+                process(PERMISSIONS_CF_SCHEMA);  //创建permissions表
             }
             catch (RequestExecutionException e)
             {

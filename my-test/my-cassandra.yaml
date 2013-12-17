@@ -40,6 +40,7 @@ incremental_backups: true
 compaction_throughput_mb_per_sec: 0
 
 authenticator: org.apache.cassandra.auth.PasswordAuthenticator
+authorizer: org.apache.cassandra.auth.CassandraAuthorizer
 
 row_cache_size_in_mb: 5
 row_cache_save_period: 14400

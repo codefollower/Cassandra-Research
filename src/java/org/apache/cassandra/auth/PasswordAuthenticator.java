@@ -38,7 +38,6 @@ import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.*;
-import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.messages.ResultMessage;
@@ -51,7 +50,14 @@ import org.mindrot.jbcrypt.BCrypt;
  * that keeps credentials (usernames and bcrypt-hashed passwords)
  * internally in C* - in system_auth.credentials CQL3 table.
  */
+//对应system_auth.credentials表
 //启动时，会先调用setup()方法
+//    CREATE TABLE system_auth.credentials (
+//        username text,
+//        salted_hash text, //使用BCrypt算法
+//        options map<text,text>, //这个字段目前未使用
+//        PRIMARY KEY(username)
+//    ) WITH gc_grace_seconds=90 * 24 * 60 * 60 // 3 months
 public class PasswordAuthenticator implements ISaslAwareAuthenticator
 {
     private static final Logger logger = LoggerFactory.getLogger(PasswordAuthenticator.class);
@@ -109,6 +115,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
         UntypedResultSet result;
         try
         {
+            //在system_auth.credentials表中按用户名取出对应密码的hash值
             ResultMessage.Rows rows = authenticateStatement.execute(QueryState.forInternalCalls(),
                                                                     new QueryOptions(consistencyForUser(username),
                                                                                      Lists.newArrayList(ByteBufferUtil.bytes(username))));
@@ -123,12 +130,15 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
             throw new AuthenticationException(e.toString());
         }
 
+        //password是明文，result.one().getString(SALTED_HASH)是hash值
         if (result.isEmpty() || !BCrypt.checkpw(password, result.one().getString(SALTED_HASH)))
             throw new AuthenticationException("Username and/or password are incorrect");
 
         return new AuthenticatedUser(username);
     }
 
+    //在system_auth.credentials表中新增一条记录只有这两个字段:(username, salted_hash)
+    //不包含options字段
     public void create(String username, Map<Option, Object> options) throws InvalidRequestException, RequestExecutionException
     {
         String password = (String) options.get(Option.PASSWORD);
@@ -143,6 +153,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
                 consistencyForUser(username));
     }
 
+    //按用户名修改system_auth.credentials表中的salted_hash字段值
     public void alter(String username, Map<Option, Object> options) throws RequestExecutionException
     {
         //options map<text,text>, //这个字段目前未使用
@@ -154,6 +165,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
                 consistencyForUser(username));
     }
 
+    //删除username对应的记录
     public void drop(String username) throws RequestExecutionException
     {
         process(String.format("DELETE FROM %s.%s WHERE username = '%s'", Auth.AUTH_KS, CREDENTIALS_CF, escape(username)),
@@ -169,13 +181,14 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
     {
     }
 
-    public void setup()
+    public void setup() //由Auth.setup()触发
     {
         setupCredentialsTable(); //创建system_auth.credentials表
 
         // the delay is here to give the node some time to see its peers - to reduce
         // "skipped default user setup: some nodes are were not ready" log spam.
         // It's the only reason for the delay.
+        //见org.apache.cassandra.auth.Auth.setup()的对应注释
         if (DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()) || !DatabaseDescriptor.isAutoBootstrap())
         {
             StorageService.tasks.schedule(new Runnable()
@@ -284,6 +297,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
         private boolean complete = false;
         private Map<String, String> credentials;
 
+        //在org.apache.cassandra.transport.messages.AuthResponse.execute(QueryState)调用
         @Override
         public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
         {
@@ -298,6 +312,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
             return complete;
         }
 
+        //验证用户名和密码是否正确
         @Override
         public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
         {

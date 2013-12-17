@@ -296,7 +296,7 @@ public class ClientState
         if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
             return null;
 
-        int validityPeriod = DatabaseDescriptor.getPermissionsValidity();
+        int validityPeriod = DatabaseDescriptor.getPermissionsValidity(); //默认是两秒
         if (validityPeriod <= 0)
             return null;
 
@@ -319,6 +319,9 @@ public class ClientState
 
         try
         {
+            //当permissionsCache在最初调用initPermissionsCache()不为null时，
+            //这里传进去的Pair.create(user, resource)会保留在CacheLoader中，默认保存两秒
+            //这样如果连续的两次访问只要间隔不超过两秒就不会去读system_auth.permissions表
             return permissionsCache.get(Pair.create(user, resource));
         }
         catch (ExecutionException e)

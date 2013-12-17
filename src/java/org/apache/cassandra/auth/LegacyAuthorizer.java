@@ -46,6 +46,7 @@ public abstract class LegacyAuthorizer implements IAuthorizer
     /**
      * Translates new-style authorize() method call to the old-style (including permissions and the hierarchy).
      */
+    @SuppressWarnings("deprecation")
     @Override
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)
     {

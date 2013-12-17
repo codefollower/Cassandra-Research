@@ -41,6 +41,12 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
+//对应system_auth.users表
+//    CREATE TABLE system_auth.users (
+//        name text,
+//        super boolean,
+//        PRIMARY KEY(name)
+//    ) WITH gc_grace_seconds=90 * 24 * 60 * 60 // 3 months(相当于有效期是3个月)
 public class Auth
 {
     private static final Logger logger = LoggerFactory.getLogger(Auth.class);
@@ -123,16 +129,17 @@ public class Auth
     /**
      * Sets up Authenticator and Authorizer.
      */
+    //CassandraDaemon启动时调用org.apache.cassandra.service.StorageService.initServer()间接触发
     public static void setup()
     {
         if (DatabaseDescriptor.getAuthenticator() instanceof AllowAllAuthenticator)
             return;
 
-        setupAuthKeyspace(); //创建system_auth表空间
+        setupAuthKeyspace(); //创建system_auth Keyspace
         setupUsersTable(); //创建users表
 
-        DatabaseDescriptor.getAuthenticator().setup();
-        DatabaseDescriptor.getAuthorizer().setup();
+        DatabaseDescriptor.getAuthenticator().setup(); //创建credentials表
+        DatabaseDescriptor.getAuthorizer().setup(); //创建permissions表
 
         // register a custom MigrationListener for permissions cleanup after dropped keyspaces/cfs.
         MigrationManager.instance.register(new MigrationListener());
@@ -140,6 +147,7 @@ public class Auth
         // the delay is here to give the node some time to see its peers - to reduce
         // "Skipped default superuser setup: some nodes were not ready" log spam.
         // It's the only reason for the delay.
+        //当前节点是种子节点或者禁用自动引导时如果没有用户就新增一个cassandra默认超级用户
         if (DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()) || !DatabaseDescriptor.isAutoBootstrap())
         {
             StorageService.tasks.schedule(new Runnable()

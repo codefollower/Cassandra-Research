@@ -23,7 +23,8 @@ import org.apache.cassandra.io.util.Memory;
 
 public class RefCountedMemory extends Memory
 {
-    private volatile int references = 1;
+    @SuppressWarnings("unused")
+    private volatile int references = 1; //用在UPDATER里，请忽视eclipse的警告
     private static final AtomicIntegerFieldUpdater<RefCountedMemory> UPDATER = AtomicIntegerFieldUpdater.newUpdater(RefCountedMemory.class, "references");
 
     public RefCountedMemory(long size)

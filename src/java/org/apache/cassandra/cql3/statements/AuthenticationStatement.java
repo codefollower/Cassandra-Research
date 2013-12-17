@@ -43,6 +43,7 @@ public abstract class AuthenticationStatement extends ParsedStatement implements
         return execute(state.getClientState());
     }
 
+    //4个子类只有ListUsersStatement不返回null，其他都返回null
     public abstract ResultMessage execute(ClientState state) throws RequestExecutionException, RequestValidationException;
 
     public ResultMessage executeInternal(QueryState state)

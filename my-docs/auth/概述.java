@@ -35,4 +35,4 @@ CREATE TABLE system_auth.permissions (
     PRIMARY KEY(username, resource)
 ) WITH gc_grace_seconds=90 * 24 * 60 * 60 // 3 months
 
-
+上面三个表都是分布式的

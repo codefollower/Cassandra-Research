@@ -56,13 +56,19 @@ public class CreateUserStatement extends AuthenticationStatement
 
     public void checkAccess(ClientState state) throws UnauthorizedException
     {
+        //只有超级用户才有create user的权限
         if (!state.getUser().isSuper())
             throw new UnauthorizedException("Only superusers are allowed to perform CREATE USER queries");
     }
 
+    //这个方法往两个表中都写入一条记录，如果其中之一失败了就不一致了，
+    //并且两个表都不是本地的，
+    //所以应该是一个分布式事务问题，这里并没有解决这个分布式事务问题
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
+        //往system_auth.credentials表中新增一条记录
         DatabaseDescriptor.getAuthenticator().create(username, opts.getOptions());
+        //往system_auth.users表中也增加一条记录
         Auth.insertUser(username, superuser);
         return null;
     }
