@@ -36,7 +36,7 @@ import org.apache.cassandra.utils.Allocator;
  */
 public interface Composite extends IMeasurableMemory
 {
-    public enum EOC
+    public enum EOC //'end-of-component'的缩写
     {
         START, NONE, END;
 

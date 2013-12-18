@@ -1583,6 +1583,10 @@ public final class CFMetaData
         Composite prefix = SchemaColumnFamiliesCf.comparator.make(cfName);
         CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
 
+        //对应schema_columnfamilies表除keyspace_name和columnfamily_name之外的26个普通字段
+        //keyspace_name字段是PARTITION_KEY，
+        //而columnfamily_name字段是CLUSTERING_COLUMN
+        //columnfamily_name字段的值会加到每个普通字段名之前
         adder.add("type", cfType.toString());
 
         if (isSuper())

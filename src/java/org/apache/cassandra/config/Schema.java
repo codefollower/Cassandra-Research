@@ -399,7 +399,7 @@ public class Schema
     public void updateVersionAndAnnounce()
     {
         updateVersion();
-        MigrationManager.passiveAnnounce(version);
+        MigrationManager.passiveAnnounce(version); //Gossip通知其他节点自己的元数据发生变动了
     }
 
     /**

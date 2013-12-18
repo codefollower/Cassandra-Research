@@ -315,17 +315,17 @@ public class ColumnDefinition extends ColumnSpecification
         cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
     }
 
+    //每一个字段对应schema_columns表中的一条记录
     public void toSchema(RowMutation rm, long timestamp)
     {
         ColumnFamily cf = rm.addOrGet(CFMetaData.SchemaColumnsCf);
-
-        //形参: org.apache.cassandra.db.Column.create(String value, long timestamp, String... names)
-        //对于形参names，下面调用addColumn时都包含3个值
-        //总共9个字段，为什么这里只加入7列？
-        //
         Composite prefix = CFMetaData.SchemaColumnsCf.comparator.make(cfName, name.toString());
         CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
 
+        //对应schema_columns表除keyspace_name和columnfamily_name、column_name之外的6个普通字段
+        //keyspace_name字段是PARTITION_KEY，
+        //而columnfamily_name、column_name字段是CLUSTERING_COLUMN
+        //columnfamily_name、column_name这两个字段的值串接后会加到每个普通字段名之前
         adder.add(TYPE, type.toString());
         adder.add(INDEX_TYPE, indexType == null ? null : indexType.toString());
         adder.add(INDEX_OPTIONS, json(indexOptions));
