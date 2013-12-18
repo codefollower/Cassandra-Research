@@ -40,7 +40,7 @@ public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier
     public ColumnIdentifier(String rawText, boolean keepCase) //keepCase为true时保留原始名称，否则全转成小写
     {
         this.text = keepCase ? rawText : rawText.toLowerCase(Locale.US);
-        this.bytes = ByteBufferUtil.bytes(this.text);
+        this.bytes = ByteBufferUtil.bytes(this.text); //按UTF_8编码
     }
 
     public ColumnIdentifier(ByteBuffer bytes, AbstractType type)

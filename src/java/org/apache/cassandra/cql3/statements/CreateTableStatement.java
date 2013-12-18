@@ -84,6 +84,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
     //如果不满足前提条件，valueAlias是null
     private ByteBuffer valueAlias; 
 
+    //普通列: org.apache.cassandra.config.ColumnDefinition.Kind.REGULAR
     private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
     private final CFPropDefs properties;
     private final boolean ifNotExists;
