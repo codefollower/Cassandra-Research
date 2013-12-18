@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -26,6 +25,7 @@ import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.utils.Allocator;
 
@@ -37,7 +37,7 @@ import org.apache.cassandra.utils.Allocator;
  */
 public class UnsortedColumns extends AbstractThreadUnsafeSortedColumns
 {
-    private final ArrayList<Column> columns;
+    private final ArrayList<Cell> cells;
 
     public static final Factory<UnsortedColumns> factory = new Factory<UnsortedColumns>()
     {
@@ -50,13 +50,13 @@ public class UnsortedColumns extends AbstractThreadUnsafeSortedColumns
 
     private UnsortedColumns(CFMetaData metadata)
     {
-        this(metadata, new ArrayList<Column>());
+        this(metadata, new ArrayList<Cell>());
     }
 
-    private UnsortedColumns(CFMetaData metadata, ArrayList<Column> columns)
+    private UnsortedColumns(CFMetaData metadata, ArrayList<Cell> cells)
     {
         super(metadata);
-        this.columns = columns;
+        this.cells = cells;
     }
 
     public Factory getFactory()
@@ -66,7 +66,7 @@ public class UnsortedColumns extends AbstractThreadUnsafeSortedColumns
 
     public ColumnFamily cloneMe()
     {
-        return new UnsortedColumns(metadata, new ArrayList<Column>(columns));
+        return new UnsortedColumns(metadata, new ArrayList<Cell>(cells));
     }
 
     public boolean isInsertReversed()
@@ -76,68 +76,68 @@ public class UnsortedColumns extends AbstractThreadUnsafeSortedColumns
 
     public void clear()
     {
-        columns.clear();
+        cells.clear();
     }
 
-    public void addColumn(Column column, Allocator allocator)
+    public void addColumn(Cell cell, Allocator allocator)
     {
-        columns.add(column);
+        cells.add(cell);
     }
 
-    public void addAll(ColumnFamily cm, Allocator allocator, Function<Column, Column> transformation)
+    public void addAll(ColumnFamily cm, Allocator allocator, Function<Cell, Cell> transformation)
     {
         delete(cm.deletionInfo());
-        for (Column column : cm)
-            addColumn(column);
+        for (Cell cell : cm)
+            addColumn(cell);
     }
 
-    public Iterator<Column> iterator()
+    public Iterator<Cell> iterator()
     {
-        return columns.iterator();
+        return cells.iterator();
     }
 
-    public boolean replace(Column oldColumn, Column newColumn)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    public Column getColumn(ByteBuffer name)
+    public boolean replace(Cell oldCell, Cell newCell)
     {
         throw new UnsupportedOperationException();
     }
 
-    public Iterable<ByteBuffer> getColumnNames()
+    public Cell getColumn(CellName name)
     {
-        return Iterables.transform(columns, new Function<Column, ByteBuffer>()
+        throw new UnsupportedOperationException();
+    }
+
+    public Iterable<CellName> getColumnNames()
+    {
+        return Iterables.transform(cells, new Function<Cell, CellName>()
         {
-            public ByteBuffer apply(Column column)
+            public CellName apply(Cell cell)
             {
-                return column.name;
+                return cell.name;
             }
         });
     }
 
-    public Collection<Column> getSortedColumns()
+    public Collection<Cell> getSortedColumns()
     {
         throw new UnsupportedOperationException();
     }
 
-    public Collection<Column> getReverseSortedColumns()
+    public Collection<Cell> getReverseSortedColumns()
     {
         throw new UnsupportedOperationException();
     }
 
     public int getColumnCount()
     {
-        return columns.size();
+        return cells.size();
     }
 
-    public Iterator<Column> iterator(ColumnSlice[] slices)
+    public Iterator<Cell> iterator(ColumnSlice[] slices)
     {
         throw new UnsupportedOperationException();
     }
 
-    public Iterator<Column> reverseIterator(ColumnSlice[] slices)
+    public Iterator<Cell> reverseIterator(ColumnSlice[] slices)
     {
         throw new UnsupportedOperationException();
     }

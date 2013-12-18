@@ -74,7 +74,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *
  * Where <key> is a name of keyspace e.g. "ks".
  *
- * Column names where made composite to support 3-level nesting which represents following structure:
+ * Cell names where made composite to support 3-level nesting which represents following structure:
  * "ColumnFamily name":"column name":"column attribute" => "value"
  *
  * Example of schema (using CLI):
@@ -136,19 +136,6 @@ public class DefsTables //都是static方法
         }
 
         return keyspaces;
-    }
-
-    public static ByteBuffer searchComposite(String name, boolean start)
-    {
-        assert name != null;
-        ByteBuffer nameBytes = UTF8Type.instance.decompose(name);
-        int length = nameBytes.remaining();
-        byte[] bytes = new byte[2 + length + 1];
-        bytes[0] = (byte)((length >> 8) & 0xFF);
-        bytes[1] = (byte)(length & 0xFF);
-        ByteBufferUtil.arrayCopy(nameBytes, 0, bytes, 2, length);
-        bytes[bytes.length - 1] = (byte)(start ? 0 : 1);
-        return ByteBuffer.wrap(bytes);
     }
 
     private static Row serializedColumnFamilies(DecoratedKey ksNameKey)

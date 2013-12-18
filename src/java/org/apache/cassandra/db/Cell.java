@@ -20,16 +20,15 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.IOError;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 
 import com.google.common.collect.AbstractIterator;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.DataOutputBuffer;
@@ -40,25 +39,22 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.HeapAllocator;
 
 /**
- * Column is immutable, which prevents all kinds of confusion in a multithreaded environment.
+ * Cell is immutable, which prevents all kinds of confusion in a multithreaded environment.
  */
-public class Column implements OnDiskAtom
+public class Cell implements OnDiskAtom
 {
-    //列名的最大长度是65535(0xffff)个字节
     public static final int MAX_NAME_LENGTH = FBUtilities.MAX_UNSIGNED_SHORT;
-
-    public static final ColumnSerializer serializer = new ColumnSerializer();
-
-    public static OnDiskAtom.Serializer onDiskSerializer()
-    {
-        return OnDiskAtom.Serializer.instance; //OnDiskAtom.Serializer会回过来使用ColumnSerializer serializer
-    }
 
     /**
      * For 2.0-formatted sstables (where column count is not stored), @param count should be Integer.MAX_VALUE,
      * and we will look for the end-of-row column name marker instead of relying on that.
      */
-    public static Iterator<OnDiskAtom> onDiskIterator(final DataInput in, final int count, final ColumnSerializer.Flag flag, final int expireBefore, final Descriptor.Version version)
+    public static Iterator<OnDiskAtom> onDiskIterator(final DataInput in,
+                                                      final int count,
+                                                      final ColumnSerializer.Flag flag,
+                                                      final int expireBefore,
+                                                      final Descriptor.Version version,
+                                                      final CellNameType type)
     {
         return new AbstractIterator<OnDiskAtom>()
         {
@@ -72,7 +68,7 @@ public class Column implements OnDiskAtom
                 OnDiskAtom atom;
                 try
                 {
-                    atom = onDiskSerializer().deserializeFromSSTable(in, flag, expireBefore, version);
+                    atom = type.onDiskAtomSerializer().deserializeFromSSTable(in, flag, expireBefore, version);
                 }
                 catch (IOException e)
                 {
@@ -86,41 +82,40 @@ public class Column implements OnDiskAtom
         };
     }
 
-    protected final ByteBuffer name;
+    protected final CellName name;
     protected final ByteBuffer value;
     protected final long timestamp;
 
-    Column(ByteBuffer name)
+    Cell(CellName name)
     {
         this(name, ByteBufferUtil.EMPTY_BYTE_BUFFER);
     }
 
-    public Column(ByteBuffer name, ByteBuffer value)
+    public Cell(CellName name, ByteBuffer value)
     {
         this(name, value, 0);
     }
 
-    public Column(ByteBuffer name, ByteBuffer value, long timestamp)
+    public Cell(CellName name, ByteBuffer value, long timestamp)
     {
         assert name != null;
         assert value != null;
-        assert name.remaining() <= Column.MAX_NAME_LENGTH;
         this.name = name;
         this.value = value;
         this.timestamp = timestamp;
     }
 
-    public Column withUpdatedName(ByteBuffer newName)
+    public Cell withUpdatedName(CellName newName)
     {
-        return new Column(newName, value, timestamp);
+        return new Cell(newName, value, timestamp);
     }
 
-    public Column withUpdatedTimestamp(long newTimestamp)
+    public Cell withUpdatedTimestamp(long newTimestamp)
     {
-        return new Column(name, value, newTimestamp);
+        return new Cell(name, value, newTimestamp);
     }
 
-    public ByteBuffer name()
+    public CellName name()
     {
         return name;
     }
@@ -163,10 +158,10 @@ public class Column implements OnDiskAtom
 
     public int dataSize()
     {
-        return name().remaining() + value.remaining() + TypeSizes.NATIVE.sizeof(timestamp);
+        return name().dataSize() + value.remaining() + TypeSizes.NATIVE.sizeof(timestamp);
     }
 
-    public int serializedSize(TypeSizes typeSizes)
+    public int serializedSize(CellNameType type, TypeSizes typeSizes)
     {
         /*
          * Size of a column is =
@@ -176,15 +171,8 @@ public class Column implements OnDiskAtom
          * + 4 bytes which basically indicates the size of the byte array
          * + entire byte array.
         */
-        int nameSize = name.remaining();
         int valueSize = value.remaining();
-        //因为列名的最大长度是65535(0xffff)个字节，所以这里转成short
-        return typeSizes.sizeof((short) nameSize) + nameSize + 1 + typeSizes.sizeof(timestamp) + typeSizes.sizeof(valueSize) + valueSize;
-    }
-
-    public long serializedSizeForSSTable()
-    {
-        return serializedSize(TypeSizes.NATIVE);
+        return ((int)type.cellSerializer().serializedSize(name, typeSizes)) + 1 + typeSizes.sizeof(timestamp) + typeSizes.sizeof(valueSize) + valueSize;
     }
 
     public int serializationFlags()
@@ -192,18 +180,16 @@ public class Column implements OnDiskAtom
         return 0;
     }
 
-    //如果当前列的时间戳小于参数column，则返回此参数column，否则返回null
-    public Column diff(Column column)
+    public Cell diff(Cell cell)
     {
-        if (timestamp() < column.timestamp())
-            return column;
+        if (timestamp() < cell.timestamp())
+            return cell;
         return null;
     }
 
-    //摘要包括列名、列值、时间戳、列MASK标志(列MASK见org.apache.cassandra.db.ColumnSerializer中的常量)
     public void updateDigest(MessageDigest digest)
     {
-        digest.update(name.duplicate());
+        digest.update(name.toByteBuffer().duplicate());
         digest.update(value.duplicate());
 
         DataOutputBuffer buffer = new DataOutputBuffer();
@@ -219,30 +205,28 @@ public class Column implements OnDiskAtom
         digest.update(buffer.getData(), 0, buffer.getLength());
     }
 
-    public int getLocalDeletionTime() //子类DeletedColumn、ExpiringColumn会覆盖此方法
+    public int getLocalDeletionTime()
     {
         return Integer.MAX_VALUE;
     }
 
-    public Column reconcile(Column column)
+    public Cell reconcile(Cell cell)
     {
-        return reconcile(column, HeapAllocator.instance);
+        return reconcile(cell, HeapAllocator.instance);
     }
 
-    //reconcile: 使和解, 使和谐, 使顺从
-    //从当前列和参数column中选一个
-    public Column reconcile(Column column, Allocator allocator)
+    public Cell reconcile(Cell cell, Allocator allocator)
     {
         // tombstones take precedence.  (if both are tombstones, then it doesn't matter which one we use.)
         if (isMarkedForDelete(System.currentTimeMillis()))
-            return timestamp() < column.timestamp() ? column : this;
-        if (column.isMarkedForDelete(System.currentTimeMillis()))
-            return timestamp() > column.timestamp() ? this : column;
+            return timestamp() < cell.timestamp() ? cell : this;
+        if (cell.isMarkedForDelete(System.currentTimeMillis()))
+            return timestamp() > cell.timestamp() ? this : cell;
         // break ties by comparing values.
-        if (timestamp() == column.timestamp())
-            return value().compareTo(column.value()) < 0 ? column : this;
+        if (timestamp() == cell.timestamp())
+            return value().compareTo(cell.value()) < 0 ? cell : this;
         // neither is tombstoned and timestamps are different
-        return timestamp() < column.timestamp() ? column : this;
+        return timestamp() < cell.timestamp() ? cell : this;
     }
 
     @Override
@@ -253,14 +237,14 @@ public class Column implements OnDiskAtom
         if (o == null || getClass() != o.getClass())
             return false;
 
-        Column column = (Column)o;
+        Cell cell = (Cell)o;
 
-        if (timestamp != column.timestamp)
+        if (timestamp != cell.timestamp)
             return false;
-        if (!name.equals(column.name))
+        if (!name.equals(cell.name))
             return false;
 
-        return value.equals(column.value);
+        return value.equals(cell.value);
     }
 
     @Override
@@ -272,17 +256,17 @@ public class Column implements OnDiskAtom
         return result;
     }
 
-    public Column localCopy(ColumnFamilyStore cfs)
+    public Cell localCopy(ColumnFamilyStore cfs)
     {
         return localCopy(cfs, HeapAllocator.instance);
     }
 
-    public Column localCopy(ColumnFamilyStore cfs, Allocator allocator)
+    public Cell localCopy(ColumnFamilyStore cfs, Allocator allocator)
     {
-        return new Column(cfs.internOrCopy(name, allocator), allocator.clone(value), timestamp);
+        return new Cell(name.copy(allocator), allocator.clone(value), timestamp);
     }
 
-    public String getString(AbstractType<?> comparator)
+    public String getString(CellNameType comparator)
     {
         StringBuilder sb = new StringBuilder();
         sb.append(comparator.getString(name));
@@ -304,7 +288,7 @@ public class Column implements OnDiskAtom
     {
         validateName(metadata);
 
-        AbstractType<?> valueValidator = metadata.getValueValidatorFromCellName(name());
+        AbstractType<?> valueValidator = metadata.getValueValidator(name());
         if (valueValidator != null)
             valueValidator.validate(value());
     }
@@ -314,65 +298,13 @@ public class Column implements OnDiskAtom
         return getLocalDeletionTime() < gcBefore;
     }
 
-    public static Column create(ByteBuffer name, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata)
+    public static Cell create(CellName name, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata)
     {
         if (ttl <= 0)
             ttl = metadata.getDefaultTimeToLive();
 
         return ttl > 0
-               ? new ExpiringColumn(name, value, timestamp, ttl)
-               : new Column(name, value, timestamp);
-    }
-
-    //下面几个create方法都一样，只是value的类型不同
-    public static Column create(String value, long timestamp, String... names)
-    {
-        return new Column(decomposeName(names), UTF8Type.instance.decompose(value), timestamp);
-    }
-
-    public static Column create(int value, long timestamp, String... names)
-    {
-        return new Column(decomposeName(names), Int32Type.instance.decompose(value), timestamp);
-    }
-
-    public static Column create(boolean value, long timestamp, String... names)
-    {
-        return new Column(decomposeName(names), BooleanType.instance.decompose(value), timestamp);
-    }
-
-    public static Column create(double value, long timestamp, String... names)
-    {
-        return new Column(decomposeName(names), DoubleType.instance.decompose(value), timestamp);
-    }
-
-    public static Column create(ByteBuffer value, long timestamp, String... names)
-    {
-        return new Column(decomposeName(names), value, timestamp);
-    }
-
-    public static Column create(InetAddress value, long timestamp, String... names)
-    {
-        return new Column(decomposeName(names), InetAddressType.instance.decompose(value), timestamp);
-    }
-
-    //名字有点难理解，见org.apache.cassandra.db.marshal.AbstractType.compose(ByteBuffer)中的注释
-    //做的事其实就是把多个name组合成一个
-    static ByteBuffer decomposeName(String... names)
-    {
-        assert names.length > 0;
-
-        if (names.length == 1)
-            return UTF8Type.instance.decompose(names[0]);
-
-        // not super performant.  at this time, only infrequently called schema code uses this.
-        List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(names.length);
-        for (int i = 0; i < names.length; i++)
-            types.add(UTF8Type.instance);
-
-        CompositeType.Builder builder = new CompositeType.Builder(CompositeType.getInstance(types));
-        for (String name : names)
-            builder.add(UTF8Type.instance.decompose(name));
-        return builder.build();
+               ? new ExpiringCell(name, value, timestamp, ttl)
+               : new Cell(name, value, timestamp);
     }
 }
-

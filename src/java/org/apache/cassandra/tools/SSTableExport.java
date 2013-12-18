@@ -29,6 +29,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -146,18 +147,17 @@ public class SSTableExport
 
     private static List<Object> serializeAtom(OnDiskAtom atom, CFMetaData cfMetaData)
     {
-        AbstractType<?> comparator = cfMetaData.comparator;
-        if (atom instanceof Column)
+        if (atom instanceof Cell)
         {
-            return serializeColumn((Column) atom, comparator, cfMetaData);
+            return serializeColumn((Cell) atom, cfMetaData);
         }
         else
         {
             assert atom instanceof RangeTombstone;
             RangeTombstone rt = (RangeTombstone) atom;
             ArrayList<Object> serializedColumn = new ArrayList<Object>();
-            serializedColumn.add(comparator.getString(rt.min));
-            serializedColumn.add(comparator.getString(rt.max));
+            serializedColumn.add(cfMetaData.comparator.getString(rt.min));
+            serializedColumn.add(cfMetaData.comparator.getString(rt.max));
             serializedColumn.add(rt.data.markedForDeleteAt);
             serializedColumn.add("t");
             serializedColumn.add(rt.data.localDeletionTime);
@@ -166,46 +166,46 @@ public class SSTableExport
     }
 
     /**
-     * Serialize a given column to the JSON format
+     * Serialize a given cell to the JSON format
      *
-     * @param column     column presentation
+     * @param cell     cell presentation
      * @param comparator columns comparator
      * @param cfMetaData Column Family metadata (to get validator)
-     * @return column as serialized list
+     * @return cell as serialized list
      */
-    private static List<Object> serializeColumn(Column column, AbstractType<?> comparator, CFMetaData cfMetaData)
+    private static List<Object> serializeColumn(Cell cell, CFMetaData cfMetaData)
     {
+        CellNameType comparator = cfMetaData.comparator;
         ArrayList<Object> serializedColumn = new ArrayList<Object>();
 
-        ByteBuffer name = ByteBufferUtil.clone(column.name());
-        ByteBuffer value = ByteBufferUtil.clone(column.value());
+        ByteBuffer value = ByteBufferUtil.clone(cell.value());
 
-        serializedColumn.add(comparator.getString(name));
-        if (column instanceof DeletedColumn)
+        serializedColumn.add(comparator.getString(cell.name()));
+        if (cell instanceof DeletedCell)
         {
             serializedColumn.add(ByteBufferUtil.bytesToHex(value));
         }
         else
         {
-            AbstractType<?> validator = cfMetaData.getValueValidator(cfMetaData.getColumnDefinitionFromCellName(name));
+            AbstractType<?> validator = cfMetaData.getValueValidator(cell.name());
             serializedColumn.add(validator.getString(value));
         }
-        serializedColumn.add(column.timestamp());
+        serializedColumn.add(cell.timestamp());
 
-        if (column instanceof DeletedColumn)
+        if (cell instanceof DeletedCell)
         {
             serializedColumn.add("d");
         }
-        else if (column instanceof ExpiringColumn)
+        else if (cell instanceof ExpiringCell)
         {
             serializedColumn.add("e");
-            serializedColumn.add(((ExpiringColumn) column).getTimeToLive());
-            serializedColumn.add(column.getLocalDeletionTime());
+            serializedColumn.add(((ExpiringCell) cell).getTimeToLive());
+            serializedColumn.add(cell.getLocalDeletionTime());
         }
-        else if (column instanceof CounterColumn)
+        else if (cell instanceof CounterCell)
         {
             serializedColumn.add("c");
-            serializedColumn.add(((CounterColumn) column).timestampOfLastDelete());
+            serializedColumn.add(((CounterCell) cell).timestampOfLastDelete());
         }
 
         return serializedColumn;

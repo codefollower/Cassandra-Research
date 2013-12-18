@@ -22,6 +22,8 @@ import java.nio.ByteBuffer;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -46,10 +48,10 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
         columnDef = columnDefs.iterator().next();
 
-        AbstractType indexComparator = SecondaryIndex.getIndexComparator(baseCfs.metadata, columnDef);
         //索引实际上在内部也是当成一个列族存储的，
         //只不过这个列族名比较特殊，
         //此列族名为: 索引字段所在列族名 + "." + 索引名(如果没有索引名，就用索引字段名，建索引时可以不指定索引名)
+        CellNameType indexComparator = SecondaryIndex.getIndexComparator(baseCfs.metadata, columnDef);
         CFMetaData indexedCfMetadata = CFMetaData.newIndexMetadata(baseCfs.metadata, columnDef, indexComparator);
         indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
                                                              indexedCfMetadata.cfName,
@@ -68,9 +70,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         return new DecoratedKey(new LocalToken(getIndexKeyComparator(), value), value);
     }
 
-    protected abstract ByteBuffer makeIndexColumnName(ByteBuffer rowKey, Column column);
+    protected abstract CellName makeIndexColumnName(ByteBuffer rowKey, Cell cell);
 
-    protected abstract ByteBuffer getIndexedValue(ByteBuffer rowKey, Column column);
+    protected abstract ByteBuffer getIndexedValue(ByteBuffer rowKey, Cell cell);
 
     protected abstract AbstractType getExpressionComparator();
 
@@ -83,39 +85,37 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
                              baseCfs.metadata.getColumnDefinition(expr.column).type.getString(expr.value));
     }
 
-    public void delete(ByteBuffer rowKey, Column column)
+    public void delete(ByteBuffer rowKey, Cell cell)
     {
-        if (column.isMarkedForDelete(System.currentTimeMillis()))
+        if (cell.isMarkedForDelete(System.currentTimeMillis()))
             return;
 
-        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, column));
+        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
         int localDeletionTime = (int) (System.currentTimeMillis() / 1000);
         ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
-        ByteBuffer name = makeIndexColumnName(rowKey, column);
-        assert name.remaining() > 0 && name.remaining() <= Column.MAX_NAME_LENGTH : name.remaining();
-        cfi.addTombstone(name, localDeletionTime, column.timestamp());
+        cfi.addTombstone(makeIndexColumnName(rowKey, cell), localDeletionTime, cell.timestamp());
         indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater);
         if (logger.isDebugEnabled())
             logger.debug("removed index entry for cleaned-up value {}:{}", valueKey, cfi);
     }
 
-    public void insert(ByteBuffer rowKey, Column column)
+    public void insert(ByteBuffer rowKey, Cell cell)
     {
         //valueKey是索引字段值
-        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, column));
+        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
         ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
+
         //对于CompositesIndexOnRegular类型，makeIndexColumnName返回的只有rowKey
         //对于KeysIndex，name其实就是rowKey
-        ByteBuffer name = makeIndexColumnName(rowKey, column);
-        assert name.remaining() > 0 && name.remaining() <= Column.MAX_NAME_LENGTH : name.remaining();
-        if (column instanceof ExpiringColumn)
+        CellName name = makeIndexColumnName(rowKey, cell);
+        if (cell instanceof ExpiringCell)
         {
-            ExpiringColumn ec = (ExpiringColumn)column;
-            cfi.addColumn(new ExpiringColumn(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, ec.timestamp(), ec.getTimeToLive(), ec.getLocalDeletionTime()));
+            ExpiringCell ec = (ExpiringCell) cell;
+            cfi.addColumn(new ExpiringCell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, ec.timestamp(), ec.getTimeToLive(), ec.getLocalDeletionTime()));
         }
         else
         {
-            cfi.addColumn(new Column(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, column.timestamp()));
+            cfi.addColumn(new Cell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp()));
         }
         if (logger.isDebugEnabled())
             logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.key), cfi);
@@ -125,7 +125,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater); //传递nullUpdater时不会再进一步触发索引相关操作'
     }
 
-    public void update(ByteBuffer rowKey, Column col)
+    public void update(ByteBuffer rowKey, Cell col)
     {
         insert(rowKey, col);
     }

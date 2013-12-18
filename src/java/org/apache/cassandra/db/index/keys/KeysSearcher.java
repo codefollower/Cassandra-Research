@@ -28,13 +28,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.CellNameType;
+import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.filter.ExtendedFilter;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.index.*;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.HeapAllocator;
 
 public class KeysSearcher extends SecondaryIndexSearcher
@@ -75,13 +78,16 @@ public class KeysSearcher extends SecondaryIndexSearcher
          * indexed row.
          */
         final AbstractBounds<RowPosition> range = filter.dataRange.keyRange();
-        final ByteBuffer startKey = range.left instanceof DecoratedKey ? ((DecoratedKey)range.left).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
-        final ByteBuffer endKey = range.right instanceof DecoratedKey ? ((DecoratedKey)range.right).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        CellNameType type = index.getIndexCfs().getComparator();
+        final Composite startKey = range.left instanceof DecoratedKey ? type.make(((DecoratedKey)range.left).key) : Composites.EMPTY;
+        final Composite endKey = range.right instanceof DecoratedKey ? type.make(((DecoratedKey)range.right).key) : Composites.EMPTY;
+
+        final CellName primaryColumn = baseCfs.getComparator().cellFromByteBuffer(primary.column);
 
         return new ColumnFamilyStore.AbstractScanIterator()
         {
-            private ByteBuffer lastSeenKey = startKey;
-            private Iterator<Column> indexColumns;
+            private Composite lastSeenKey = startKey;
+            private Iterator<Cell> indexColumns;
             private int columnsRead = Integer.MAX_VALUE;
 
             protected Row computeNext()
@@ -101,7 +107,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
 
                         if (logger.isTraceEnabled() && (index instanceof AbstractSimplePerColumnSecondaryIndex))
                             logger.trace("Scanning index {} starting with {}",
-                                         ((AbstractSimplePerColumnSecondaryIndex)index).expressionString(primary), index.getBaseCfs().metadata.getKeyValidator().getString(startKey));
+                                         ((AbstractSimplePerColumnSecondaryIndex)index).expressionString(primary), index.getBaseCfs().metadata.getKeyValidator().getString(startKey.toByteBuffer()));
 
                         QueryFilter indexFilter = QueryFilter.getSliceFilter(indexKey,
                                                                              index.getIndexCfs().name,
@@ -118,19 +124,19 @@ public class KeysSearcher extends SecondaryIndexSearcher
                             return endOfData();
                         }
 
-                        Collection<Column> sortedColumns = indexRow.getSortedColumns();
-                        columnsRead = sortedColumns.size();
-                        indexColumns = sortedColumns.iterator();
-                        Column firstColumn = sortedColumns.iterator().next();
+                        Collection<Cell> sortedCells = indexRow.getSortedColumns();
+                        columnsRead = sortedCells.size();
+                        indexColumns = sortedCells.iterator();
+                        Cell firstCell = sortedCells.iterator().next();
 
                         // Paging is racy, so it is possible the first column of a page is not the last seen one.
-                        if (lastSeenKey != startKey && lastSeenKey.equals(firstColumn.name()))
+                        if (lastSeenKey != startKey && lastSeenKey.equals(firstCell.name()))
                         {
                             // skip the row we already saw w/ the last page of results
                             indexColumns.next();
-                            logger.trace("Skipping {}", baseCfs.metadata.getKeyValidator().getString(firstColumn.name()));
+                            logger.trace("Skipping {}", baseCfs.metadata.getKeyValidator().getString(firstCell.name().toByteBuffer()));
                         }
-                        else if (range instanceof Range && indexColumns.hasNext() && firstColumn.name().equals(startKey))
+                        else if (range instanceof Range && indexColumns.hasNext() && firstCell.name().equals(startKey))
                         {
                             // skip key excluded by range
                             indexColumns.next();
@@ -140,15 +146,15 @@ public class KeysSearcher extends SecondaryIndexSearcher
 
                     while (indexColumns.hasNext())
                     {
-                        Column column = indexColumns.next();
-                        lastSeenKey = column.name();
-                        if (column.isMarkedForDelete(filter.timestamp))
+                        Cell cell = indexColumns.next();
+                        lastSeenKey = cell.name();
+                        if (cell.isMarkedForDelete(filter.timestamp))
                         {
-                            logger.trace("skipping {}", column.name());
+                            logger.trace("skipping {}", cell.name());
                             continue;
                         }
 
-                        DecoratedKey dk = baseCfs.partitioner.decorateKey(lastSeenKey);
+                        DecoratedKey dk = baseCfs.partitioner.decorateKey(lastSeenKey.toByteBuffer());
                         if (!range.right.isMinimum(baseCfs.partitioner) && range.right.compareTo(dk) < 0)
                         {
                             logger.trace("Reached end of assigned scan range");
@@ -161,8 +167,8 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         }
 
                         logger.trace("Returning index hit for {}", dk);
-                        ColumnFamily data = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, filter.columnFilter(lastSeenKey), filter.timestamp));
-                        // While the column family we'll get in the end should contains the primary clause column, the initialFilter may not have found it and can thus be null
+                        ColumnFamily data = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, filter.columnFilter(lastSeenKey.toByteBuffer()), filter.timestamp));
+                        // While the column family we'll get in the end should contains the primary clause cell, the initialFilter may not have found it and can thus be null
                         if (data == null)
                             data = TreeMapBackedSortedColumns.factory.create(baseCfs.metadata);
 
@@ -179,8 +185,8 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         if (((KeysIndex)index).isIndexEntryStale(indexKey.key, data, filter.timestamp))
                         {
                             // delete the index entry w/ its own timestamp
-                            Column dummyColumn = new Column(primary.column, indexKey.key, column.timestamp());
-                            ((PerColumnSecondaryIndex)index).delete(dk.key, dummyColumn);
+                            Cell dummyCell = new Cell(primaryColumn, indexKey.key, cell.timestamp());
+                            ((PerColumnSecondaryIndex)index).delete(dk.key, dummyCell);
                             continue;
                         }
                         return new Row(dk, data);

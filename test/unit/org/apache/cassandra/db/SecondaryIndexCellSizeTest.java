@@ -24,6 +24,7 @@ import java.util.Set;
 import org.junit.Test;
 
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.index.PerColumnSecondaryIndex;
 import org.apache.cassandra.db.index.PerRowSecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
@@ -32,7 +33,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-public class SecondaryIndexColumnSizeTest
+public class SecondaryIndexCellSizeTest
 {
     @Test
     public void test64kColumn()
@@ -47,13 +48,13 @@ public class SecondaryIndexColumnSizeTest
 
         // for read
         buffer.flip();
-        Column column = new Column(ByteBufferUtil.bytes("test"), buffer, 0);
+        Cell cell = new Cell(CellNames.simpleDense(ByteBufferUtil.bytes("test")), buffer, 0);
 
-        SecondaryIndexColumnSizeTest.MockRowIndex mockRowIndex = new SecondaryIndexColumnSizeTest.MockRowIndex();
-        SecondaryIndexColumnSizeTest.MockColumnIndex mockColumnIndex = new SecondaryIndexColumnSizeTest.MockColumnIndex();
+        SecondaryIndexCellSizeTest.MockRowIndex mockRowIndex = new SecondaryIndexCellSizeTest.MockRowIndex();
+        SecondaryIndexCellSizeTest.MockColumnIndex mockColumnIndex = new SecondaryIndexCellSizeTest.MockColumnIndex();
 
-        assertTrue(mockRowIndex.validate(column));
-        assertFalse(mockColumnIndex.validate(column));
+        assertTrue(mockRowIndex.validate(cell));
+        assertFalse(mockColumnIndex.validate(cell));
 
         // test less than 64k value
         buffer.flip();
@@ -61,8 +62,8 @@ public class SecondaryIndexColumnSizeTest
         buffer.putInt(20);
         buffer.flip();
 
-        assertTrue(mockRowIndex.validate(column));
-        assertTrue(mockColumnIndex.validate(column));
+        assertTrue(mockRowIndex.validate(cell));
+        assertTrue(mockColumnIndex.validate(cell));
     }
 
     private class MockRowIndex extends PerRowSecondaryIndex
@@ -137,6 +138,11 @@ public class SecondaryIndexColumnSizeTest
         public void reload()
         {
         }
+
+        public boolean indexes(CellName name)
+        {
+            return true;
+        }
     }
 
 
@@ -197,23 +203,28 @@ public class SecondaryIndexColumnSizeTest
         }
 
         @Override
-        public void delete(ByteBuffer rowKey, Column col)
+        public void delete(ByteBuffer rowKey, Cell col)
         {
         }
 
         @Override
-        public void insert(ByteBuffer rowKey, Column col)
+        public void insert(ByteBuffer rowKey, Cell col)
         {
         }
 
         @Override
-        public void update(ByteBuffer rowKey, Column col)
+        public void update(ByteBuffer rowKey, Cell col)
         {
         }
 
         @Override
         public void reload()
         {
+        }
+
+        public boolean indexes(CellName name)
+        {
+            return true;
         }
     }
 }

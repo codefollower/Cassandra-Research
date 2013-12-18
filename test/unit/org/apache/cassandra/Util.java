@@ -28,19 +28,22 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.compaction.AbstractCompactionTask;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
-import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.Gossiper;
@@ -77,19 +80,45 @@ public class Util
         return RowPosition.forKey(ByteBufferUtil.bytes(key), partitioner);
     }
 
-    public static Column column(String name, String value, long timestamp)
+    public static CellName cellname(ByteBuffer... bbs)
     {
-        return new Column(ByteBufferUtil.bytes(name), ByteBufferUtil.bytes(value), timestamp);
+        if (bbs.length == 1)
+            return CellNames.simpleDense(bbs[0]);
+        else
+            return CellNames.compositeDense(bbs);
     }
 
-    public static Column expiringColumn(String name, String value, long timestamp, int ttl)
+    public static CellName cellname(String... strs)
     {
-        return new ExpiringColumn(ByteBufferUtil.bytes(name), ByteBufferUtil.bytes(value), timestamp, ttl);
+        ByteBuffer[] bbs = new ByteBuffer[strs.length];
+        for (int i = 0; i < strs.length; i++)
+            bbs[i] = ByteBufferUtil.bytes(strs[i]);
+        return cellname(bbs);
     }
 
-    public static Column counterColumn(String name, long value, long timestamp)
+    public static CellName cellname(int i)
     {
-        return new CounterUpdateColumn(ByteBufferUtil.bytes(name), value, timestamp);
+        return CellNames.simpleDense(ByteBufferUtil.bytes(i));
+    }
+
+    public static CellName cellname(long l)
+    {
+        return CellNames.simpleDense(ByteBufferUtil.bytes(l));
+    }
+
+    public static Cell column(String name, String value, long timestamp)
+    {
+        return new Cell(cellname(name), ByteBufferUtil.bytes(value), timestamp);
+    }
+
+    public static Cell expiringColumn(String name, String value, long timestamp, int ttl)
+    {
+        return new ExpiringCell(cellname(name), ByteBufferUtil.bytes(value), timestamp, ttl);
+    }
+
+    public static Cell counterColumn(String name, long value, long timestamp)
+    {
+        return new CounterUpdateCell(cellname(name), value, timestamp);
     }
 
     public static Token token(String key)
@@ -114,9 +143,9 @@ public class Util
 
     public static void addMutation(RowMutation rm, String columnFamilyName, String superColumnName, long columnName, String value, long timestamp)
     {
-        ByteBuffer cname = superColumnName == null
-                         ? getBytes(columnName)
-                         : CompositeType.build(ByteBufferUtil.bytes(superColumnName), getBytes(columnName));
+        CellName cname = superColumnName == null
+                       ? CellNames.simpleDense(getBytes(columnName))
+                       : CellNames.compositeDense(ByteBufferUtil.bytes(superColumnName), getBytes(columnName));
         rm.add(columnFamilyName, cname, ByteBufferUtil.bytes(value), timestamp);
     }
 
@@ -280,5 +309,64 @@ public class Util
         }
 
         assert thrown : exception.getName() + " not received";
+    }
+
+    public static ByteBuffer serializeForSSTable(ColumnFamily cf)
+    {
+        try
+        {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(baos);
+            DeletionTime.serializer.serialize(cf.deletionInfo().getTopLevelDeletion(), out);
+            out.writeInt(cf.getColumnCount());
+            new ColumnIndex.Builder(cf, ByteBufferUtil.EMPTY_BYTE_BUFFER, out).build(cf);
+            return ByteBuffer.wrap(baos.toByteArray());
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static QueryFilter namesQueryFilter(ColumnFamilyStore cfs, DecoratedKey key)
+    {
+        SortedSet<CellName> s = new TreeSet<CellName>(cfs.getComparator());
+        return QueryFilter.getNamesFilter(key, cfs.name, s, System.currentTimeMillis());
+    }
+
+    public static QueryFilter namesQueryFilter(ColumnFamilyStore cfs, DecoratedKey key, String... names)
+    {
+        SortedSet<CellName> s = new TreeSet<CellName>(cfs.getComparator());
+        for (String str : names)
+            s.add(cellname(str));
+        return QueryFilter.getNamesFilter(key, cfs.name, s, System.currentTimeMillis());
+    }
+
+    public static QueryFilter namesQueryFilter(ColumnFamilyStore cfs, DecoratedKey key, CellName... names)
+    {
+        SortedSet<CellName> s = new TreeSet<CellName>(cfs.getComparator());
+        for (CellName n : names)
+            s.add(n);
+        return QueryFilter.getNamesFilter(key, cfs.name, s, System.currentTimeMillis());
+    }
+
+    public static NamesQueryFilter namesFilter(ColumnFamilyStore cfs, String... names)
+    {
+        SortedSet<CellName> s = new TreeSet<CellName>(cfs.getComparator());
+        for (String str : names)
+            s.add(cellname(str));
+        return new NamesQueryFilter(s);
+    }
+
+    public static String string(ByteBuffer bb)
+    {
+        try
+        {
+            return ByteBufferUtil.string(bb);
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 }

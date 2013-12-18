@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.SortedMap;
@@ -27,13 +26,14 @@ import java.util.TreeMap;
 import com.google.common.base.Function;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.filter.ColumnSlice;
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.utils.Allocator;
 
 public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumns
 {
-    private final TreeMap<ByteBuffer, Column> map;
+    private final TreeMap<CellName, Cell> map;
 
     public static final ColumnFamily.Factory<TreeMapBackedSortedColumns> factory = new Factory<TreeMapBackedSortedColumns>()
     {
@@ -44,22 +44,22 @@ public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumn
         }
     };
 
-    public AbstractType<?> getComparator()
+    public CellNameType getComparator()
     {
-        return (AbstractType<?>)map.comparator();
+        return (CellNameType)map.comparator();
     }
 
     private TreeMapBackedSortedColumns(CFMetaData metadata)
     {
         super(metadata);
         //org.apache.cassandra.db.marshal.AbstractType类实现了java.util.Comparator接口
-        this.map = new TreeMap<ByteBuffer, Column>(metadata.comparator);
+        this.map = new TreeMap<>(metadata.comparator);
     }
 
-    private TreeMapBackedSortedColumns(CFMetaData metadata, SortedMap<ByteBuffer, Column> columns)
+    private TreeMapBackedSortedColumns(CFMetaData metadata, SortedMap<CellName, Cell> columns)
     {
         super(metadata);
-        this.map = new TreeMap<ByteBuffer, Column>(columns);
+        this.map = new TreeMap<>(columns);
     }
 
     public ColumnFamily.Factory getFactory()
@@ -78,58 +78,58 @@ public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumn
     }
 
     /*
-     * If we find an old column that has the same name
-     * the ask it to resolve itself else add the new column
+     * If we find an old cell that has the same name
+     * the ask it to resolve itself else add the new cell
     */
-    public void addColumn(Column column, Allocator allocator)
+    public void addColumn(Cell cell, Allocator allocator)
     {
-        ByteBuffer name = column.name();
+        CellName name = cell.name();
         // this is a slightly unusual way to structure this; a more natural way is shown in ThreadSafeSortedColumns,
         // but TreeMap lacks putAbsent.  Rather than split it into a "get, then put" check, we do it as follows,
         // which saves the extra "get" in the no-conflict case [for both normal and super columns],
         // in exchange for a re-put in the SuperColumn case.
-        Column oldColumn = map.put(name, column);
-        if (oldColumn == null)
+        Cell oldCell = map.put(name, cell);
+        if (oldCell == null)
             return;
 
         // calculate reconciled col from old (existing) col and new col
-        map.put(name, column.reconcile(oldColumn, allocator));
+        map.put(name, cell.reconcile(oldCell, allocator));
     }
 
     /**
      * We need to go through each column in the column container and resolve it before adding
      */
-    public void addAll(ColumnFamily cm, Allocator allocator, Function<Column, Column> transformation)
+    public void addAll(ColumnFamily cm, Allocator allocator, Function<Cell, Cell> transformation)
     {
         delete(cm.deletionInfo());
-        for (Column column : cm)
-            addColumn(transformation.apply(column), allocator);
+        for (Cell cell : cm)
+            addColumn(transformation.apply(cell), allocator);
     }
 
-    public boolean replace(Column oldColumn, Column newColumn)
+    public boolean replace(Cell oldCell, Cell newCell)
     {
-        if (!oldColumn.name().equals(newColumn.name()))
+        if (!oldCell.name().equals(newCell.name()))
             throw new IllegalArgumentException();
 
-        // We are not supposed to put the newColumn is either there was not
-        // column or the column was not equal to oldColumn (to be coherent
+        // We are not supposed to put the newCell is either there was not
+        // column or the column was not equal to oldCell (to be coherent
         // with other implementation). We optimize for the common case where
-        // oldColumn do is present though.
-        Column previous = map.put(oldColumn.name(), newColumn);
+        // oldCell do is present though.
+        Cell previous = map.put(oldCell.name(), newCell);
         if (previous == null)
         {
-            map.remove(oldColumn.name());
+            map.remove(oldCell.name());
             return false;
         }
-        if (!previous.equals(oldColumn))
+        if (!previous.equals(oldCell))
         {
-            map.put(oldColumn.name(), previous);
+            map.put(oldCell.name(), previous);
             return false;
         }
         return true;
     }
 
-    public Column getColumn(ByteBuffer name)
+    public Cell getColumn(CellName name)
     {
         return map.get(name);
     }
@@ -145,32 +145,32 @@ public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumn
         return map.size();
     }
 
-    public Collection<Column> getSortedColumns()
+    public Collection<Cell> getSortedColumns()
     {
         return map.values();
     }
 
-    public Collection<Column> getReverseSortedColumns()
+    public Collection<Cell> getReverseSortedColumns()
     {
         return map.descendingMap().values();
     }
 
-    public SortedSet<ByteBuffer> getColumnNames()
+    public SortedSet<CellName> getColumnNames()
     {
         return map.navigableKeySet();
     }
 
-    public Iterator<Column> iterator()
+    public Iterator<Cell> iterator()
     {
         return map.values().iterator();
     }
 
-    public Iterator<Column> iterator(ColumnSlice[] slices)
+    public Iterator<Cell> iterator(ColumnSlice[] slices)
     {
         return new ColumnSlice.NavigableMapIterator(map, slices);
     }
 
-    public Iterator<Column> reverseIterator(ColumnSlice[] slices)
+    public Iterator<Cell> reverseIterator(ColumnSlice[] slices)
     {
         return new ColumnSlice.NavigableMapIterator(map.descendingMap(), slices);
     }

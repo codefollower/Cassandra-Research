@@ -81,7 +81,7 @@ public class LongCompactionsTest extends SchemaLoader
             for (int j = 0; j < rowsPerSSTable; j++)
             {
                 String key = String.valueOf(j);
-                Column[] cols = new Column[colsPerRow];
+                Cell[] cols = new Cell[colsPerRow];
                 for (int i = 0; i < colsPerRow; i++)
                 {
                     // last sstable has highest timestamps
@@ -129,7 +129,7 @@ public class LongCompactionsTest extends SchemaLoader
                 DecoratedKey key = Util.dk(String.valueOf(i % 2));
                 RowMutation rm = new RowMutation(KEYSPACE1, key.key);
                 long timestamp = j * ROWS_PER_SSTABLE + i;
-                rm.add("Standard1", ByteBufferUtil.bytes(String.valueOf(i / 2)),
+                rm.add("Standard1", Util.cellname(String.valueOf(i / 2)),
                        ByteBufferUtil.EMPTY_BYTE_BUFFER,
                        timestamp);
                 maxTimestampExpected = Math.max(timestamp, maxTimestampExpected);

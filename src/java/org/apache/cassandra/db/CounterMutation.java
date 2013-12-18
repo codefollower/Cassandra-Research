@@ -30,11 +30,11 @@ import java.util.UUID;
 
 import com.google.common.collect.Iterables;
 
+import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.HeapAllocator;
 
@@ -109,7 +109,7 @@ public class CounterMutation implements IMutation
 
     private void addReadCommandFromColumnFamily(String keyspaceName, ByteBuffer key, ColumnFamily columnFamily, long timestamp, List<ReadCommand> commands)
     {
-        SortedSet<ByteBuffer> s = new TreeSet<ByteBuffer>(columnFamily.metadata().comparator);
+        SortedSet<CellName> s = new TreeSet<>(columnFamily.metadata().comparator);
         Iterables.addAll(s, columnFamily.getColumnNames());
         commands.add(new SliceByNamesReadCommand(keyspaceName, key, columnFamily.metadata().cfName, timestamp, new NamesQueryFilter(s)));
     }
@@ -129,7 +129,7 @@ public class CounterMutation implements IMutation
 
     public void apply()
     {
-        // transform all CounterUpdateColumn to CounterColumn: accomplished by localCopy
+        // transform all CounterUpdateCell to CounterCell: accomplished by localCopy
         RowMutation rm = new RowMutation(rowMutation.getKeyspaceName(), ByteBufferUtil.clone(rowMutation.key()));
         Keyspace keyspace = Keyspace.open(rm.getKeyspaceName());
 
@@ -137,9 +137,9 @@ public class CounterMutation implements IMutation
         {
             ColumnFamily cf = cf_.cloneMeShallow();
             ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cf.id());
-            for (Column column : cf_)
+            for (Cell cell : cf_)
             {
-                cf.addColumn(column.localCopy(cfs), HeapAllocator.instance);
+                cf.addColumn(cell.localCopy(cfs), HeapAllocator.instance);
             }
             rm.add(cf);
         }

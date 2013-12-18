@@ -20,13 +20,11 @@
  */
 package org.apache.cassandra.db.filter;
 
-import java.nio.ByteBuffer;
-
-import org.apache.cassandra.db.Column;
+import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DeletionInfo;
-import org.apache.cassandra.db.marshal.CompositeType;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class ColumnCounter
 {
@@ -39,17 +37,17 @@ public class ColumnCounter
         this.timestamp = timestamp;
     }
 
-    public void count(Column column, DeletionInfo.InOrderTester tester)
+    public void count(Cell cell, DeletionInfo.InOrderTester tester)
     {
-        if (!isLive(column, tester, timestamp))
+        if (!isLive(cell, tester, timestamp))
             ignored++;
         else
             live++;
     }
 
-    protected static boolean isLive(Column column, DeletionInfo.InOrderTester tester, long timestamp)
+    protected static boolean isLive(Cell cell, DeletionInfo.InOrderTester tester, long timestamp)
     {
-        return column.isLive(timestamp) && (!tester.isDeleted(column));
+        return cell.isLive(timestamp) && (!tester.isDeleted(cell));
     }
 
     public int live()
@@ -68,16 +66,16 @@ public class ColumnCounter
             return this;
 
         DeletionInfo.InOrderTester tester = container.inOrderDeletionTester();
-        for (Column c : container)
+        for (Cell c : container)
             count(c, tester);
         return this;
     }
 
     public static class GroupByPrefix extends ColumnCounter
     {
-        private final CompositeType type;
+        private final CellNameType type;
         private final int toGroup;
-        private ByteBuffer[] last;
+        private CellName last;
 
         /**
          * A column counter that count only 1 for all the columns sharing a
@@ -89,7 +87,7 @@ public class ColumnCounter
          *                column. If 0, all columns are grouped, otherwise we group
          *                those for which the {@code toGroup} first component are equals.
          */
-        public GroupByPrefix(long timestamp, CompositeType type, int toGroup)
+        public GroupByPrefix(long timestamp, CellNameType type, int toGroup)
         {
             super(timestamp);
             this.type = type;
@@ -98,9 +96,9 @@ public class ColumnCounter
             assert toGroup == 0 || type != null;
         }
 
-        public void count(Column column, DeletionInfo.InOrderTester tester)
+        public void count(Cell cell, DeletionInfo.InOrderTester tester)
         {
-            if (!isLive(column, tester, timestamp))
+            if (!isLive(cell, tester, timestamp))
             {
                 ignored++;
                 return;
@@ -112,8 +110,8 @@ public class ColumnCounter
                 return;
             }
 
-            ByteBuffer[] current = type.split(column.name());
-            assert current.length >= toGroup;
+            CellName current = cell.name();
+            assert current.size() >= toGroup;
 
             if (last != null) //如果复合列名与上一个一样则不计入live个数
             {
@@ -121,7 +119,7 @@ public class ColumnCounter
                 for (int i = 0; i < toGroup; i++)
                 {
                     //复合列名中的每个都必须一样
-                    if (ByteBufferUtil.compareUnsigned(last[i], current[i]) != 0)
+                    if (type.subtype(i).compare(last.get(i), current.get(i)) != 0)
                     {
                         isSameGroup = false;
                         break;

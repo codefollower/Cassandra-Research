@@ -16,9 +16,12 @@
  * Batch read from OTC's queue and cleanup (CASSANDRA-1632)
  * Secondary index support for collections (CASSANDRA-4511)
  * SSTable metadata(Stats.db) format change (CASSANDRA-6356)
+ * Push composites support in the storage engine (CASSANDRA-5417)
 
 
 2.0.4
+ * Fix accept() loop for SSL sockets post-shutdown (CASSANDRA-6468)
+ * Fix size-tiered compaction in LCS L0 (CASSANDRA-6496)
  * Fix assertion failure in filterColdSSTables (CASSANDRA-6483)
  * Fix row tombstones in larger-than-memory compactions (CASSANDRA-6008)
  * Fix cleanup ClassCastException (CASSANDRA-6462)
@@ -32,8 +35,10 @@
  * cqlsh: handle symlinks properly (CASSANDRA-6425)
  * Don't resubmit counter mutation runnables internally (CASSANDRA-6427)
 Merged from 1.2:
+ * Improved error message on bad properties in DDL queries (CASSANDRA-6453)
  * Randomize batchlog candidates selection (CASSANDRA-6481)
  * Fix thundering herd on endpoint cache invalidation (CASSANDRA-6345, 6485)
+ * Improve batchlog write performance with vnodes (CASSANDRA-6488)
  * cqlsh: quote single quotes in strings inside collections (CASSANDRA-6172)
  * Improve gossip performance for typical messages (CASSANDRA-6409)
  * Throw IRE if a prepared statement has more markers than supported 
@@ -46,8 +51,6 @@ Merged from 1.2:
    (CASSANDRA-6413)
  * (Hadoop) add describe_local_ring (CASSANDRA-6268)
  * Fix handling of concurrent directory creation failure (CASSANDRA-6459)
- * Randomize batchlog candidates selection (CASSANDRA-6481)
- * Improve batchlog write performance with vnodes (CASSANDRA-6488)
 
 
 2.0.3

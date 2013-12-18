@@ -17,8 +17,8 @@
  */
 package org.apache.cassandra.db.columniterator;
 
+import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 //包含所有列
 public class IdentityQueryFilter extends SliceQueryFilter
@@ -28,7 +28,7 @@ public class IdentityQueryFilter extends SliceQueryFilter
      */
     public IdentityQueryFilter()
     {
-        super(ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBufferUtil.EMPTY_BYTE_BUFFER, false, Integer.MAX_VALUE);
+        super(Composites.EMPTY, Composites.EMPTY, false, Integer.MAX_VALUE);
     }
 
     @Override

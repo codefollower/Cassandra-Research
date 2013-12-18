@@ -30,6 +30,7 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.ColumnFamilyType;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.AlreadyExistsException;
@@ -56,7 +57,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
     //       CompositeType由clustering key中的所有字段类型 + UTF8Type组成
     //       如果普通字段中有Collection类型的字段，
     //       则CompositeType由clustering key中的所有字段类型 + UTF8Type + ColumnToCollectionType组成
-    public AbstractType<?> comparator;
+    public CellNameType comparator;
     
 
     //1. 如果定义了clustering key并且使用CompactStorage，同时没有其他普通字段, 那么defaultValidator是UTF8Type
@@ -121,7 +122,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
     }
 
     // Column definitions
-    private Map<ByteBuffer, ColumnDefinition> getColumns(CFMetaData cfm)
+    private List<ColumnDefinition> getColumns(CFMetaData cfm)
     {
         //对于这种情况:
         //CREATE TABLE IF NOT EXISTS test ( block_id uuid, breed text, color text, short_hair boolean,
@@ -131,21 +132,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
         //如果把RawStatement.prepare()方法中的那行"stmt.columns.remove(lastEntry.getKey())"注释掉就会产生错误
         //所以comparator是CompositeType时，最后一个类型不是ColumnToCollectionType就是UTF8Type
         //UTF8Type就是用在ColumnIdentifier(ByteBuffer, AbstractType)中用来生成字段名的string型式的。
-        Map<ByteBuffer, ColumnDefinition> columnDefs = new HashMap<ByteBuffer, ColumnDefinition>();
-        Integer componentIndex = null;
-        if (cfm.hasCompositeComparator())
-        {
-            CompositeType ct = (CompositeType) comparator;
-            //非CollectionType类型的最后一个字段的位置
-            componentIndex = ct.types.get(ct.types.size() - 1) instanceof ColumnToCollectionType
-                           ? ct.types.size() - 2
-                           : ct.types.size() - 1;
-        }
-
+        List<ColumnDefinition> columnDefs = new ArrayList<>(columns.size());
+        Integer componentIndex = comparator.isCompound() ? comparator.clusteringPrefixSize() : null;
         for (Map.Entry<ColumnIdentifier, AbstractType> col : columns.entrySet())
-        {
-            columnDefs.put(col.getKey().bytes, ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
-        }
+            columnDefs.add(ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
 
         return columnDefs;
     }
@@ -181,8 +171,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
         newCFMD = new CFMetaData(keyspace(),
                                  columnFamily(),
                                  ColumnFamilyType.Standard,
-                                 comparator,
-                                 null);
+                                 comparator);
         applyPropertiesTo(newCFMD);
         return newCFMD;
     }
@@ -191,19 +180,18 @@ public class CreateTableStatement extends SchemaAlteringStatement
     {
         cfmd.defaultValidator(defaultValidator)
             .keyValidator(keyValidator)
-            .columnMetadata(getColumns(cfmd));
+            .addAllColumnDefinitions(getColumns(cfmd)); //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
+
         //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
         //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
         //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
         cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
-        cfmd.addColumnMetadataFromAliases(columnAliases, comparator, ColumnDefinition.Kind.CLUSTERING_COLUMN);
-        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
+        cfmd.addColumnMetadataFromAliases(columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
         if (valueAlias != null)
             cfmd.addColumnMetadataFromAliases(Collections.<ByteBuffer>singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
 
         properties.applyToCFMetadata(cfmd);
     }
-
     /*
           对于这样的CQL:
     CREATE TABLE test (
@@ -350,7 +338,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     if (definedCollections != null)
                         throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
 
-                    stmt.comparator = UTF8Type.instance;
+                    stmt.comparator = new SimpleSparseCellNameType(UTF8Type.instance);
                 }
                 else
                 {
@@ -358,11 +346,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     //+ " ( block_id uuid, breed text, short_hair boolean, emails set<text>," //
                     //+ " PRIMARY KEY ((block_id, breed)))
                     //此时stmt.comparator是一个CompositeType(包含UTF8Type和ColumnToCollectionType)
-                    List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(definedCollections == null ? 1 : 2);
-                    types.add(UTF8Type.instance);
-                    if (definedCollections != null)
-                        types.add(ColumnToCollectionType.getInstance(definedCollections));
-                    stmt.comparator = CompositeType.getInstance(types);
+                    stmt.comparator = definedCollections == null
+                                    ? new CompoundSparseCellNameType(Collections.<AbstractType<?>>emptyList())
+                                    : new CompoundSparseCellNameType.WithCollection(Collections.<AbstractType<?>>emptyList(), ColumnToCollectionType.getInstance(definedCollections));
                 }
             }
             else
@@ -374,9 +360,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     if (definedCollections != null)
                         throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
                     stmt.columnAliases.add(columnAliases.get(0).bytes);
-                    stmt.comparator = getTypeAndRemove(stmt.columns, columnAliases.get(0));
-                    if (stmt.comparator instanceof CounterColumnType)
+                    AbstractType<?> at = getTypeAndRemove(stmt.columns, columnAliases.get(0));
+                    if (at instanceof CounterColumnType)
                         throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", stmt.columnAliases.get(0)));
+                    stmt.comparator = new SimpleDenseCellNameType(at);
                 }
                 else
                 {
@@ -395,20 +382,15 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     {
                         if (definedCollections != null)
                             throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
+
+                        stmt.comparator = new CompoundDenseCellNameType(types);
                     }
                     else
                     {
-                        // For sparse, we must add the last UTF8 component
-                        // and the collection type if there is one
-                        types.add(UTF8Type.instance);
-                        if (definedCollections != null)
-                            types.add(ColumnToCollectionType.getInstance(definedCollections));
+                        stmt.comparator = definedCollections == null
+                                        ? new CompoundSparseCellNameType(types)
+                                        : new CompoundSparseCellNameType.WithCollection(types, ColumnToCollectionType.getInstance(definedCollections));
                     }
-
-                    //types不可能为empty
-                    if (types.isEmpty())
-                        throw new IllegalStateException("Nonsensical empty parameter list for CompositeType");
-                    stmt.comparator = CompositeType.getInstance(types);
                 }
             }
 

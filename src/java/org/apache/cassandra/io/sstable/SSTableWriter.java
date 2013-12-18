@@ -254,8 +254,8 @@ public class SSTableWriter extends SSTable
                 OnDiskAtom atom = iter.next();
                 if (atom == null)
                     break;
-                if (atom instanceof CounterColumn)
-                    atom = ((CounterColumn) atom).markDeltaToBeCleared();
+                if (atom instanceof CounterCell)
+                    atom = ((CounterCell) atom).markDeltaToBeCleared();
 
                 int deletionTime = atom.getLocalDeletionTime();
                 if (deletionTime < Integer.MAX_VALUE)
@@ -441,7 +441,7 @@ public class SSTableWriter extends SSTable
             try
             {
                 ByteBufferUtil.writeWithShortLength(key.key, indexFile.stream);
-                RowIndexEntry.serializer.serialize(indexEntry, indexFile.stream);
+                metadata.comparator.rowIndexEntrySerializer().serialize(indexEntry, indexFile.stream);
             }
             catch (IOException e)
             {

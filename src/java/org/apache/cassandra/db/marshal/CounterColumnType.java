@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.CounterSerializer;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -47,9 +48,9 @@ public class CounterColumnType extends AbstractCommutativeType
     /**
      * create commutative column
      */
-    public Column createColumn(ByteBuffer name, ByteBuffer value, long timestamp)
+    public Cell createColumn(CellName name, ByteBuffer value, long timestamp)
     {
-        return new CounterUpdateColumn(name, value, timestamp);
+        return new CounterUpdateCell(name, value, timestamp);
     }
 
     public ByteBuffer fromString(String source)

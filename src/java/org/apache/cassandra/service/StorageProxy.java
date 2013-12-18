@@ -41,9 +41,10 @@ import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndex;
@@ -209,7 +210,7 @@ public class StorageProxy implements StorageProxyMBean
     public static ColumnFamily cas(String keyspaceName,
                                    String cfName,
                                    ByteBuffer key,
-                                   ColumnNameBuilder prefix,
+                                   Composite prefix,
                                    ColumnFamily expected,
                                    ColumnFamily updates,
                                    ConsistencyLevel consistencyForPaxos,
@@ -239,8 +240,8 @@ public class StorageProxy implements StorageProxyMBean
             if (expected == null || expected.isEmpty())
             {
                 SliceQueryFilter filter = prefix == null
-                                        ? new SliceQueryFilter(ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBufferUtil.EMPTY_BYTE_BUFFER, false, 1)
-                                        : new SliceQueryFilter(prefix.build(), prefix.buildAsEndOfRange(), false, 1, prefix.componentCount());
+                                        ? new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, false, 1)
+                                        : new SliceQueryFilter(prefix.slice(), false, 1, prefix.size());
                 readCommand = new SliceFromReadCommand(keyspaceName, key, cfName, timestamp, filter);
             }
             else
@@ -298,9 +299,9 @@ public class StorageProxy implements StorageProxyMBean
         // that excepted don't have. So we just check that for each columns in expected:
         //   - if it is a tombstone, whether current has no column or a tombstone;
         //   - otherwise, that current has a live column with the same value.
-        for (Column e : expected)
+        for (Cell e : expected)
         {
-            Column c = current.getColumn(e.name());
+            Cell c = current.getColumn(e.name());
             if (e.isLive(now))
             {
                 if (!(c != null && c.isLive(now) && c.value().equals(e.value())))
@@ -779,7 +780,7 @@ public class StorageProxy implements StorageProxyMBean
     private static Collection<InetAddress> getBatchlogEndpoints(String localDataCenter, ConsistencyLevel consistencyLevel)
     throws UnavailableException
     {
-        TokenMetadata.Topology topology = StorageService.instance.getTokenMetadata().cloneOnlyTokenMap().getTopology();
+        TokenMetadata.Topology topology = StorageService.instance.getTokenMetadata().cachedOnlyTokenMap().getTopology();
         List<InetAddress> localEndpoints = new ArrayList<>(topology.getDatacenterEndpoints().get(localDataCenter));
 
         // special case for single-node datacenters
@@ -1478,7 +1479,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         else
         {
-            if (cfs.metadata.isDense())
+            if (cfs.metadata.comparator.isDense())
             {
                 // one storage row per result row, so use key estimate directly
                 resultRowsPerRange = cfs.estimateKeys();

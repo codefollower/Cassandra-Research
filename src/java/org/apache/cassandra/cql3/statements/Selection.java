@@ -28,9 +28,9 @@ import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.CounterColumn;
-import org.apache.cassandra.db.ExpiringColumn;
-import org.apache.cassandra.db.Column;
+import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.CounterCell;
+import org.apache.cassandra.db.ExpiringCell;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.Int32Type;
@@ -237,20 +237,6 @@ public abstract class Selection
     protected abstract List<ByteBuffer> handleRow(ResultSetBuilder rs) throws InvalidRequestException;
 
     /**
-     * @return the list of CQL3 "regular" (the "COLUMN_METADATA" ones) column names to fetch.
-     */
-    public List<ColumnIdentifier> regularColumnsToFetch()
-    {
-        List<ColumnIdentifier> toFetch = new ArrayList<ColumnIdentifier>();
-        for (ColumnDefinition def : columnsList)
-        {
-            if (def.kind == ColumnDefinition.Kind.REGULAR)
-                toFetch.add(def.name);
-        }
-        return toFetch;
-    }
-
-    /**
      * @return the list of CQL3 columns value this SelectionClause needs.
      */
     public List<ColumnDefinition> getColumnsList()
@@ -263,9 +249,9 @@ public abstract class Selection
         return new ResultSetBuilder(now);
     }
 
-    private static ByteBuffer value(Column c)
+    private static ByteBuffer value(Cell c)
     {
-        return (c instanceof CounterColumn)
+        return (c instanceof CounterCell)
             ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value()))
             : c.value();
     }
@@ -300,7 +286,7 @@ public abstract class Selection
             current.add(v);
         }
 
-        public void add(Column c)
+        public void add(Cell c)
         {
             current.add(isDead(c) ? null : value(c));
             if (timestamps != null)
@@ -310,13 +296,13 @@ public abstract class Selection
             if (ttls != null)
             {
                 int ttl = -1;
-                if (!isDead(c) && c instanceof ExpiringColumn)
+                if (!isDead(c) && c instanceof ExpiringCell)
                     ttl = c.getLocalDeletionTime() - (int) (now / 1000);
                 ttls[current.size() - 1] = ttl;
             }
         }
 
-        private boolean isDead(Column c)
+        private boolean isDead(Cell c)
         {
             return c == null || c.isMarkedForDelete(now);
         }

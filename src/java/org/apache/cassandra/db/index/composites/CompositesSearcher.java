@@ -24,15 +24,16 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.composites.CellNameType;
+import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.filter.ExtendedFilter;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -52,23 +53,23 @@ public class CompositesSearcher extends SecondaryIndexSearcher
         return baseCfs.filter(getIndexedIterator(filter), filter);
     }
 
-    private ByteBuffer makePrefix(CompositesIndex index, ByteBuffer key, ExtendedFilter filter, boolean isStart)
+    private Composite makePrefix(CompositesIndex index, ByteBuffer key, ExtendedFilter filter, boolean isStart)
     {
         if (key.remaining() == 0)
-            return ByteBufferUtil.EMPTY_BYTE_BUFFER;
+            return Composites.EMPTY;
 
-        ColumnNameBuilder builder;
+        Composite prefix;
         IDiskAtomFilter columnFilter = filter.columnFilter(key);
         if (columnFilter instanceof SliceQueryFilter)
         {
             SliceQueryFilter sqf = (SliceQueryFilter)columnFilter;
-            builder = index.makeIndexColumnNameBuilder(key, isStart ? sqf.start() : sqf.finish());
+            prefix = index.makeIndexColumnPrefix(key, isStart ? sqf.start() : sqf.finish());
         }
         else
         {
-            builder = index.getIndexComparator().builder().add(key);
+            prefix = index.getIndexComparator().make(key);
         }
-        return isStart ? builder.build() : builder.buildAsEndOfRange();
+        return isStart ? prefix.start() : prefix.end();
     }
 
     private ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final ExtendedFilter filter)
@@ -94,16 +95,16 @@ public class CompositesSearcher extends SecondaryIndexSearcher
         ByteBuffer startKey = range.left instanceof DecoratedKey ? ((DecoratedKey)range.left).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
         ByteBuffer endKey = range.right instanceof DecoratedKey ? ((DecoratedKey)range.right).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
-        final CompositeType baseComparator = (CompositeType)baseCfs.getComparator();
-        final CompositeType indexComparator = (CompositeType)index.getIndexCfs().getComparator();
+        final CellNameType baseComparator = baseCfs.getComparator();
+        final CellNameType indexComparator = index.getIndexCfs().getComparator();
 
-        final ByteBuffer startPrefix = makePrefix(index, startKey, filter, true);
-        final ByteBuffer endPrefix = makePrefix(index, endKey, filter, false);
+        final Composite startPrefix = makePrefix(index, startKey, filter, true);
+        final Composite endPrefix = makePrefix(index, endKey, filter, false);
 
         return new ColumnFamilyStore.AbstractScanIterator()
         {
-            private ByteBuffer lastSeenPrefix = startPrefix;
-            private Deque<Column> indexColumns;
+            private Composite lastSeenPrefix = startPrefix;
+            private Deque<Cell> indexCells;
             private int columnsRead = Integer.MAX_VALUE;
             private int limit = filter.currentLimit();
             private int columnsCount = 0;
@@ -135,7 +136,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                  */
                 DecoratedKey currentKey = null;
                 ColumnFamily data = null;
-                ByteBuffer previousPrefix = null;
+                Composite previousPrefix = null;
 
                 while (true)
                 {
@@ -144,7 +145,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                     if (columnsCount >= limit)
                         return makeReturn(currentKey, data);
 
-                    if (indexColumns == null || indexColumns.isEmpty())
+                    if (indexCells == null || indexCells.isEmpty())
                     {
                         if (columnsRead < rowsPerQuery)
                         {
@@ -167,31 +168,31 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                         if (indexRow == null || indexRow.getColumnCount() == 0)
                             return makeReturn(currentKey, data);
 
-                        Collection<Column> sortedColumns = indexRow.getSortedColumns();
-                        columnsRead = sortedColumns.size();
-                        indexColumns = new ArrayDeque<>(sortedColumns);
-                        Column firstColumn = sortedColumns.iterator().next();
+                        Collection<Cell> sortedCells = indexRow.getSortedColumns();
+                        columnsRead = sortedCells.size();
+                        indexCells = new ArrayDeque<>(sortedCells);
+                        Cell firstCell = sortedCells.iterator().next();
 
                         // Paging is racy, so it is possible the first column of a page is not the last seen one.
-                        if (lastSeenPrefix != startPrefix && lastSeenPrefix.equals(firstColumn.name()))
+                        if (lastSeenPrefix != startPrefix && lastSeenPrefix.equals(firstCell.name()))
                         {
                             // skip the row we already saw w/ the last page of results
-                            indexColumns.poll();
-                            logger.trace("Skipping {}", indexComparator.getString(firstColumn.name()));
+                            indexCells.poll();
+                            logger.trace("Skipping {}", indexComparator.getString(firstCell.name()));
                         }
                     }
 
-                    while (!indexColumns.isEmpty() && columnsCount <= limit)
+                    while (!indexCells.isEmpty() && columnsCount <= limit)
                     {
-                        Column column = indexColumns.poll();
-                        lastSeenPrefix = column.name();
-                        if (column.isMarkedForDelete(filter.timestamp))
+                        Cell cell = indexCells.poll();
+                        lastSeenPrefix = cell.name();
+                        if (cell.isMarkedForDelete(filter.timestamp))
                         {
-                            logger.trace("skipping {}", column.name());
+                            logger.trace("skipping {}", cell.name());
                             continue;
                         }
 
-                        CompositesIndex.IndexedEntry entry = index.decodeEntry(indexKey, column);
+                        CompositesIndex.IndexedEntry entry = index.decodeEntry(indexKey, cell);
                         DecoratedKey dk = baseCfs.partitioner.decorateKey(entry.indexedKey);
 
                         // Are we done for this row?
@@ -205,7 +206,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                             currentKey = dk;
 
                             // We're done with the previous row, return it if it had data, continue otherwise
-                            indexColumns.addFirst(column);
+                            indexCells.addFirst(cell);
                             if (data == null)
                                 continue;
                             else
@@ -228,8 +229,8 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                             }
                         }
 
-                        // Check if this entry cannot be a hit due to the original column filter
-                        ByteBuffer start = entry.indexedEntryStart();
+                        // Check if this entry cannot be a hit due to the original cell filter
+                        Composite start = entry.indexedEntryPrefix;
                         if (!filter.columnFilter(dk.key).maySelectPrefix(baseComparator, start))
                             continue;
 
@@ -243,12 +244,12 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                         else
                             previousPrefix = null;
 
-                        logger.trace("Adding index hit to current row for {}", indexComparator.getString(column.name()));
+                        logger.trace("Adding index hit to current row for {}", indexComparator.getString(cell.name()));
 
                         // We always query the whole CQL3 row. In the case where the original filter was a name filter this might be
                         // slightly wasteful, but this probably doesn't matter in practice and it simplify things.
                         SliceQueryFilter dataFilter = new SliceQueryFilter(start,
-                                                                           entry.indexedEntryEnd(),
+                                                                           entry.indexedEntryPrefix.end(),
                                                                            false,
                                                                            Integer.MAX_VALUE,
                                                                            baseCfs.metadata.clusteringColumns().size());
@@ -267,7 +268,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                         if (entry.indexedEntryCollectionKey != null)
                             previousPrefix = start;
 
-                        if (!filter.isSatisfiedBy(dk, newData, entry.indexedEntryNameBuilder, entry.indexedEntryCollectionKey))
+                        if (!filter.isSatisfiedBy(dk, newData, entry.indexedEntryPrefix, entry.indexedEntryCollectionKey))
                             continue;
 
                         if (data == null)

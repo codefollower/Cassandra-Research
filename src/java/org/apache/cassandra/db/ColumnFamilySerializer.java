@@ -67,14 +67,14 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
                 return;
             }
 
-            DeletionInfo.serializer().serialize(cf.deletionInfo(), out, version);
-            ColumnSerializer columnSerializer = Column.serializer;
+            cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
+            ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
             int count = cf.getColumnCount();
             out.writeInt(count);
             int written = 0;
-            for (Column column : cf)
+            for (Cell cell : cf)
             {
-                columnSerializer.serialize(column, out);
+                columnSerializer.serialize(cell, out);
                 written++;
             }
             assert count == written: "Column family had " + count + " columns, but " + written + " written";
@@ -108,9 +108,9 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         }
         else
         {
-            cf.delete(DeletionInfo.serializer().deserialize(in, version, cf.getComparator()));
+            cf.delete(cf.getComparator().deletionInfoSerializer().deserialize(in, version));
 
-            ColumnSerializer columnSerializer = Column.serializer;
+            ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
             int size = in.readInt();
             for (int i = 0; i < size; ++i)
                 cf.addColumn(columnSerializer.deserialize(in, flag));
@@ -128,10 +128,11 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         }
         else
         {
-            size += DeletionInfo.serializer().serializedSize(cf.deletionInfo(), typeSizes, version);
+            size += cf.getComparator().deletionInfoSerializer().serializedSize(cf.deletionInfo(), typeSizes, version);
             size += typeSizes.sizeof(cf.getColumnCount());
-            for (Column column : cf)
-                size += column.serializedSize(typeSizes);
+            ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+            for (Cell cell : cf)
+                size += columnSerializer.serializedSize(cell, typeSizes);
         }
         return size;
     }
