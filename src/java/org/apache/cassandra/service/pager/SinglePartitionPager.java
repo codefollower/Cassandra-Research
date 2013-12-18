@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.service.pager;
 
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.db.filter.ColumnCounter;
 
 /**
@@ -27,5 +29,6 @@ import org.apache.cassandra.db.filter.ColumnCounter;
 //只用于单rowKey查询
 public interface SinglePartitionPager extends QueryPager
 {
+    public ByteBuffer key();
     public ColumnCounter columnCounter();
 }

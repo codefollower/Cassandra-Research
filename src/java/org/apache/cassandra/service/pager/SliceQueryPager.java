@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.service.pager;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 
@@ -52,6 +53,11 @@ public class SliceQueryPager extends AbstractQueryPager implements SinglePartiti
             lastReturned = cfm.comparator.cellFromByteBuffer(state.cellName);
             restoreState(state.remaining, true);
         }
+    }
+
+    public ByteBuffer key()
+    {
+        return command.key;
     }
 
     public PagingState state()
