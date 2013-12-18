@@ -24,6 +24,7 @@ import org.apache.cassandra.exceptions.*;
 
 public class KSPropDefs extends PropertyDefinitions
 {
+    //所有的属性名如果没用引号会在CqlParser中生成ColumnIdentifier时都转成小写
     public static final String KW_DURABLE_WRITES = "durable_writes";
     public static final String KW_REPLICATION = "replication";
 

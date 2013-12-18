@@ -50,7 +50,7 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
         this.isColumnFamilyLevel = true;
     }
 
-    public int getBoundsTerms()
+    public int getBoundsTerms() //所有与Schema相关的DDL语句都不允许使用?号占位符
     {
         return 0;
     }

@@ -84,7 +84,7 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
     {
         KSMetaData ksm = Schema.instance.getKSMetaData(name);
         // In the (very) unlikely case the keyspace was dropped since validate()
-        if (ksm == null)
+        if (ksm == null) //validate方法中已检查过了，如果存在一些并发场景，有可能在validate方法到这里之间把ks删除了
             throw new InvalidRequestException("Unknown keyspace " + name);
 
         MigrationManager.announceKeyspaceUpdate(attrs.asKSMetadataUpdate(ksm));

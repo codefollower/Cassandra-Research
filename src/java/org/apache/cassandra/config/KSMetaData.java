@@ -80,6 +80,7 @@ public final class KSMetaData
 
     public static KSMetaData systemKeyspace()
     {
+        //属于system keyspace有17个表
         List<CFMetaData> cfDefs = Arrays.asList(CFMetaData.BatchlogCf,
                                                 CFMetaData.RangeXfersCf,
                                                 CFMetaData.LocalCf,
@@ -102,6 +103,7 @@ public final class KSMetaData
 
     public static KSMetaData traceKeyspace()
     {
+        //属于system_traces keyspace有2个表
         List<CFMetaData> cfDefs = Arrays.asList(CFMetaData.TraceSessionsCf, CFMetaData.TraceEventsCf);
         return new KSMetaData(Tracing.TRACE_KS, SimpleStrategy.class, ImmutableMap.of("replication_factor", "2"), true, cfDefs);
     }

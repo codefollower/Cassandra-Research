@@ -307,6 +307,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
 
     private static void pushSchemaMutation(InetAddress endpoint, Collection<RowMutation> schema)
     {
+        //Verb.DEFINITIONS_UPDATE在org.apache.cassandra.db.DefinitionsUpdateVerbHandler.DefinitionsUpdateVerbHandler()处理
         MessageOut<Collection<RowMutation>> msg = new MessageOut<>(MessagingService.Verb.DEFINITIONS_UPDATE,
                                                                    schema,
                                                                    MigrationsSerializer.instance);
@@ -336,6 +337,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
 
             pushSchemaMutation(endpoint, schema);
         }
+        //返回的是Future<?> f，所以FBUtilities.waitOnFuture只等待本地完成就返回
         return f;
     }
 
