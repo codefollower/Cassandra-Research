@@ -17,9 +17,11 @@
  * Secondary index support for collections (CASSANDRA-4511)
  * SSTable metadata(Stats.db) format change (CASSANDRA-6356)
  * Push composites support in the storage engine (CASSANDRA-5417)
+ * Add snapshot space used to cfstats (CASSANDRA-6231)
 
 
 2.0.4
+ * add client encryption support to sstableloader (CASSANDRA-6378)
  * Fix accept() loop for SSL sockets post-shutdown (CASSANDRA-6468)
  * Fix size-tiered compaction in LCS L0 (CASSANDRA-6496)
  * Fix assertion failure in filterColdSSTables (CASSANDRA-6483)
@@ -29,8 +31,7 @@
  * Allow specifying datacenters to participate in a repair (CASSANDRA-6218)
  * Fix divide-by-zero in PCI (CASSANDRA-6403)
  * Fix setting last compacted key in the wrong level for LCS (CASSANDRA-6284)
- * Add sub-ms precision formats to the timestamp parser (CASSANDRA-6395)
- * Add snapshot space used to cfstats (CASSANDRA-6231)
+ * Add millisecond precision formats to the timestamp parser (CASSANDRA-6395)
  * Expose a total memtable size metric for a CF (CASSANDRA-6391)
  * cqlsh: handle symlinks properly (CASSANDRA-6425)
  * Don't resubmit counter mutation runnables internally (CASSANDRA-6427)
