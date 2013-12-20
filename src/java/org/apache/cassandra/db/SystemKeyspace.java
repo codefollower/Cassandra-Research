@@ -63,6 +63,7 @@ import org.apache.cassandra.utils.*;
 
 import static org.apache.cassandra.cql3.QueryProcessor.processInternal;
 
+//SystemKeyspace这个类主要就是用来操作system这个keyspace中的表，这些表全是元数据表
 public class SystemKeyspace
 {
     private static final Logger logger = LoggerFactory.getLogger(SystemKeyspace.class);
@@ -726,7 +727,10 @@ public class SystemKeyspace
      * @param schemaCfName The name of the ColumnFamily responsible for part of the schema (keyspace, ColumnFamily, columns)
      * @return low-level schema representation (each row represents individual Keyspace or ColumnFamily)
      */
-    //相当于查询schemaCfName对应的ColumnFamilyStore中的记录
+    //相当于查询schemaCfName对应的ColumnFamilyStore中的所有记录
+    //schemaCfName其实就是表名，这里只是在本地查找而已，并不会通过网络查此表，
+    //因为SystemKeyspace这个类主要就是用来操作system这个keyspace中的表，这些表全是元数据表，
+    //每张表的记录在所有节点上都是一样的，所以不用像普通表那样通过网络找最新的记录。
     public static List<Row> serializedSchema(String schemaCfName)
     {
         Token minToken = StorageService.getPartitioner().getMinimumToken();

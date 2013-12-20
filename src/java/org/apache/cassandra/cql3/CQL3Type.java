@@ -25,16 +25,19 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 
+//定义字段的类型
+//对应Cql.g文件中comparatorType
 public interface CQL3Type
 {
     public boolean isCollection();
     public boolean isCounter();
-    public boolean isUserType();
+    public boolean isUserType(); //用create type建立的类型才是用户类型，而不是Custom类对应的类型
     public AbstractType<?> getType();
 
+    //16个本地类型
     public enum Native implements CQL3Type
     {
-        ASCII    (AsciiType.instance),
+        ASCII    (AsciiType.instance), //与TEXT类似，但是使用US-ASCII编码，而TEXT用UTF-8
         BIGINT   (LongType.instance),
         BLOB     (BytesType.instance),
         BOOLEAN  (BooleanType.instance),
@@ -89,7 +92,7 @@ public interface CQL3Type
     //CREATE TABLE(f1 'org.apache.cassandra.db.marshal.UTF8Type');
     //CREATE TABLE(f1 'UTF8Type');
     //但是不能这样:
-    //CREATE TABLE(f1 UTF8Type); //要加引号
+    //CREATE TABLE(f1 UTF8Type); //要加单引号
     public static class Custom implements CQL3Type
     {
         private final AbstractType<?> type;
@@ -151,9 +154,9 @@ public interface CQL3Type
     //Collection类型的元素类型不能是couter类型和Collection类型
     public static class Collection implements CQL3Type
     {
-        CollectionType type;
+        CollectionType<?> type;
 
-        public Collection(CollectionType type)
+        public Collection(CollectionType<?> type)
         {
             this.type = type;
         }
@@ -241,7 +244,7 @@ public interface CQL3Type
         }
     }
 
-    public static class UserDefined implements CQL3Type
+    public static class UserDefined implements CQL3Type //用create type建立的类型
     {
         // Keeping this separatly from type just to simplify toString()
         ColumnIdentifier name;
@@ -253,11 +256,13 @@ public interface CQL3Type
             this.type = type;
         }
 
+        //在org.apache.cassandra.db.marshal.UserType.asCQL3Type()调用
         public static UserDefined create(ByteBuffer name, UserType type)
         {
             return new UserDefined(new ColumnIdentifier(name, UTF8Type.instance), type);
         }
 
+        //在CqlParser中调用
         public static UserDefined create(ColumnIdentifier name) throws InvalidRequestException
         {
             UserType type = Schema.instance.userTypes.getType(name);

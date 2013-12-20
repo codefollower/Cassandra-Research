@@ -31,6 +31,8 @@ import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.commons.lang3.time.DateUtils;
 
+//在CQL3Type中并没有data类型
+//这个类没用到
 public class DateType extends AbstractType<Date>
 {
     private static final Logger logger = LoggerFactory.getLogger(DateType.class);

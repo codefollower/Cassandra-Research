@@ -155,7 +155,7 @@ public class DefsTables //都是static方法
      * @throws IOException If data was corrupted during transportation or failed to apply fs operations
      */
     //都是在本地读
-    //schema_keyspaces、schema_columnfamilies、schema_columns这三个表都是以keyspace_name为PARTITION_KEY
+    //与schema_keyspaces、schema_columnfamilies、schema_usertypes这三个表相关
     public static synchronized void mergeSchema(Collection<RowMutation> mutations) throws ConfigurationException, IOException
     {
         // current state of the schema
@@ -322,9 +322,17 @@ public class DefsTables //都是static方法
 
     private static void mergeTypes(List<Row> old, List<Row> updated)
     {
+        //会触发org.apache.cassandra.db.marshal.UserType.equals(Object)
+        //这里又再读两次schema_usertypes表
         MapDifference<ByteBuffer, UserType> diff = Maps.difference(UTMetaData.fromSchema(old).getAllTypes(),
                                                                    UTMetaData.fromSchema(updated).getAllTypes());
 
+        //diff的右边是新的，左边是旧的
+        //对于Maps.difference(left, right)
+        //diff.entriesOnlyOnRight()意思就是right中有而left中没有的
+        //diff.entriesOnlyOnLeft()意思就是left中有而right中没有的
+        //diff.entriesDiffering()意思就是left和right中都有但是值不同的(通过UserType.equals(Object)比较)
+        
         // New types
         for (UserType newType : diff.entriesOnlyOnRight().values())
             Schema.instance.loadType(newType);
@@ -351,6 +359,7 @@ public class DefsTables //都是static方法
             }
             else
             {
+                //时间戳最大的优先
                 long leftTimestamp = firstTimestampOf(u1.name, old);
                 long rightTimestamp = firstTimestampOf(u1.name, updated);
                 Schema.instance.loadType(leftTimestamp > rightTimestamp ? u1 : u2);

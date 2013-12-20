@@ -34,8 +34,8 @@ import org.apache.cassandra.utils.ObjectSizes;
 //Selectable是一个标记接口
 public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier>, IMeasurableMemory
 {
-    public final ByteBuffer bytes;
-    private final String text;
+    public final ByteBuffer bytes; //列名字节形式
+    private final String text; //列名文本形式
 
     public ColumnIdentifier(String rawText, boolean keepCase) //keepCase为true时保留原始名称，否则全转成小写
     {
