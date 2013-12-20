@@ -35,6 +35,10 @@ import org.apache.cassandra.utils.Pair;
  * we keep additional metadata (the name of the type and the names
  * of the columns).
  */
+//与set和map都用相同的大号括语法
+//例子见my.test.cql3.statements.TypeTest
+//但是因为UserType的语法是usertype_literal以cident(标识符)开头，只要预读一些字符，就能区分set和map，set和map中的值都是常量
+//见src/java/org/apache/cassandra/cql3/Cql.g文件
 public class UserType extends CompositeType
 {
     public final ByteBuffer name;

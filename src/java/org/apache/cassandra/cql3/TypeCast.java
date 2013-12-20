@@ -19,6 +19,7 @@ package org.apache.cassandra.cql3;
 
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
+//例如: "INSERT INTO t(f1) VALUES ((text)'ab')";
 public class TypeCast implements Term.Raw
 {
     private final CQL3Type type;

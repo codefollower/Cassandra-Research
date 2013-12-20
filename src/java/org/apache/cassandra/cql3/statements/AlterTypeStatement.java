@@ -52,11 +52,15 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         return new AddOrAlter(name, false, fieldName, type);
     }
 
+    //重合名类型中的一个或多个字段，如:
+    //1个字段: ALTER TYPE type1 RENAME f1 TO f11
+    //多个字段:  ALTER TYPE type1 RENAME f1 TO f11 AND f2 TO f22 
     public static AlterTypeStatement renames(ColumnIdentifier name, Map<ColumnIdentifier, ColumnIdentifier> renames)
     {
         return new Renames(name, renames);
     }
 
+    //重合名类型自身，如: ALTER TYPE type1 RENAME TO type2
     public static AlterTypeStatement typeRename(ColumnIdentifier name, ColumnIdentifier newName)
     {
         return new TypeRename(name, newName);
