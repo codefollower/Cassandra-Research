@@ -24,10 +24,6 @@ import java.util.List;
 import java.util.UUID;
 
 import org.jboss.netty.buffer.ChannelBuffer;
-<<<<<<< HEAD
-=======
-
->>>>>>> 49c5ed271b1c2f4924a31306af49c30876698f4c
 import org.apache.cassandra.cql3.Attributes;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryProcessor;
