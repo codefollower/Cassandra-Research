@@ -43,9 +43,11 @@ public class CFPropDefs extends PropertyDefinitions
     public static final String KW_BF_FP_CHANCE = "bloom_filter_fp_chance";
     public static final String KW_MEMTABLE_FLUSH_PERIOD = "memtable_flush_period_in_ms";
 
+    //这两个属性的值是一个map，上面的都不是
     public static final String KW_COMPACTION = "compaction";
     public static final String KW_COMPRESSION = "compression";
 
+    //对应KW_COMPACTION和KW_COMPRESSION中的一个map key，而且是必须的
     public static final String COMPACTION_STRATEGY_CLASS_KEY = "class";
 
     public static final Set<String> keywords = new HashSet<>();
@@ -53,7 +55,7 @@ public class CFPropDefs extends PropertyDefinitions
 
     static
     {
-        //不包含上面的KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD和COMPACTION_STRATEGY_CLASS_KEY
+        //不包含上面的KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD
         //所以这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
         //可能是个bug
         keywords.add(KW_COMMENT);

@@ -246,13 +246,16 @@ public class CreateTableStatement extends SchemaAlteringStatement
         /**
          * Transform this raw statement into a CreateTableStatement.
          */
-        //参见my.test.cql3.statements.CreateTableStatementTest的测试
+        //参见my.test.cql3.statements.TableTest.test_RawStatement_prepare()的测试
         public ParsedStatement.Prepared prepare() throws RequestValidationException
         {
             // Column family name
             //列族名就是表名，必须是有效的标识符
-            //(TODO 无法在这重现这个场景, org.apache.cassandra.cql3.CqlParser中如果发现不合法会提前抛异常了)
+            //不能在语法分析阶段检查出来，这里是QUOTED_NAME的场景(用双引号括起来)
+            //如：CREATE TABLE IF NOT EXISTS \"t中t\" ( block_id uuid)
             if (!columnFamily().matches("\\w+"))
+                //String.format中给的信息不够准确，不是[0-9A-Za-z]+，而是[a-zA-Z_0-9]+，少了一个下划线
+                //IDENT在文法中也是有下划线的
                 throw new InvalidRequestException(String.format("\"%s\" is not a valid column family name (must be alphanumeric character only: [0-9A-Za-z]+)", columnFamily()));
             //列族名就是表名，不能超过48个字符
             if (columnFamily().length() > Schema.NAME_LENGTH)

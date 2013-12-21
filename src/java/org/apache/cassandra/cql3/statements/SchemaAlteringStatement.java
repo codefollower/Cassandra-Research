@@ -33,7 +33,7 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 //index/trigger没有alter
 
 //通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
-//调用顺序setBoundVariables->prepareKeyspace->prepare->getBoundsTerms->checkAccess->validate->execute
+//调用顺序setBoundVariables->prepareKeyspace->prepare->getBoundTerms->checkAccess->validate->execute
 public abstract class SchemaAlteringStatement extends CFStatement implements CQLStatement
 {
     private final boolean isColumnFamilyLevel;
@@ -50,7 +50,7 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
         this.isColumnFamilyLevel = true;
     }
 
-    public int getBoundsTerms() //所有与Schema相关的DDL语句都不允许使用?号占位符
+    public int getBoundTerms() //所有与Schema相关的DDL语句都不允许使用?号占位符
     {
         return 0;
     }
