@@ -66,11 +66,13 @@ public class AlterTableStatement extends SchemaAlteringStatement
         // validated in announceMigration()
     }
 
+    //参见my.test.cql3.statements.TableTest.test_AlterTableStatement()的测试
     public void announceMigration() throws RequestValidationException
     {
         CFMetaData meta = validateColumnFamily(keyspace(), columnFamily());
         CFMetaData cfm = meta.clone();
 
+        //ALTER COLUMN FAMILY <CF> WITH时columnName为null，其他都不为null
         ColumnDefinition def = columnName == null ? null : cfm.getColumnDefinition(columnName);
         switch (oType)
         {
@@ -202,6 +204,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 }
                 break;
             case OPTS:
+                //在CqlParser中传进来的不会为null，也不可能是empty
                 if (cfProps == null)
                     throw new InvalidRequestException(String.format("ALTER COLUMNFAMILY WITH invoked, but no parameters found"));
 

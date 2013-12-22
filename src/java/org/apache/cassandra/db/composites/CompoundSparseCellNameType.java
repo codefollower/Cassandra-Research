@@ -36,6 +36,7 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
 
     protected final Map<ByteBuffer, ColumnIdentifier> internedIds;
 
+    //types是所有CLUSTERING_COLUMN列的类型
     public CompoundSparseCellNameType(List<AbstractType<?>> types)
     {
         this(new CompoundCType(types));
@@ -152,6 +153,7 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
     {
         private final ColumnToCollectionType collectionType;
 
+        //types是所有CLUSTERING_COLUMN列的类型，collectionType中包含所有为CollectionType的普通列
         public WithCollection(List<AbstractType<?>> types, ColumnToCollectionType collectionType)
         {
             this(new CompoundCType(types), collectionType);

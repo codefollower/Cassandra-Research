@@ -124,18 +124,14 @@ public class CreateTableStatement extends SchemaAlteringStatement
     }
 
     // Column definitions
-    //普通列
+    //只涉及普通列
     private List<ColumnDefinition> getColumns(CFMetaData cfm)
     {
-        //对于这种情况:
-        //CREATE TABLE IF NOT EXISTS test ( block_id uuid, breed text, color text, short_hair boolean,
-        //   PRIMARY KEY (block_id, breed, short_hair)) WITH COMPACT STORAGE
-        //虽然componentIndex指向的是short_hair的boolean类型，但是剩下的普通字段color text已从columns删除了，columns是empty的
-        //所以不会导致ColumnDefinition.regularDef中用boolean来调用ColumnIdentifier(ByteBuffer, AbstractType)
-        //如果把RawStatement.prepare()方法中的那行"stmt.columns.remove(lastEntry.getKey())"注释掉就会产生错误
-        //所以comparator是CompositeType时，最后一个类型不是ColumnToCollectionType就是UTF8Type
-        //UTF8Type就是用在ColumnIdentifier(ByteBuffer, AbstractType)中用来生成字段名的string型式的。
         List<ColumnDefinition> columnDefs = new ArrayList<>(columns.size());
+        //如果没有定义聚簇列时CompoundSparseCellNameType虽然comparator.clusteringPrefixSize()返回0
+        //但是当在ColumnDefinition的构造函数调用cfm.getComponentComparator(componentIndex, kind))时会
+        //触发org.apache.cassandra.db.composites.AbstractCompoundCellNameType.subtype(int)用的是fullType.get(0)
+        //而fullType.get(0)刚好是CompoundSparseCellNameType.makeCType加入的columnNameType(也就是UTF8Type)
         Integer componentIndex = comparator.isCompound() ? comparator.clusteringPrefixSize() : null;
         for (Map.Entry<ColumnIdentifier, AbstractType> col : columns.entrySet())
             columnDefs.add(ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));

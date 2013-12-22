@@ -27,6 +27,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 
 public class CompoundDenseCellNameType extends AbstractCompoundCellNameType
 {
+    //types是所有CLUSTERING_COLUMN列的类型
     public CompoundDenseCellNameType(List<AbstractType<?>> types)
     {
         this(new CompoundCType(types));
