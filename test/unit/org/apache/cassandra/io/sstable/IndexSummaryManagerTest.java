@@ -110,7 +110,7 @@ public class IndexSummaryManagerTest extends SchemaLoader
             for (int row = 0; row < numRows; row++)
             {
                 DecoratedKey key = Util.dk(String.valueOf(row));
-                RowMutation rm = new RowMutation(ksname, key.key);
+                Mutation rm = new Mutation(ksname, key.key);
                 rm.add(cfname, Util.cellname("column"), value, 0);
                 rm.apply();
             }
@@ -244,7 +244,7 @@ public class IndexSummaryManagerTest extends SchemaLoader
         for (int row = 0; row < numRows; row++)
         {
             DecoratedKey key = Util.dk(String.valueOf(row));
-            RowMutation rm = new RowMutation(ksname, key.key);
+            Mutation rm = new Mutation(ksname, key.key);
             rm.add(cfname, Util.cellname("column"), value, 0);
             rm.apply();
         }
@@ -273,7 +273,6 @@ public class IndexSummaryManagerTest extends SchemaLoader
         IndexSummaryManager manager = IndexSummaryManager.instance;
 
         // resize interval
-        assertNotNull(manager.getResizeIntervalInMinutes());
         manager.setResizeIntervalInMinutes(-1);
         assertNull(manager.getTimeToNextResize(TimeUnit.MINUTES));
 
@@ -305,7 +304,7 @@ public class IndexSummaryManagerTest extends SchemaLoader
             for (int row = 0; row < numRows; row++)
             {
                 DecoratedKey key = Util.dk(String.valueOf(row));
-                RowMutation rm = new RowMutation(ksname, key.key);
+                Mutation rm = new Mutation(ksname, key.key);
                 rm.add(cfname, Util.cellname("column"), value, 0);
                 rm.apply();
             }

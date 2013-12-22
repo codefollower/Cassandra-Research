@@ -23,13 +23,13 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 
 import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.RowMutation;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.triggers.ITrigger;
 
 public class MyTrigger implements ITrigger {
 
     @Override
-    public Collection<RowMutation> augment(ByteBuffer key, ColumnFamily update) {
+    public Collection<Mutation> augment(ByteBuffer key, ColumnFamily update) {
         return null;
     }
 

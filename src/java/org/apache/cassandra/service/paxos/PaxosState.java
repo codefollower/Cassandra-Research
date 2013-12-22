@@ -24,7 +24,7 @@ package org.apache.cassandra.service.paxos;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.db.RowMutation;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.tracing.Tracing;
@@ -110,8 +110,8 @@ public class PaxosState
         // if our current in-progress ballot is strictly greater than the proposal one, we shouldn't
         // erase the in-progress update.
         Tracing.trace("Committing proposal {}", proposal);
-        RowMutation rm = proposal.makeMutation();
-        Keyspace.open(rm.getKeyspaceName()).apply(rm, true);
+        Mutation mutation = proposal.makeMutation();
+        Keyspace.open(mutation.getKeyspaceName()).apply(mutation, true);
 
         // We don't need to lock, we're just blindly updating
         SystemKeyspace.savePaxosCommit(proposal);

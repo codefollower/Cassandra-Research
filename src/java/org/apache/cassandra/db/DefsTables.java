@@ -146,7 +146,7 @@ public class DefsTables //都是static方法
     }
 
     /**
-     * Merge remote schema in form of row mutations with local and mutate ks/cf metadata objects
+     * Merge remote schema in form of mutations with local and mutate ks/cf metadata objects
      * (which also involves fs operations on add/drop ks/cf)
      *
      * @param mutations the schema changes to apply
@@ -156,7 +156,7 @@ public class DefsTables //都是static方法
      */
     //都是在本地读
     //与schema_keyspaces、schema_columnfamilies、schema_usertypes这三个表相关
-    public static synchronized void mergeSchema(Collection<RowMutation> mutations) throws ConfigurationException, IOException
+    public static synchronized void mergeSchema(Collection<Mutation> mutations) throws ConfigurationException, IOException
     {
         // current state of the schema
         //获得schema_keyspaces表中的记录
@@ -165,7 +165,7 @@ public class DefsTables //都是static方法
         Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
         List<Row> oldTypes = SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF);
 
-        for (RowMutation mutation : mutations)
+        for (Mutation mutation : mutations)
             mutation.apply();
 
         if (!StorageService.instance.isClientMode())

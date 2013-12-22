@@ -191,8 +191,8 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.REQUEST_RESPONSE, CallbackDeterminedSerializer.instance);
         put(Verb.INTERNAL_RESPONSE, CallbackDeterminedSerializer.instance);
 
-        put(Verb.MUTATION, RowMutation.serializer);
-        put(Verb.READ_REPAIR, RowMutation.serializer);
+        put(Verb.MUTATION, Mutation.serializer);
+        put(Verb.READ_REPAIR, Mutation.serializer);
         put(Verb.READ, ReadCommand.serializer);
         put(Verb.RANGE_SLICE, RangeSliceCommand.serializer);
         put(Verb.PAGED_RANGE, PagedRangeCommand.serializer);
@@ -336,8 +336,8 @@ public final class MessagingService implements MessagingServiceMBean
 
                 if (expiredCallbackInfo.shouldHint())
                 {
-                    RowMutation rm = (RowMutation) ((WriteCallbackInfo) expiredCallbackInfo).sentMessage.payload;
-                    return StorageProxy.submitHint(rm, expiredCallbackInfo.target, null);
+                    Mutation mutation = (Mutation) ((WriteCallbackInfo) expiredCallbackInfo).sentMessage.payload;
+                    return StorageProxy.submitHint(mutation, expiredCallbackInfo.target, null);
                 }
 
                 return null;
