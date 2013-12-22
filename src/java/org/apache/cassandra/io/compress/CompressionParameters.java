@@ -169,6 +169,7 @@ public class CompressionParameters
             ICompressor compressor = (ICompressor)method.invoke(null, compressionOptions);
             // Check for unknown options
             //所有的ICompressor接口实现类默认都支持crc_check_chance选项
+            //LZ4、Snappy、Deflate(ZLIB)的supportedOptions()都没有提供额外选项
             AbstractSet<String> supportedOpts = Sets.union(compressor.supportedOptions(), GLOBAL_OPTIONS);
             for (String provided : compressionOptions.keySet())
                 if (!supportedOpts.contains(provided))

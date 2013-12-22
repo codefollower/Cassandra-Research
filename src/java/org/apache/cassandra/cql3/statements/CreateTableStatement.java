@@ -45,6 +45,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class CreateTableStatement extends SchemaAlteringStatement
 {
     //与clustering key的类型相关
+    //(clustering key对应org.apache.cassandra.config.ColumnDefinition.Kind.CLUSTERING_COLUMN(后来才改名的))
     //1. 如果没有定义clustering key并且使用CompactStorage，那么comparator是UTF8Type
     //2. 如果没有定义clustering key并且未使用CompactStorage，那么comparator是CompositeType
     //   如果普通字段中没有Collection类型的字段，
@@ -123,6 +124,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
     }
 
     // Column definitions
+    //普通列
     private List<ColumnDefinition> getColumns(CFMetaData cfm)
     {
         //对于这种情况:
@@ -331,6 +333,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
             //以下代码用于确定stmt.comparator和stmt.columnAliases的值(处理clustering key)
             ///////////////////////////////////////////////////////////////////////////
             // Handle column aliases
+            //没有clustering key或有clustering key但是没有使用COMPACT STORAGE时都使用XxxSparseCellNameType(稀疏的)
+            //其他情况使用XxxDenseCellNameType(稠密的)
             if (columnAliases.isEmpty())
             {
                 if (useCompactStorage)
@@ -371,7 +375,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 }
                 else
                 {
-                    List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(columnAliases.size() + 1);
+                    List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(columnAliases.size() + 1); //没有必要加1
                     for (ColumnIdentifier t : columnAliases)
                     {
                         stmt.columnAliases.add(t.bytes);

@@ -75,7 +75,7 @@ public final class CFMetaData
     public final static double DEFAULT_READ_REPAIR_CHANCE = 0.1;
     public final static double DEFAULT_DCLOCAL_READ_REPAIR_CHANCE = 0.0;
     public final static boolean DEFAULT_REPLICATE_ON_WRITE = true;
-    public final static int DEFAULT_GC_GRACE_SECONDS = 864000;
+    public final static int DEFAULT_GC_GRACE_SECONDS = 864000; //一天
     public final static int DEFAULT_MIN_COMPACTION_THRESHOLD = 4;
     public final static int DEFAULT_MAX_COMPACTION_THRESHOLD = 32;
     public final static Class<? extends AbstractCompactionStrategy> DEFAULT_COMPACTION_STRATEGY_CLASS = SizeTieredCompactionStrategy.class;
@@ -479,12 +479,14 @@ public final class CFMetaData
         cfId = id;
     }
 
+    //稠密CFMetaData
     public static CFMetaData denseCFMetaData(String keyspace, String name, AbstractType<?> comp, AbstractType<?> subcc)
     {
         CellNameType cellNameType = CellNames.fromAbstractType(makeRawAbstractType(comp, subcc), true);
         return new CFMetaData(keyspace, name, subcc == null ? ColumnFamilyType.Standard : ColumnFamilyType.Super, cellNameType);
     }
 
+    //稀疏CFMetaData
     public static CFMetaData sparseCFMetaData(String keyspace, String name, AbstractType<?> comp)
     {
         CellNameType cellNameType = CellNames.fromAbstractType(comp, false);
@@ -1167,6 +1169,8 @@ public final class CFMetaData
             if (options == null)
                 return;
 
+            //先调用LeveledCompactionStrategy或SizeTieredCompactionStrategy的validateOptions
+            //然后由它们触发对AbstractCompactionStrategy.validateOptions的调用
             Method validateMethod = strategyClass.getMethod("validateOptions", Map.class);
             Map<String, String> unknownOptions = (Map<String, String>) validateMethod.invoke(null, options);
             if (!unknownOptions.isEmpty())

@@ -353,9 +353,12 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 
     public static Map<String, String> validateOptions(Map<String, String> options) throws ConfigurationException
     {
+        //validateOptions里面不会改变options中的值
         Map<String, String> uncheckedOptions = AbstractCompactionStrategy.validateOptions(options);
+        //uncheckedOptions只是copy了options的值
         uncheckedOptions = SizeTieredCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
+        //所以这里不会删除options中的值
         uncheckedOptions.remove(CFPropDefs.KW_MINCOMPACTIONTHRESHOLD);
         uncheckedOptions.remove(CFPropDefs.KW_MAXCOMPACTIONTHRESHOLD);
 

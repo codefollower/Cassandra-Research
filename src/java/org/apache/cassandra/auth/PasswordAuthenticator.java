@@ -269,6 +269,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
 
     private static String hashpw(String password)
     {
+        //见https://code.google.com/p/jbcrypt/
         return BCrypt.hashpw(password, BCrypt.gensalt(GENSALT_LOG2_ROUNDS));
     }
 

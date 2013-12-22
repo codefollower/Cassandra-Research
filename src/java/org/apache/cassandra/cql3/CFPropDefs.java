@@ -47,7 +47,7 @@ public class CFPropDefs extends PropertyDefinitions
     public static final String KW_COMPACTION = "compaction";
     public static final String KW_COMPRESSION = "compression";
 
-    //对应KW_COMPACTION和KW_COMPRESSION中的一个map key，而且是必须的
+    //对应KW_COMPACTION中的一个map key，而且是必须的
     public static final String COMPACTION_STRATEGY_CLASS_KEY = "class";
 
     public static final Set<String> keywords = new HashSet<>();
@@ -55,9 +55,11 @@ public class CFPropDefs extends PropertyDefinitions
 
     static
     {
+        //总共14个选项
         //不包含上面的KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD
         //所以这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
-        //可能是个bug
+        //KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD只用在KW_COMPACTION对应的map中，
+        //当成KW_COMPACTION的子选项，并且只有在SizeTieredCompactionStrategy时才有效
         keywords.add(KW_COMMENT);
         keywords.add(KW_READREPAIRCHANCE);
         keywords.add(KW_DCLOCALREADREPAIRCHANCE);
@@ -93,6 +95,8 @@ public class CFPropDefs extends PropertyDefinitions
                 throw new ConfigurationException("Missing sub-option '" + COMPACTION_STRATEGY_CLASS_KEY + "' for the '" + KW_COMPACTION + "' option.");
 
             compactionStrategyClass = CFMetaData.createCompactionStrategy(strategy);
+            //删除getCompactionOptions()返回的map中的"class"子选项，
+            //会影响后面的applyToCFMetadata方法调用getCompactionOptions()返回的map
             compactionOptions.remove(COMPACTION_STRATEGY_CLASS_KEY);
 
             CFMetaData.validateCompactionOptions(compactionStrategyClass, compactionOptions);
