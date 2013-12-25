@@ -267,7 +267,8 @@ public class DefsTables //都是static方法
 
             if (!(cfAttrs.getColumnCount() == 0))
             {
-               Map<String, CFMetaData> cfDefs = KSMetaData.deserializeColumnFamilies(new Row(entry.getKey(), cfAttrs));
+                //entry.getKey()是keyspace
+                Map<String, CFMetaData> cfDefs = KSMetaData.deserializeColumnFamilies(new Row(entry.getKey(), cfAttrs));
 
                 for (CFMetaData cfDef : cfDefs.values())
                     addColumnFamily(cfDef);
