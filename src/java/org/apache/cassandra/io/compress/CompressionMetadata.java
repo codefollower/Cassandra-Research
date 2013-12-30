@@ -289,7 +289,6 @@ public class CompressionMetadata
 
             try
             {
-
                 // seek back to the data length position
                 seek(dataLengthOffset);
 
@@ -362,6 +361,13 @@ public class CompressionMetadata
             {
                 throw new FSWriteError(e, filePath);
             }
+        }
+
+        public void close() throws IOException
+        {
+            if (getChannel().isOpen()) // if RAF.closed were public we could just use that, but it's not
+                getChannel().force(true);
+            super.close();
         }
     }
 

@@ -27,6 +27,10 @@ import org.apache.cassandra.utils.CLibrary;
 
 //先写到一个64K的buffer，然后再同步到硬盘
 //写满buffer时会自动触发一次内部flush(reBuffer=>flushInternal)
+/**
+ * Adds buffering, mark, and fsyncing to OutputStream.  We always fsync on close; we may also
+ * fsync incrementally if Config.trickle_fsync is enabled.
+ */
 public class SequentialWriter extends OutputStream
 {
     // isDirty - true if this.buffer contains any un-synced bytes
