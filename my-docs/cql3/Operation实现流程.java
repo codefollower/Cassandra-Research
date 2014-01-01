@@ -1,0 +1,4 @@
+由org.apache.cassandra.cql3.CqlParser构造org.apache.cassandra.cql3.Operation.RawUpdate接口的实现类
+比如SetValue、Addition，然后prepare阶段调用prepare方法，得到Operation的子类，
+再调用Operation子类的execute方法往ColumnFamily中构造Cell实例(或它的子类)
+

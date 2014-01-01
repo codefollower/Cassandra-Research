@@ -46,112 +46,38 @@ public class DeleteStatement extends ModificationStatement
         return false;
     }
 
-//    public ColumnFamily updateForKey(ByteBuffer key, Composite prefix, UpdateParameters params)
-//    throws InvalidRequestException
-//    {
-//        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
-//        List<Operation> deletions = getOperations();
-//
-//<<<<<<< HEAD
-//        //只与CLUSTERING_COLUMN相关，看看where中是否指定了所有的CLUSTERING_COLUMN
-//        //builder参数中已放了where中指定的CLUSTERING_COLUMN
-//        boolean fullKey = builder.componentCount() == cfm.clusteringColumns().size();
-//        boolean isRange = cfm.isDense() ? !fullKey : (!fullKey || deletions.isEmpty());
-//
-//
-//        //删除非partition key和clustering key列时，必须在where中完整指定所有的clustering key列。
-//        if (!deletions.isEmpty() && isRange)
-//            throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.get(0).columnName));
-//
-//        //没有指定clustering key列并且不是删除具体的某列时就表示删除整行
-//        //delete语句必须指定where，所以如要没有clustering key列时肯定指定了PartitionKey
-//        if (deletions.isEmpty() && builder.componentCount() == 0) //按PartitionKey删
-//        {
-//            // No columns specified, delete the row
-//            cf.delete(new DeletionInfo(params.timestamp, params.localDeletionTime));
-//        }
-//        else //有clustering key或者delete xxx from的场景
-//        {
-//            if (isRange) //如果CLUSTERING_COLUMN有a、b，那么delete from t where a=x and b=y就是一个range删除
-//=======
-//        if (prefix.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
-//            throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.iterator().next().column.name));
-//
-//        if (deletions.isEmpty())
-//        {
-//            // We delete the slice selected by the prefix.
-//            // However, for performance reasons, we distinguish 2 cases:
-//            //   - It's a full internal row delete
-//            //   - It's a full cell name (i.e it's a dense layout and the prefix is full)
-//            if (prefix.isEmpty())
-//>>>>>>> 6635cde3a0eb6fa2e0599aa9d970596a8664cd63
-//            {
-//                // No columns specified, delete the row
-//                cf.delete(new DeletionInfo(params.timestamp, params.localDeletionTime));
-//            }
-//            else if (cfm.comparator.isDense() && prefix.size() == cfm.clusteringColumns().size())
-//            {
-//                cf.addAtom(params.makeTombstone(cfm.comparator.create(prefix, null)));
-//            }
-//            else
-//            {
-//<<<<<<< HEAD
-//                // Delete specific columns
-//                if (cfm.isDense()) //见UpdateStatement.addUpdateForKey的isDense
-//                {
-//                    ByteBuffer columnName = builder.build();
-//                    cf.addColumn(params.makeTombstone(columnName));
-//                }
-//                else
-//                {
-//                    //如: delete a from t where a=x and b=y
-//                    //删除具体的列，并且全指定了所有的CLUSTERING_COLUMN
-//                    for (Operation deletion : deletions)
-//                        deletion.execute(key, cf, builder.copy(), params);
-//                }
-//=======
-//                cf.addAtom(params.makeRangeTombstone(prefix.slice()));
-//>>>>>>> 6635cde3a0eb6fa2e0599aa9d970596a8664cd63
-//            }
-//        }
-//        else
-//        {
-//            for (Operation op : deletions)
-//                op.execute(key, cf, prefix, params);
-//        }
-//
-//        return cf;
-//    }
     public ColumnFamily updateForKey(ByteBuffer key, Composite prefix, UpdateParameters params)
     throws InvalidRequestException
     {
         ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
         List<Operation> deletions = getOperations();
 
+        //删除REGULAR、COMPACT_VALUE这种类型的字段时必须在where中完整指定所有的CLUSTERING_COLUMN
         if (prefix.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
             throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.iterator().next().column.name));
 
+        //delete from 语法
         if (deletions.isEmpty())
         {
             // We delete the slice selected by the prefix.
             // However, for performance reasons, we distinguish 2 cases:
             //   - It's a full internal row delete
             //   - It's a full cell name (i.e it's a dense layout and the prefix is full)
-            if (prefix.isEmpty())
+            if (prefix.isEmpty()) //因为where中必须指定PARTITION_KEY，所以这是没有CLUSTERING_COLUMN的情况，相当于删除整行
             {
                 // No columns specified, delete the row
                 cf.delete(new DeletionInfo(params.timestamp, params.localDeletionTime));
             }
-            else if (cfm.comparator.isDense() && prefix.size() == cfm.clusteringColumns().size())
+            else if (cfm.comparator.isDense() && prefix.size() == cfm.clusteringColumns().size()) //删除COMPACT_VALUE列
             {
                 cf.addAtom(params.makeTombstone(cfm.comparator.create(prefix, null)));
             }
             else
             {
-                cf.addAtom(params.makeRangeTombstone(prefix.slice()));
+                cf.addAtom(params.makeRangeTombstone(prefix.slice())); //删除连续的多个列
             }
         }
-        else
+        else //delete xxx from 语法
         {
             for (Operation op : deletions)
                 op.execute(key, cf, prefix, params);

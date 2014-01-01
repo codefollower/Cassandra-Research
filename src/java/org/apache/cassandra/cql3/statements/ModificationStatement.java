@@ -54,10 +54,12 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     public final CFMetaData cfm;
     public final Attributes attrs;
 
-    //partition key和clustering key中的字段
+    //只能是PARTITION_KEY和CLUSTERING_COLUMNy中的字段
     private final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<ColumnIdentifier, Restriction>();
+    //只能是REGULAR和COMPACT_VALUE字段
     private final List<Operation> columnOperations = new ArrayList<Operation>();
 
+    //只能是REGULAR和COMPACT_VALUE字段
     private List<Operation> columnConditions;
     private boolean ifNotExists;
 
@@ -576,6 +578,9 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         private final List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions;
         private final boolean ifNotExists;
 
+        //对于insert来说attrs可以有timestamp和TTL，conditions必定是null，ifNotExists可以是true和false
+        //对于update来说attrs可以有timestamp和TTL，conditions不一定是null，ifNotExists必定是false
+        //对于delete来说attrs只能有timestamp，conditions不一定是null，ifNotExists必定是false
         protected Parsed(CFName name, Attributes.Raw attrs, List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions, boolean ifNotExists)
         {
             super(name);

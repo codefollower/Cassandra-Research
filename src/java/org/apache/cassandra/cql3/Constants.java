@@ -308,6 +308,7 @@ public abstract class Constants
         }
     }
 
+    //只用于counter列
     public static class Adder extends Operation
     {
         public Adder(ColumnDefinition column, Term t)
@@ -326,6 +327,7 @@ public abstract class Constants
         }
     }
 
+    //只用于counter列
     public static class Substracter extends Operation
     {
         public Substracter(ColumnDefinition column, Term t)
@@ -350,6 +352,7 @@ public abstract class Constants
 
     // This happens to also handle collection because it doesn't felt worth
     // duplicating this further
+    //对应DELETE column_name FROM
     public static class Deleter extends Operation
     {
         public Deleter(ColumnDefinition column)
