@@ -63,7 +63,7 @@ public abstract class Selection
     public static Selection wildcard(CFMetaData cfm)
     {
         List<ColumnDefinition> all = new ArrayList<ColumnDefinition>(cfm.allColumns().size());
-        //all一开始是空的，把cfm.allColumnsInSelectOrder()中的东要加到all中
+        //all一开始是空的，把cfm.allColumnsInSelectOrder()中的东西加到all中
         Iterators.addAll(all, cfm.allColumnsInSelectOrder());
         return new SimpleSelection(all);
     }

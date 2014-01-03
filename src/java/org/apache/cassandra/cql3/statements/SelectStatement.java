@@ -363,6 +363,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         }
     }
 
+    //生成一个过滤器，当迭代每一行记录时，这个过滤器用来指示哪些字段是需要的
     private IDiskAtomFilter makeFilter(List<ByteBuffer> variables, int limit)
     throws InvalidRequestException
     {
@@ -528,16 +529,20 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         // All equality
         return true;
     }
+    
+    ////////////////////////////////////////////////////////////////////////////////////////
+    ////下面的isColumnRange()、getRequestedColumns、getRequestedColumns这三个方法逻辑不清晰
+    ////////////////////////////////////////////////////////////////////////////////////////
 
-    private boolean isColumnRange() //clustering key中的字段
+    //isColumnRange()返回false只有两种情况:
+    //1. SimpleSparseCellNameType
+    //2. CompoundDenseCellNameType且所有的CLUSTERING_COLUMN都出现并且不是Slice查询
+    private boolean isColumnRange() //CLUSTERING_COLUMN中的字段
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not dense, composite).
         // Static CF (non dense but non composite) never entails a column slice however
-        //见CreateTableStatement类中comparator字段的注释，
-        //除3和4.1之外，所有其他情况都满足这个if条件
-        if (!cfm.comparator.isDense()) //列族不是密集型的
-            return cfm.comparator.isCompound(); //运行到这里时只有2和4.2满足
-
+        if (!cfm.comparator.isDense()) //稀疏列族
+            return cfm.comparator.isCompound();
 
         // Otherwise (i.e. for compact table where we don't have a row marker anyway and thus don't care about CASSANDRA-5762),
         // it is a range query if it has at least one the column alias for which no relation is defined or is not EQ.
@@ -549,8 +554,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return false;
     }
 
-    //CreateTableStatement.comparator 3和4.1的情况，并且用在where子句中的范围查询
-    //只有在makeFilter中调用
+    //CompoundDenseCellNameType或SimpleSparseCellNameType的情况，并且用在where子句中的范围查询
+    //只有在makeFilter中调用并且isColumnRange()返回false的情况
     private SortedSet<CellName> getRequestedColumns(List<ByteBuffer> variables) throws InvalidRequestException
     {
         assert !isColumnRange();
@@ -1056,6 +1061,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                                 ? Selection.wildcard(cfm)
                                 : Selection.fromSelectors(cfm, selectClause);
 
+            //如果是DISTINCT查询，那么只能指定partitionKey的字段并且必须指定所有的partitionKey
             if (parameters.isDistinct)
                 validateDistinctSelection(selection.getColumnsList(), cfm.partitionKeyColumns());
 
@@ -1114,7 +1120,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     case REGULAR:
                         // We only all IN on the row key and last clustering key so far, never on non-PK columns, and this even if there's an index
                         Restriction r = updateRestriction(def, stmt.metadataRestrictions.get(def.name), rel, names);
-                        //非PK列不允许在IN中有多1个以上的值，只能为1
+                        //非PK列不允许在IN中有多个值，只能为1
                         if (r.isIN() && !((Restriction.IN)r).canHaveOnlyOneValue())
                             // Note: for backward compatibility reason, we conside a IN of 1 value the same as a EQ, so we let that slide.
                             throw new InvalidRequestException(String.format("IN predicates on non-primary-key columns (%s) is not yet supported", def.name));
@@ -1290,7 +1296,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 throw new InvalidRequestException("Select on indexed columns and with IN clause for the PRIMARY KEY are not supported");
 
             
-            //以下代码在分析order by子句
+            //以下代码分析order by子句
             ///////////////////////////////////////////////////////////////////////////
             if (!stmt.parameters.orderings.isEmpty())
             {

@@ -23,15 +23,15 @@ import java.util.List;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 
 //对应Select语句的:
-/*
-selector is:
-  column name
-| ( WRITETIME (column_name) )
-| TTL
-| ( TTL (column_name) )
-| (function (selector , selector, ...) )
-function is a timeuuid function, a token function, or a blob conversion function.
- */
+//见Cql.g
+//unaliasedSelector returns [Selectable s]
+//        @init { Selectable tmp = null; }
+//        :  ( c=cident                                  { tmp = c; }
+//           | K_WRITETIME '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL(c, true); }
+//           | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL(c, false); }
+//           | f=functionName args=selectionFunctionArgs { tmp = new Selectable.WithFunction(f, args); }
+//           ) ( '.' fi=cident { tmp = new Selectable.WithFieldSelection(tmp, fi); } )* { $s = tmp; }
+//        ;
 //在CqlParser中生成下面这些类的实例
 public interface Selectable
 {
@@ -80,6 +80,7 @@ public interface Selectable
         }
     }
 
+    //见my.test.cql3.TypeTest中的例子
     public static class WithFieldSelection implements Selectable
     {
         public final Selectable selected;
