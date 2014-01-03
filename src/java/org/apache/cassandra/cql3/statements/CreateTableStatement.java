@@ -44,41 +44,64 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /** A <code>CREATE TABLE</code> parsed from a CQL query statement. */
 public class CreateTableStatement extends SchemaAlteringStatement
 {
-    //与clustering key的类型相关
-    //(clustering key对应org.apache.cassandra.config.ColumnDefinition.Kind.CLUSTERING_COLUMN(后来才改名的))
-    //1. 如果没有定义clustering key并且使用CompactStorage，那么comparator是UTF8Type
-    //2. 如果没有定义clustering key并且未使用CompactStorage，那么comparator是CompositeType
+    //与CLUSTERING_COLUMN的类型相关
+    //1. 如果没有定义CLUSTERING_COLUMN并且使用CompactStorage，那么comparator是UTF8Type
+    //2. 如果没有定义CLUSTERING_COLUMN并且未使用CompactStorage，那么comparator是CompositeType
     //   如果普通字段中没有Collection类型的字段，
     //   那么这个CompositeType只有一个UTF8Type，否则等于UTF8Type + ColumnToCollectionType
-    //3. 如果clustering key只有一个字段并且使用CompactStorage，那么comparator就是此字段的类型
+    //3. 如果CLUSTERING_COLUMN只有一个字段并且使用CompactStorage，那么comparator就是此字段的类型
     //4. 其他情况comparator是CompositeType
-    //   4.1 使用CompactStorage时，CompositeType由clustering key中的所有字段类型组成
+    //   4.1 使用CompactStorage时，CompositeType由CLUSTERING_COLUMN中的所有字段类型组成
     //   4.2 未使用CompactStorage时，
     //       如果普通字段中没有Collection类型的字段，
-    //       CompositeType由clustering key中的所有字段类型 + UTF8Type组成
+    //       CompositeType由CLUSTERING_COLUMN中的所有字段类型 + UTF8Type组成
     //       如果普通字段中有Collection类型的字段，
-    //       则CompositeType由clustering key中的所有字段类型 + UTF8Type + ColumnToCollectionType组成
+    //       则CompositeType由CLUSTERING_COLUMN中的所有字段类型 + UTF8Type + ColumnToCollectionType组成
+    
+    //    org.apache.cassandra.db.composites包中有东西都与聚簇列相关
+    //
+    //    两对关健词:
+    //    Sparse(稀疏)与Dense(稠密) //与数据库中的稀疏索引和稠密索引有相似之处
+    //    Simple(单一的)与Compound(复合的)
+    //
+    //    在建表时:
+    //    1. 没有定义聚簇列
+    //        1.1 使用了COMPACT STORAGE，那么使用SimpleSparseCellNameType(包装类型是UTF8Type)
+    //        1.2 没有使用COMPACT STORAGE
+    //            1.2.1 普通列中有集合类型(CollectionType)，那么使用CompoundSparseCellNameType.WithCollection
+    //            1.2.2 没有，则使用CompoundSparseCellNameType
+    //
+    //    2. 定义了聚簇列
+    //        2.1 只有一个聚簇列并且使用了COMPACT STORAGE，那么使用SimpleDenseCellNameType(包装类型是此聚簇列的类型)
+    //        2.2 使用了COMPACT STORAGE，那么使用CompoundDenseCellNameType(包装类型是所有聚簇列的类型)
+    //        2.3 没有使用COMPACT STORAGE
+    //            2.3.1 普通列中有集合类型(CollectionType)，那么使用CompoundSparseCellNameType.WithCollection
+    //            2.3.2 没有，则使用CompoundSparseCellNameType
+    //
+    //    由上面总结如下:
+    //    只有定义了聚簇列的情况下，并且使用了COMPACT STORAGE才会使用SimpleDenseCellNameType或CompoundDenseCellNameType
+
     public CellNameType comparator;
     
 
-    //1. 如果定义了clustering key并且使用CompactStorage，同时没有其他普通字段, 那么defaultValidator是UTF8Type
-    //2. 如果定义了clustering key并且使用CompactStorage，同时有其他普通字段(只能有一个), 那么defaultValidator是此普通字段的类型
-    //3. 如果没有定义clustering key或者未使用CompactStorage
+    //1. 如果定义了CLUSTERING_COLUMN并且使用CompactStorage，同时没有其他普通字段, 那么defaultValidator是UTF8Type
+    //2. 如果定义了CLUSTERING_COLUMN并且使用CompactStorage，同时有其他普通字段(只能有一个), 那么defaultValidator是此普通字段的类型
+    //3. 如果没有定义CLUSTERING_COLUMN或者未使用CompactStorage
     //   3.1 如果普通字段中有Counter类型的字段, 那么defaultValidator是CounterColumnType
     //   3.2 其他情况，defaultValidator是BytesType
     private AbstractType<?> defaultValidator;
     
-    //与partition key的类型相关
-    //如果partition key只有一个字段，那么keyValidator就是此字段的类型
-    //如果partition key有多个字段，那么keyValidator就是CompositeType
+    //与PARTITION_KEY的类型相关
+    //如果PARTITION_KEY只有一个字段，那么keyValidator就是此字段的类型
+    //如果PARTITION_KEY有多个字段，那么keyValidator就是CompositeType
     private AbstractType<?> keyValidator;
 
     private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
     private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
     
     //1.
-    //前提条件: 使用CompactStorage并且存在clustering key字段时,
-    //除了partition key和clustering key字段之外，最多可以定义一个普通字段，
+    //前提条件: 使用CompactStorage并且存在CLUSTERING_COLUMN字段时,
+    //除了PARTITION_KEY和CLUSTERING_COLUMN字段之外，最多可以定义一个普通字段，
     //如果存在这样的普通字段那么valueAlias就是这个普通字段的字段名
     //如果不存在这样的普通字段，valueAlias的值是ByteBufferUtil.EMPTY_BYTE_BUFFER
     //2.
@@ -179,13 +202,14 @@ public class CreateTableStatement extends SchemaAlteringStatement
     {
         cfmd.defaultValidator(defaultValidator)
             .keyValidator(keyValidator)
-            .addAllColumnDefinitions(getColumns(cfmd)); //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
+            .addAllColumnDefinitions(getColumns(cfmd));
 
         //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
         //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
         //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
         cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
         cfmd.addColumnMetadataFromAliases(columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
+        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
         if (valueAlias != null)
             cfmd.addColumnMetadataFromAliases(Collections.<ByteBuffer>singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
 
@@ -287,7 +311,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
             }
 
 
-            //以下代码用于确定stmt.keyAliases和stmt.keyValidator的值(处理partition key)
+            //以下代码用于确定stmt.keyAliases和stmt.keyValidator的值(处理PARTITION_KEY)
             ///////////////////////////////////////////////////////////////////////////
             
             //每个表必须有主键，并且只能有一个
@@ -304,12 +328,12 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 stmt.keyAliases.add(alias.bytes);
                 //通过PRIMARY KEY定义的部分，
                 //例如: PRIMARY KEY ((block_id, breed), color, short_hair)
-                //PRIMARY KEY由partition key和clustering key组成，
-                //其中(block_id, breed)是partition key，而(color, short_hair)是clustering key
-                //因为(block_id, breed)由大于1个字段组成，所以又叫composite partition key
-                //getTypeAndRemove就是用来检查partition key和clustering key的，这两种key中的字段类型不能是CollectionType
+                //PRIMARY KEY由PARTITION_KEY和CLUSTERING_COLUMN组成，
+                //其中(block_id, breed)是PARTITION_KEY，而(color, short_hair)是CLUSTERING_COLUMN
+                //因为(block_id, breed)由大于1个字段组成，所以又叫composite PARTITION_KEY
+                //getTypeAndRemove就是用来检查PARTITION_KEY和CLUSTERING_COLUMN的，这两种key中的字段类型不能是CollectionType
                 
-                //另外，此类的keyAliases对应partition key，而columnAliases对应clustering key
+                //另外，此类的keyAliases对应PARTITION_KEY，而columnAliases对应CLUSTERING_COLUMN
                 AbstractType<?> t = getTypeAndRemove(stmt.columns, alias);
                 //主键字段不能是counter类型
                 //例如这样是不行的: block_id counter PRIMARY KEY
@@ -326,10 +350,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
             stmt.keyValidator = keyTypes.size() == 1 ? keyTypes.get(0) : CompositeType.getInstance(keyTypes);
 
 
-            //以下代码用于确定stmt.comparator和stmt.columnAliases的值(处理clustering key)
+            //以下代码用于确定stmt.comparator和stmt.columnAliases的值(处理CLUSTERING_COLUMN)
             ///////////////////////////////////////////////////////////////////////////
             // Handle column aliases
-            //没有clustering key或有clustering key但是没有使用COMPACT STORAGE时都使用XxxSparseCellNameType(稀疏的)
+            //没有CLUSTERING_COLUMN或有CLUSTERING_COLUMN但是没有使用COMPACT STORAGE时都使用XxxSparseCellNameType(稀疏的)
             //其他情况使用XxxDenseCellNameType(稠密的)
             if (columnAliases.isEmpty())
             {
@@ -452,12 +476,12 @@ public class CreateTableStatement extends SchemaAlteringStatement
             
             //以下代码用于检查CLUSTERING ORDER子句是否合法
             ///////////////////////////////////////////////////////////////////////////
-            //CLUSTERING ORDER中的字段只能是clustering key包含的字段
+            //CLUSTERING ORDER中的字段只能是CLUSTERING_COLUMN包含的字段
             // If we give a clustering order, we must explicitly do so for all aliases and in the order of the PK
             if (!definedOrdering.isEmpty())
             {
                 if (definedOrdering.size() > columnAliases.size())
-                    throw new InvalidRequestException("Only clustering key columns can be defined in CLUSTERING ORDER directive");
+                    throw new InvalidRequestException("Only CLUSTERING_COLUMN columns can be defined in CLUSTERING ORDER directive");
 
                 int i = 0;
                 for (ColumnIdentifier id : definedOrdering.keySet())
@@ -465,10 +489,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     ColumnIdentifier c = columnAliases.get(i);
                     if (!id.equals(c))
                     {
-                        //排序key中的字段与clustering key中的字段顺序必须一样
+                        //排序key中的字段与CLUSTERING_COLUMN中的字段顺序必须一样
                         if (definedOrdering.containsKey(c))
-                            throw new InvalidRequestException(String.format("The order of columns in the CLUSTERING ORDER directive must be the one of the clustering key (%s must appear before %s)", c, id));
-                        else //排序key中的字段必须是clustering key中的字段
+                            throw new InvalidRequestException(String.format("The order of columns in the CLUSTERING ORDER directive must be the one of the CLUSTERING_COLUMN (%s must appear before %s)", c, id));
+                        else //排序key中的字段必须是CLUSTERING_COLUMN中的字段
                             throw new InvalidRequestException(String.format("Missing CLUSTERING ORDER for column %s", c));
                     }
                     ++i;
@@ -478,8 +502,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
             return new ParsedStatement.Prepared(stmt);
         }
 
-        //PRIMARY KEY字段是partition key和clustering key的统称
-        //这个方法其实就是用来检查partition key和clustering key中的字段(类型不能是CollectionType)
+        //PRIMARY KEY字段是PARTITION_KEY和CLUSTERING_COLUMN的统称
+        //这个方法其实就是用来检查PARTITION_KEY和CLUSTERING_COLUMN中的字段(类型不能是CollectionType)
         //并且从org.apache.cassandra.cql3.statements.CreateTableStatement.columns中删除这些PRIMARY KEY字段
         private AbstractType<?> getTypeAndRemove(Map<ColumnIdentifier, AbstractType> columns, ColumnIdentifier t) throws InvalidRequestException
         {
@@ -502,7 +526,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
             definitions.put(def, type);
         }
  
-        //partition key可能由一个或多个字段构成，所以用List<ColumnIdentifier>
+        //PARTITION_KEY可能由一个或多个字段构成，所以用List<ColumnIdentifier>
         //语法分析阶段可以出现多次PRIMARY KEY，当运行到prepare方法时才检查，
         //所以keyAliases的类型是List<List<ColumnIdentifier>>
         public void addKeyAliases(List<ColumnIdentifier> aliases)

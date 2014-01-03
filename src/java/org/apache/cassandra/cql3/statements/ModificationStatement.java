@@ -54,7 +54,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     public final CFMetaData cfm;
     public final Attributes attrs;
 
-    //只能是PARTITION_KEY和CLUSTERING_COLUMNy中的字段
+    //只能是PARTITION_KEY和CLUSTERING_COLUMN中的字段
     private final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<ColumnIdentifier, Restriction>();
     //只能是REGULAR和COMPACT_VALUE字段
     private final List<Operation> columnOperations = new ArrayList<Operation>();

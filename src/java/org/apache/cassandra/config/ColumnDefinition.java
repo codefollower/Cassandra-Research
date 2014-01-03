@@ -134,7 +134,7 @@ public class ColumnDefinition extends ColumnSpecification
     {
         this(cfm.ksName,
              cfm.cfName,
-             //cfm.getComponentComparator(componentIndex, kind)返回的值用于生成字段名的字符串型式
+             //cfm.getComponentComparator(componentIndex, kind)返回的值用于生成字段名的字符串形式
              //见org.apache.cassandra.cql3.statements.CreateTableStatement.getColumns(CFMetaData)中的注释
              new ColumnIdentifier(name, cfm.getComponentComparator(componentIndex, kind)),
              validator,
@@ -179,6 +179,7 @@ public class ColumnDefinition extends ColumnSpecification
         return new ColumnDefinition(ksName, cfName, name, newType, indexType, indexOptions, indexName, componentIndex, kind);
     }
 
+    //SimpleSparseCellNameType和SimpleDenseCellNameType的情况componentIndex是null
     public boolean isOnAllComponents()
     {
         return componentIndex == null; //例如PARTITION_KEY中只包含一个字段时，或者COMPACT_VALUE的情况也是null

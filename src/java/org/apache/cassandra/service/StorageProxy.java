@@ -484,6 +484,11 @@ public class StorageProxy implements StorageProxyMBean
         responseHandler.get();
     }
 
+    //4个mutate方法用于写操作
+    //mutateWithTriggers->mutate
+    //或mutateWithTriggers->mutateAtomically(批量)
+    //mutate->mutateCounter(Counter字段)
+    //或mutate->performWrite
     /**
      * Use this method to have these Mutations applied
      * across all replicas. This method will take care
@@ -574,6 +579,7 @@ public class StorageProxy implements StorageProxyMBean
             OverloadedException, InvalidRequestException
     {
         Collection<Mutation> tmutations = TriggerExecutor.instance.execute(mutations);
+        //mutateAtomically为true时实际上就是由BatchStatement触发的
         if (mutateAtomically || tmutations != null)
         {
             Collection<Mutation> allMutations = (Collection<Mutation>) mutations;
@@ -867,6 +873,7 @@ public class StorageProxy implements StorageProxyMBean
                     }
                     else
                     {
+                        //先发本地的，再发非本地数据中心的
                         Collection<InetAddress> messages = (dcGroups != null) ? dcGroups.get(dc) : null;
                         if (messages == null)
                         {
