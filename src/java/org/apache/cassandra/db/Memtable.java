@@ -286,6 +286,8 @@ public class Memtable
         return creationTime;
     }
 
+    //同org.apache.cassandra.db.MeteredFlusher线程触发
+    //或直接调用org.apache.cassandra.db.ColumnFamilyStore.forceFlush()强制刷新
     class FlushRunnable extends DiskAwareRunnable
     {
         private final CountDownLatch latch;

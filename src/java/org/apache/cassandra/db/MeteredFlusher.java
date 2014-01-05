@@ -36,6 +36,7 @@ public class MeteredFlusher implements Runnable
 
     public void run()
     {
+        //如果没有配置memtable_total_space_in_mb参数，那么默认是JVM最大内存的1/4
         //1048576L是1024*1024 = 1M
         long totalMemtableBytesAllowed = DatabaseDescriptor.getTotalMemtableSpaceInMB() * 1048576L;
 

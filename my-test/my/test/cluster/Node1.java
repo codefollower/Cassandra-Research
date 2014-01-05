@@ -22,6 +22,7 @@ package my.test.cluster;
 import my.test.start.CassandraDaemonStart;
 
 //加vm参数-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
+//加-Dcom.sun.management.jmxremote可以启用jmx
 public class Node1 extends CassandraDaemonStart {
     public static void main(String[] args) {
         setConfigLoader(Node1.class);

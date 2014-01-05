@@ -168,6 +168,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         }
         else
         {
+            //org.apache.cassandra.service.pager包里的类只有分页查询时才用得到
             QueryPager pager = QueryPagers.pager(command, cl, options.getPagingState());
             if (parameters.isCount)
                 return pageCountQuery(pager, variables, pageSize, now);

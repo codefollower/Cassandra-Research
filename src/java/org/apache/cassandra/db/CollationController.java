@@ -32,6 +32,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.HeapAllocator;
 
+//校对控制器
 public class CollationController
 {
     private final ColumnFamilyStore cfs;

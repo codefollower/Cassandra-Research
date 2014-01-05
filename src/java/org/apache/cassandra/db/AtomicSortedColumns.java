@@ -47,6 +47,7 @@ import org.apache.cassandra.utils.Allocator;
  * isolated of other operations and could actually be fully ignored in the
  * face of a concurrent. Don't use it unless in a non-concurrent context.
  */
+//此类已废弃，被AtomicBTreeColumns取代了
 public class AtomicSortedColumns extends ColumnFamily
 {
     private volatile Holder ref;

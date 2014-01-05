@@ -47,7 +47,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
     public final ColumnSlice[] slices;
     public final boolean reversed;
     public volatile int count;
-    public final int compositesToGroup;
+    public final int compositesToGroup; //稠密聚簇是-1，稀疏聚簇就是聚簇列的个数
 
     // Not serialized, just a ack for range slices to find the number of live column counted, even when we group
     private ColumnCounter columnCounter;

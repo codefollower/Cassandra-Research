@@ -79,8 +79,8 @@ public class CassandraDaemon
 
     private static final CassandraDaemon instance = new CassandraDaemon();
 
-    public Server thriftServer;
-    public Server nativeServer;
+    public Server thriftServer; //用于thrift客户端
+    public Server nativeServer; //用于CQL3客户端
 
     /**
      * This is a hook for concrete daemons to initialize themselves suitably.
@@ -91,6 +91,7 @@ public class CassandraDaemon
      */
     protected void setup()
     {
+        //前面这一段代码说明Cassandra推荐用64位的Oracle HotSpot JVM，不推荐OpenJDK
         // log warnings for different kinds of sub-optimal JVMs.  tldr use 64-bit Oracle >= 1.6u32
         if (!System.getProperty("os.arch").contains("64"))
             logger.info("32bit JVM detected.  It is recommended to run Cassandra on a 64bit JVM for better performance.");
@@ -152,6 +153,7 @@ public class CassandraDaemon
             }
         });
 
+        //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
         // check all directories(data, commitlog, saved cache) for existence and permission
         Iterable<String> dirs = Iterables.concat(Arrays.asList(DatabaseDescriptor.getAllDataFileLocations()),
                                                  Arrays.asList(DatabaseDescriptor.getCommitLogLocation(),
@@ -419,7 +421,7 @@ public class CassandraDaemon
             {
                 new File(pidFile).deleteOnExit();
             }
-            //没有设置cassandra-foreground时，信息无法输出的控制台
+            //没有设置cassandra-foreground时，信息无法输出到控制台
             if (System.getProperty("cassandra-foreground") == null)
             {
                 System.out.close();

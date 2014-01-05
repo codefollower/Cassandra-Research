@@ -40,7 +40,7 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 
 //按指定的一些可能不连续的列名来过滤
-//列如，如果有a到z这些列名，可以按[a, g, i]来提取其中三列
+//例如，如果有a到z这些列名，可以按[a, g, i]来提取其中三列
 public class NamesQueryFilter implements IDiskAtomFilter
 {
     public final SortedSet<CellName> columns;

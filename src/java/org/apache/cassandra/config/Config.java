@@ -45,6 +45,9 @@ public class Config
     public SeedProviderDef seed_provider;
     public DiskAccessMode disk_access_mode = DiskAccessMode.auto;
 
+    //用于org.apache.cassandra.io.util.FileUtils.handleFSError(FSError)
+    //当发生文件系统错误时要做什么
+    //在org.apache.cassandra.service.CassandraDaemon.setup()里用Thread.setDefaultUncaughtExceptionHandler设了个处理器
     public DiskFailurePolicy disk_failure_policy = DiskFailurePolicy.ignore;
 
     /* initial token in the ring */
@@ -101,7 +104,7 @@ public class Config
     public Integer native_transport_max_frame_size_in_mb = 256;
 
     @Deprecated
-    public Integer thrift_max_message_length_in_mb = 16;
+    public Integer thrift_max_message_length_in_mb = 16; //代码中没有地方使用了
 
     public Integer thrift_framed_transport_size_in_mb = 15;
     public Boolean snapshot_before_compaction = false;
