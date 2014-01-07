@@ -246,6 +246,7 @@ public class CommitLogSegment
         {
             // check we have more work to do
             if (allocatePosition.get() <= lastSyncedOffset + SYNC_MARKER_SIZE)
+            //if (allocatePosition.get() < lastSyncedOffset + SYNC_MARKER_SIZE)
                 return;
 
             // allocate a new sync marker; this is both necessary in itself, but also serves to demarcate

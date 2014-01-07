@@ -42,6 +42,7 @@ public abstract class AbstractCommitLogService
     protected final AtomicLong pending = new AtomicLong(0);
 
     // signal that writers can wait on to be notified of a completed sync
+    //只有PeriodicCommitLogService时才用，BatchCommitLogService不用
     protected final WaitQueue syncComplete = new WaitQueue();
     private final Semaphore haveWork = new Semaphore(1);
 
@@ -102,9 +103,8 @@ public abstract class AbstractCommitLogService
 
                         if (firstLagAt > 0 && now - firstLagAt >= LAG_REPORT_INTERVAL)
                         {
-                            //这行我注释掉了，不想在eclipse中提示
-                            //logger.warn(String.format("Out of %d commit log syncs over the past %ds with average duration of %.2fms, %d have exceeded the configured commit interval by an average of %.2fms",
-                            //                          syncCount, (now - firstLagAt) / 1000, (double) totalSyncDuration / syncCount, lagCount, (double) syncExceededIntervalBy / lagCount));
+                            logger.warn(String.format("Out of %d commit log syncs over the past %ds with average duration of %.2fms, %d have exceeded the configured commit interval by an average of %.2fms",
+                                                      syncCount, (now - firstLagAt) / 1000, (double) totalSyncDuration / syncCount, lagCount, (double) syncExceededIntervalBy / lagCount));
                             firstLagAt = 0;
                         }
 

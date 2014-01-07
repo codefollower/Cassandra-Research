@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.config;
 
-import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -29,11 +28,9 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
@@ -60,9 +57,10 @@ public class Schema
     //key是keyspace的名称
     private final Map<String, Keyspace> keyspaceInstances = new NonBlockingHashMap<String, Keyspace>();
 
-    //BiMap是双向的，通过key和value都可找到彼此
+
     /* metadata map for faster ColumnFamily lookup */
     //Pair<String, String>是(ksname,cfname)
+    //BiMap是双向的，通过key和value都可找到彼此
     private final BiMap<Pair<String, String>, UUID> cfIdMap = HashBiMap.create();
 
     public final UTMetaData userTypes = new UTMetaData();
@@ -71,7 +69,7 @@ public class Schema
 
     // 59adb24e-f3cd-3e02-97f0-5b395827453f
     public static final UUID emptyVersion;
-    //指system和system_traces，不包含system_auth
+    //指system，不包含system_auth和system_traces
     public static final ImmutableSet<String> systemKeyspaceNames = ImmutableSet.of(Keyspace.SYSTEM_KS);
 
     static

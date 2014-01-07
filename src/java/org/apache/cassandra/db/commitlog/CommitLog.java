@@ -212,12 +212,12 @@ public class CommitLog implements CommitLogMBean
             DataOutputStream dos = new DataOutputStream(new ChecksummedOutputStream(new ByteBufferOutputStream(buffer), checksum));
 
             // checksummed length
-            dos.writeInt((int) size);
-            buffer.putLong(checksum.getValue());
+            dos.writeInt((int) size); //对应ENTRY_OVERHEAD_SIZE注释中提到的length
+            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的head checksum
 
             // checksummed mutation
             Mutation.serializer.serialize(mutation, dos, MessagingService.current_version);
-            buffer.putLong(checksum.getValue());
+            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
         }
         catch (IOException e)
         {

@@ -201,9 +201,10 @@ public class CassandraDaemon
             System.exit(100);
         }
 
+        logger.error("11111111111111111111111");
         // load keyspace descriptions.
         DatabaseDescriptor.loadSchemas();
-
+        logger.error("22222222222222222222222222222");
         // clean up compaction leftovers
         Map<Pair<String, String>, Map<Integer, UUID>> unfinishedCompactions = SystemKeyspace.getUnfinishedCompactions();
         for (Pair<String, String> kscf : unfinishedCompactions.keySet())
@@ -289,9 +290,9 @@ public class CassandraDaemon
             }
         };
         StorageService.optionalTasks.schedule(runnable, 5 * 60, TimeUnit.SECONDS);
-
+        logger.error("33333333333333333");
         SystemKeyspace.finishStartup();
-
+        logger.error("4444444444444444444");
         // start server internals
         StorageService.instance.registerDaemon(this);
         try

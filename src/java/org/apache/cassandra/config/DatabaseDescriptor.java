@@ -39,7 +39,6 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.sstable.IndexSummaryManager;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.IAllocator;
 import org.apache.cassandra.locator.DynamicEndpointSnitch;
@@ -224,6 +223,7 @@ public class DatabaseDescriptor
         else
             internodeAuthenticator = new AllowAllInternodeAuthenticator();
 
+        //Cassandra自带的几个实现在下面三个validateConfiguration中都没做什么事
         authenticator.validateConfiguration();
         authorizer.validateConfiguration();
         internodeAuthenticator.validateConfiguration();
@@ -270,7 +270,7 @@ public class DatabaseDescriptor
             throw new ConfigurationException("concurrent_replicates must be at least 2");
         }
 
-        if (conf.file_cache_size_in_mb == null) //最大内存的1/3，1048576=1024*1024=1M
+        if (conf.file_cache_size_in_mb == null) //取512和(最大内存的1/4，1048576=1024*1024=1M)中的最小者
             conf.file_cache_size_in_mb = Math.min(512, (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576)));
 
         if (conf.memtable_total_space_in_mb == null)
@@ -493,7 +493,7 @@ public class DatabaseDescriptor
         memtableAllocator = FBUtilities.classForName(allocatorClass, "allocator");
 
         // Hardcoded system keyspaces
-        //指system和system_traces，不包含system_auth
+        //指system中的列族，不包含system_auth和system_traces
         List<KSMetaData> systemKeyspaces = Arrays.asList(KSMetaData.systemKeyspace());
         assert systemKeyspaces.size() == Schema.systemKeyspaceNames.size();
         //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
@@ -532,6 +532,8 @@ public class DatabaseDescriptor
     /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
     public static void loadSchemas()
     {
+        //读取system.schema_usertypes表中的所有记录，加载到内存后每条记录对应一个UserType实例，
+        //所有这些UserType实例都放在Schema类的UTMetaData userTypes字段中
         Schema.instance.loadUserTypes();
         //读取schema_keyspaces表
         ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_CF);
@@ -564,6 +566,7 @@ public class DatabaseDescriptor
                 // see if there are other directories present.
                 int dirCount = dataPath.listFiles(new FileFilter()
                 {
+                    //除"system"之外的目录名
                     public boolean accept(File pathname)
                     {
                         return (pathname.isDirectory() && !Schema.systemKeyspaceNames.contains(pathname.getName()));

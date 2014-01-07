@@ -488,6 +488,9 @@ public class SystemKeyspace
      * 3. files are present but you can't read them: bad
      * @throws ConfigurationException
      */
+    //读写system.local表的cluster_name字段，key值是"local"，
+    //用于检查system.local表的cluster_name字段的值跟cassandra.yaml文件中配置的cluster_name参数是否一样，
+    //对system.local表的读写不经过StorageProxy，而是本地的。
     public static void checkHealth() throws ConfigurationException
     {
         Keyspace keyspace;
@@ -510,7 +513,7 @@ public class SystemKeyspace
         if (result.isEmpty() || !result.one().has("cluster_name"))
         {
             // this is a brand new node
-            if (!cfs.getSSTables().isEmpty())
+            if (!cfs.getSSTables().isEmpty()) //system.local表里没记录，但是却存在文件，说明不一致了
                 throw new ConfigurationException("Found system keyspace files, but they couldn't be loaded!");
 
             // no system files.  this is a new node.
@@ -725,6 +728,12 @@ public class SystemKeyspace
         return Keyspace.open(Keyspace.SYSTEM_KS).getColumnFamilyStore(cfName);
     }
 
+    //加载这5个表中的所有记录:
+    //schema_keyspaces
+    //schema_columnfamilies
+    //schema_columns
+    //schema_triggers
+    //schema_usertypes
     public static List<Row> serializedSchema()
     {
         List<Row> schema = new ArrayList<>();
@@ -747,6 +756,7 @@ public class SystemKeyspace
     {
         Token minToken = StorageService.getPartitioner().getMinimumToken();
 
+        //schemaCFS(schemaCfName)返回一个ColumnFamilyStore
         return schemaCFS(schemaCfName).getRangeSlice(new Range<RowPosition>(minToken.minKeyBound(), minToken.maxKeyBound()),
                                                      null,
                                                      new IdentityQueryFilter(),
