@@ -245,8 +245,9 @@ public class CommitLogSegment
         try
         {
             // check we have more work to do
-            if (allocatePosition.get() <= lastSyncedOffset + SYNC_MARKER_SIZE)
-            //if (allocatePosition.get() < lastSyncedOffset + SYNC_MARKER_SIZE)
+            //这行有并发bug，会在org.apache.cassandra.db.commitlog.CommitLogSegment.Allocation.awaitDiskSync()中阻塞
+            //if (allocatePosition.get() <= lastSyncedOffset + SYNC_MARKER_SIZE)
+            if (allocatePosition.get() < lastSyncedOffset + SYNC_MARKER_SIZE)
                 return;
 
             // allocate a new sync marker; this is both necessary in itself, but also serves to demarcate

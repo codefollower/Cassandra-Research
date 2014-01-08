@@ -126,6 +126,8 @@ public class CompactionManager implements CompactionManagerMBean
      * It's okay to over-call (within reason) if a call is unnecessary, it will
      * turn into a no-op in the bucketing/candidate-scan phase.
      */
+    //在org.apache.cassandra.service.CassandraDaemon.setup()中启动了一个后台任务，
+    //每5分钟调用一次， 5分钟是固定的，不能改。
     public List<Future<?>> submitBackground(final ColumnFamilyStore cfs)
     {
         if (cfs.isAutoCompactionDisabled())

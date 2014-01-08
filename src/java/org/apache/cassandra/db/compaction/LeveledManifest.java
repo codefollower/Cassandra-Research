@@ -64,8 +64,8 @@ public class LeveledManifest
         // allocate enough generations for a PB of data, with a 1-MB sstable size.  (Note that if maxSSTableSize is
         // updated, we will still have sstables of the older, potentially smaller size.  So don't make this
         // dependent on maxSSTableSize.)
-        int n = (int) Math.log10(1000 * 1000 * 1000);
-        generations = new List[n];
+        int n = (int) Math.log10(1000 * 1000 * 1000); //n是9, 10的9次方是(1000 * 1000 * 1000)，刚好9个0
+        generations = new List[n]; //list数组
         lastCompactedKeys = new RowPosition[n];
         for (int i = 0; i < generations.length; i++)
         {
@@ -154,6 +154,7 @@ public class LeveledManifest
     public synchronized void repairOverlappingSSTables(int level)
     {
         SSTableReader previous = null;
+        //generations[level]是个List
         Collections.sort(generations[level], SSTableReader.sstableComparator);
         List<SSTableReader> outOfOrderSSTables = new ArrayList<SSTableReader>();
         for (SSTableReader current : generations[level])
