@@ -236,8 +236,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
     */
     public static class RawStatement extends CFStatement
     {
-        private final Map<ColumnIdentifier, CQL3Type> definitions = new HashMap<ColumnIdentifier, CQL3Type>();
         //在org.apache.cassandra.cql3.CqlParser.cfamProperty(RawStatement)中把属性解析后放到properties字段中
+        private final Map<ColumnIdentifier, CQL3Type.Raw> definitions = new HashMap<>();
         public final CFPropDefs properties = new CFPropDefs();
         //如CREATE TABLE IF NOT EXISTS Cats0 ( block_id uuid PRIMARY KEY, breed text, color text, short_hair boolean,"
         //+ "PRIMARY KEY ((block_id, breed), color, short_hair))
@@ -297,10 +297,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
             //以下代码用于确定stmt.columns的值
             ///////////////////////////////////////////////////////////////////////////
             Map<ByteBuffer, CollectionType> definedCollections = null;
-            for (Map.Entry<ColumnIdentifier, CQL3Type> entry : definitions.entrySet())
+            for (Map.Entry<ColumnIdentifier, CQL3Type.Raw> entry : definitions.entrySet())
             {
                 ColumnIdentifier id = entry.getKey();
-                CQL3Type pt = entry.getValue();
+                CQL3Type pt = entry.getValue().prepare(keyspace());
                 if (pt.isCollection())
                 {
                     if (definedCollections == null)
@@ -520,7 +520,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
         //definitions中会有keyAliases和columnAliases的内容，
         //在prepare方法中会进行处理
-        public void addDefinition(ColumnIdentifier def, CQL3Type type)
+        public void addDefinition(ColumnIdentifier def, CQL3Type.Raw type)
         {
             definedNames.add(def);
             definitions.put(def, type);

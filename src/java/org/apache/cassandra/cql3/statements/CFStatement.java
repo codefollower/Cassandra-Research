@@ -38,9 +38,18 @@ public abstract class CFStatement extends ParsedStatement
         //前面使用了use语句，在表名前就不需要加keyspace前缀了
         if (!cfName.hasKeyspace())
         {
-            // XXX: We explicitely only want to call state.getKeyspace() in this case, don't move it outside the if.
+            // XXX: We explicitely only want to call state.getKeyspace() in this case, as we don't want to throw
+            // if not logged in any keyspace but a keyspace is explicitely set on the statement. So don't move
+            // the call outside the 'if' or replace the method by 'prepareKeyspace(state.getKeyspace())'
             cfName.setKeyspace(state.getKeyspace(), true);
         }
+    }
+
+    // Only for internal calls, use the version with ClientState for user queries
+    public void prepareKeyspace(String keyspace)
+    {
+        if (!cfName.hasKeyspace())
+            cfName.setKeyspace(keyspace, true);
     }
 
     public String keyspace()

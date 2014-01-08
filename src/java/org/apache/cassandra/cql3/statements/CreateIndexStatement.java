@@ -20,17 +20,15 @@ package org.apache.cassandra.cql3.statements;
 import java.util.Collections;
 import java.util.Map;
 
+import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.collect.ImmutableMap;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.IndexType;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.service.ClientState;
@@ -45,18 +43,20 @@ public class CreateIndexStatement extends SchemaAlteringStatement
 
     private final String indexName;
     private final ColumnIdentifier columnName;
+    private final IndexPropDefs properties;
     private final boolean ifNotExists;
-    private final boolean isCustom;
-    private final String indexClass;
 
-    public CreateIndexStatement(CFName name, String indexName, ColumnIdentifier columnName, boolean ifNotExists, boolean isCustom, String indexClass)
+    public CreateIndexStatement(CFName name,
+                                String indexName,
+                                ColumnIdentifier columnName,
+                                IndexPropDefs properties,
+                                boolean ifNotExists)
     {
         super(name);
         this.indexName = indexName;
         this.columnName = columnName;
+        this.properties = properties;
         this.ifNotExists = ifNotExists;
-        this.isCustom = isCustom;
-        this.indexClass = indexClass;
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -84,11 +84,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException("Index already exists");
         }
 
-        if (isCustom && indexClass == null)
-            throw new InvalidRequestException("CUSTOM index requires specifiying the index class");
-
-        if (!isCustom && indexClass != null)
-            throw new InvalidRequestException("Cannot specify index class for a non-CUSTOM index");
+        properties.validate();
 
         // TODO: we could lift that limitation
         if (cfm.comparator.isDense() && cd.kind != ColumnDefinition.Kind.REGULAR)
@@ -99,7 +95,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
     }
 
     //参考测试: my.test.cql3.statements.IndexTest.test_CreateIndexStatement_announceMigration()
-    public void announceMigration() throws InvalidRequestException, ConfigurationException
+    public void announceMigration() throws RequestValidationException
     {
         logger.debug("Updating column {} definition for index {}", columnName, indexName);
         CFMetaData cfm = Schema.instance.getCFMetaData(keyspace(), columnFamily()).clone();
@@ -108,9 +104,9 @@ public class CreateIndexStatement extends SchemaAlteringStatement
         if (cd.getIndexType() != null && ifNotExists)
             return;
 
-        if (isCustom)
+        if (properties.isCustom)
         {
-            cd.setIndexType(IndexType.CUSTOM, Collections.singletonMap(SecondaryIndex.CUSTOM_INDEX_OPTION_NAME, indexClass));
+            cd.setIndexType(IndexType.CUSTOM, properties.getOptions());
         }
         else if (cfm.comparator.isCompound())
         {
@@ -120,7 +116,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
             // lives easier then.
             if (cd.type.isCollection())
                 options = ImmutableMap.of("index_values", "");
-            cd.setIndexType(IndexType.COMPOSITES, Collections.<String, String>emptyMap());
+            cd.setIndexType(IndexType.COMPOSITES, options);
         }
         else
         {

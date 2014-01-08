@@ -50,6 +50,7 @@ import org.apache.cassandra.scheduler.IRequestScheduler;
 import org.apache.cassandra.scheduler.NoScheduler;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 //重点关注applyConfig、loadSchemas两个方法
@@ -532,10 +533,13 @@ public class DatabaseDescriptor
     /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
     public static void loadSchemas()
     {
-        //读取system.schema_usertypes表中的所有记录，加载到内存后每条记录对应一个UserType实例，
-        //所有这些UserType实例都放在Schema类的UTMetaData userTypes字段中
-        Schema.instance.loadUserTypes();
-        //读取schema_keyspaces表
+//<<<<<<< HEAD
+//        //读取system.schema_usertypes表中的所有记录，加载到内存后每条记录对应一个UserType实例，
+//        //所有这些UserType实例都放在Schema类的UTMetaData userTypes字段中
+//        Schema.instance.loadUserTypes();
+//        //读取schema_keyspaces表
+//=======
+//>>>>>>> d63d07b9270d73a289086c69002b5a0023b2d233
         ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_CF);
 
         // if keyspace with definitions is empty try loading the old way
@@ -1151,9 +1155,16 @@ public class DatabaseDescriptor
         return conf.index_interval;
     }
 
-    public static File getSerializedCachePath(String ksName, String cfName, CacheService.CacheType cacheType, String version)
+    public static File getSerializedCachePath(String ksName, String cfName, UUID cfId, CacheService.CacheType cacheType, String version)
     {
-        return new File(conf.saved_caches_directory, ksName + "-" + cfName + "-" + cacheType + (version == null ? "" : "-" + version + ".db"));
+        StringBuilder builder = new StringBuilder();
+        builder.append(ksName).append('-');
+        builder.append(cfName).append('-');
+        if (cfId != null)
+            builder.append(ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(cfId))).append('-');
+        builder.append(cacheType);
+        builder.append((version == null ? "" : "-" + version + ".db"));
+        return new File(conf.saved_caches_directory, builder.toString());
     }
 
     public static int getDynamicUpdateInterval()

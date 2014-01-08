@@ -41,12 +41,12 @@ public class AlterTableStatement extends SchemaAlteringStatement
     }
 
     public final Type oType;
-    public final CQL3Type validator;
+    public final CQL3Type.Raw validator;
     public final ColumnIdentifier columnName;
     private final CFPropDefs cfProps;
     private final Map<ColumnIdentifier, ColumnIdentifier> renames;
 
-    public AlterTableStatement(CFName name, Type type, ColumnIdentifier columnName, CQL3Type validator, CFPropDefs cfProps, Map<ColumnIdentifier, ColumnIdentifier> renames)
+    public AlterTableStatement(CFName name, Type type, ColumnIdentifier columnName, CQL3Type.Raw validator, CFPropDefs cfProps, Map<ColumnIdentifier, ColumnIdentifier> renames)
     {
         super(name);
         this.oType = type;
@@ -73,6 +73,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         CFMetaData cfm = meta.clone();
 
         //ALTER COLUMN FAMILY <CF> WITH时columnName为null，其他都不为null
+        CQL3Type validator = this.validator.prepare(keyspace());
         ColumnDefinition def = columnName == null ? null : cfm.getColumnDefinition(columnName);
         switch (oType)
         {

@@ -63,8 +63,6 @@ public class Schema
     //BiMap是双向的，通过key和value都可找到彼此
     private final BiMap<Pair<String, String>, UUID> cfIdMap = HashBiMap.create();
 
-    public final UTMetaData userTypes = new UTMetaData();
-
     private volatile UUID version;
 
     // 59adb24e-f3cd-3e02-97f0-5b395827453f
@@ -119,24 +117,6 @@ public class Schema
 
         setKeyspaceDefinition(keyspaceDef);
 
-        return this;
-    }
-
-    public Schema loadUserTypes()
-    {
-        userTypes.addAll(UTMetaData.fromSchema(SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF)));
-        return this;
-    }
-
-    public Schema loadType(UserType newType)
-    {
-        userTypes.addType(newType);
-        return this;
-    }
-
-    public Schema dropType(UserType droppedType)
-    {
-        userTypes.removeType(droppedType);
         return this;
     }
 
@@ -425,8 +405,7 @@ public class Schema
     {
         try
         {
-            return !row.cf.metadata().cfName.equals(SystemKeyspace.SCHEMA_USER_TYPES_CF)
-                && systemKeyspaceNames.contains(ByteBufferUtil.string(row.key.key));
+            return systemKeyspaceNames.contains(ByteBufferUtil.string(row.key.key));
         }
         catch (CharacterCodingException e)
         {

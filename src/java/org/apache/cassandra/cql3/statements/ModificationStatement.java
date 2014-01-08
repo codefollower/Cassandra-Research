@@ -184,7 +184,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
                     if (rel.operator() == Relation.Type.EQ)
                     {
-                        Term t = rel.getValue().prepare(def);
+                        Term t = rel.getValue().prepare(keyspace(), def);
                         t.collectMarkerSpecification(names);
                         restriction = new Restriction.EQ(t, false);
                     }
@@ -192,7 +192,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                     {
                         if (rel.getValue() != null) //in里只有一个值
                         {
-                            Term t = rel.getValue().prepare(def);
+                            Term t = rel.getValue().prepare(keyspace(), def);
                             t.collectMarkerSpecification(names);
                             restriction = Restriction.IN.create(t);
                         }
@@ -201,7 +201,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                             List<Term> values = new ArrayList<Term>(rel.getInValues().size());
                             for (Term.Raw raw : rel.getInValues())
                             {
-                                Term t = raw.prepare(def);
+                                Term t = raw.prepare(keyspace(), def);
                                 t.collectMarkerSpecification(names);
                                 values.add(t);
                             }
@@ -638,7 +638,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                         if (def.type instanceof ListType)
                             throw new InvalidRequestException(String.format("List operation (%s) are not allowed in conditional updates", def.name));
 
-                        Operation condition = entry.right.prepare(def);
+                        Operation condition = entry.right.prepare(keyspace(), def);
                         assert !condition.requiresRead();
 
                         condition.collectMarkerSpecification(boundNames);

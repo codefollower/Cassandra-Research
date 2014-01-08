@@ -21,10 +21,13 @@
    (CASSANDRA-5417, CASSANDRA-6520)
  * Add snapshot space used to cfstats (CASSANDRA-6231)
  * Add cardinality estimator for key count estimation (CASSANDRA-5906)
+ * CF id is changed to be non-deterministic. Data dir/key cache are created
+   uniquely for CF id (CASSANDRA-5202)
 
 
 2.0.5
-* Delete unfinished compaction incrementally (CASSANDRA-6086)
+ * Delete unfinished compaction incrementally (CASSANDRA-6086)
+ * Allow specifying custom secondary index options in CQL3 (CASSANDRA-6480)
 Merged from 1.2:
  * fsync compression metadata (CASSANDRA-6531)
  * Validate CF existence on execution for prepared statement (CASSANDRA-6535)
