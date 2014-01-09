@@ -89,9 +89,16 @@ public enum ConsistencyLevel
         return codeIdx[code];
     }
 
+    private int quorumFor(Keyspace keyspace)
+    {
+        return (keyspace.getReplicationStrategy().getReplicationFactor() / 2) + 1;
+    }
+
     private int localQuorumFor(Keyspace keyspace, String dc)
     {
-        return (((NetworkTopologyStrategy) keyspace.getReplicationStrategy()).getReplicationFactor(dc) / 2) + 1;
+        return (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
+             ? (((NetworkTopologyStrategy) keyspace.getReplicationStrategy()).getReplicationFactor(dc) / 2) + 1
+             : quorumFor(keyspace);
     }
 
     public int blockFor(Keyspace keyspace)
@@ -108,18 +115,25 @@ public enum ConsistencyLevel
             case THREE:
                 return 3;
             case QUORUM:
-                return (keyspace.getReplicationStrategy().getReplicationFactor() / 2) + 1;
+                return quorumFor(keyspace);
             case ALL:
                 return keyspace.getReplicationStrategy().getReplicationFactor();
             case LOCAL_QUORUM:
                 return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter()); //按本地数据中心的(复制因子/2+1)算
             case EACH_QUORUM:
-                //累计每个中心的(复制因子/2+1)之和
-                NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
-                int n = 0;
-                for (String dc : strategy.getDatacenters())
-                    n += localQuorumFor(keyspace, dc);
-                return n;
+                if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
+                {
+                    //累计每个中心的(复制因子/2+1)之和
+                    NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
+                    int n = 0;
+                    for (String dc : strategy.getDatacenters())
+                        n += localQuorumFor(keyspace, dc);
+                    return n;
+                }
+                else
+                {
+                    return quorumFor(keyspace);
+                }
             default:
                 throw new UnsupportedOperationException("Invalid consistency level: " + toString());
         }
@@ -214,12 +228,16 @@ public enum ConsistencyLevel
             case LOCAL_QUORUM:
                 return countLocalEndpoints(liveEndpoints) >= blockFor(keyspace);
             case EACH_QUORUM:
-                for (Map.Entry<String, Integer> entry : countPerDCEndpoints(keyspace, liveEndpoints).entrySet())
+                if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
                 {
-                    if (entry.getValue() < localQuorumFor(keyspace, entry.getKey()))
-                        return false;
+                    for (Map.Entry<String, Integer> entry : countPerDCEndpoints(keyspace, liveEndpoints).entrySet())
+                    {
+                        if (entry.getValue() < localQuorumFor(keyspace, entry.getKey()))
+                            return false;
+                    }
+                    return true;
                 }
-                return true;
+                // Fallthough on purpose for SimpleStrategy
             default:
                 return Iterables.size(liveEndpoints) >= blockFor(keyspace);
         }
@@ -252,14 +270,18 @@ public enum ConsistencyLevel
                 }
                 break;
             case EACH_QUORUM:
-                for (Map.Entry<String, Integer> entry : countPerDCEndpoints(keyspace, liveEndpoints).entrySet())
+                if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
                 {
-                    int dcBlockFor = localQuorumFor(keyspace, entry.getKey());
-                    int dcLive = entry.getValue();
-                    if (dcLive < dcBlockFor)
-                        throw new UnavailableException(this, dcBlockFor, dcLive);
+                    for (Map.Entry<String, Integer> entry : countPerDCEndpoints(keyspace, liveEndpoints).entrySet())
+                    {
+                        int dcBlockFor = localQuorumFor(keyspace, entry.getKey());
+                        int dcLive = entry.getValue();
+                        if (dcLive < dcBlockFor)
+                            throw new UnavailableException(this, dcBlockFor, dcLive);
+                    }
+                    break;
                 }
-                break;
+                // Fallthough on purpose for SimpleStrategy
             default:
                 int live = Iterables.size(liveEndpoints);
                 if (live < blockFor)
@@ -286,9 +308,6 @@ public enum ConsistencyLevel
     {
         switch (this)
         {
-            case EACH_QUORUM:
-                requireNetworkTopologyStrategy(keyspaceName);
-                break;
             case SERIAL:
             case LOCAL_SERIAL:
                 throw new InvalidRequestException("You must use conditional updates for serializable writes");
