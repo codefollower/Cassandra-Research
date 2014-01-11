@@ -390,6 +390,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
              : executeWithoutCondition(queryState, options);
     }
 
+    static int  count = 0;
     private ResultMessage executeWithoutCondition(QueryState queryState, QueryOptions options)
     throws RequestExecutionException, RequestValidationException
     {
@@ -404,7 +405,11 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             StorageProxy.mutateWithTriggers(mutations, cl, false);
 
         //我加上的，用于测试，触发memtable的flush
-        //Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
+        if(count>3) {
+        Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
+        count =0;
+        }
+        count++;
         return null;
     }
 

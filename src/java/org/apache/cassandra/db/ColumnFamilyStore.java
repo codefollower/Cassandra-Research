@@ -1306,7 +1306,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public int gcBefore(long now)
     {
-        return (int) (now / 1000) - metadata.getGcGraceSeconds();
+        return (int) (now / 1000) - metadata.getGcGraceSeconds(); //回到一天前的时间
     }
 
     /**

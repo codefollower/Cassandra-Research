@@ -73,7 +73,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         CFMetaData cfm = meta.clone();
 
         //ALTER COLUMN FAMILY <CF> WITH时columnName为null，其他都不为null
-        CQL3Type validator = this.validator.prepare(keyspace());
+        CQL3Type validator = this.validator == null ? null : this.validator.prepare(keyspace());
         ColumnDefinition def = columnName == null ? null : cfm.getColumnDefinition(columnName);
         switch (oType)
         {
