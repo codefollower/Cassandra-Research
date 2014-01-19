@@ -139,10 +139,9 @@ public class StorageProxy implements StorageProxyMBean
                               Iterable<InetAddress> targets,
                               AbstractWriteResponseHandler responseHandler,
                               String localDataCenter,
-                              ConsistencyLevel consistency_level)
+                              ConsistencyLevel consistencyLevel)
             {
-                Runnable runnable = counterWriteTask(mutation, targets, responseHandler, localDataCenter, consistency_level);
-                runnable.run();
+                counterWriteTask(mutation, targets, responseHandler, localDataCenter).run();
             }
         };
 
@@ -152,10 +151,9 @@ public class StorageProxy implements StorageProxyMBean
                               Iterable<InetAddress> targets,
                               AbstractWriteResponseHandler responseHandler,
                               String localDataCenter,
-                              ConsistencyLevel consistency_level)
+                              ConsistencyLevel consistencyLevel)
             {
-                Runnable runnable = counterWriteTask(mutation, targets, responseHandler, localDataCenter, consistency_level);
-                StageManager.getStage(Stage.MUTATION).execute(runnable);
+                StageManager.getStage(Stage.MUTATION).execute(counterWriteTask(mutation, targets, responseHandler, localDataCenter));
             }
         };
     }
@@ -249,7 +247,7 @@ public class StorageProxy implements StorageProxyMBean
                 assert !expected.isEmpty();
                 readCommand = new SliceByNamesReadCommand(keyspaceName, key, cfName, timestamp, new NamesQueryFilter(ImmutableSortedSet.copyOf(metadata.comparator, expected.getColumnNames())));
             }
-            List<Row> rows = read(Arrays.asList(readCommand), ConsistencyLevel.QUORUM);
+            List<Row> rows = read(Arrays.asList(readCommand), consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM);
             ColumnFamily current = rows.get(0).cf;
             if (!casApplies(expected, current))
             {
@@ -278,7 +276,7 @@ public class StorageProxy implements StorageProxyMBean
             // continue to retry
         }
 
-        throw new WriteTimeoutException(WriteType.CAS, consistencyForPaxos, -1, -1);
+        throw new WriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, consistencyForPaxos.blockFor(Keyspace.open(keyspaceName)));
     }
 
     private static boolean hasLiveColumns(ColumnFamily cf, long now)
@@ -420,7 +418,7 @@ public class StorageProxy implements StorageProxyMBean
             return ballot;
         }
 
-        throw new WriteTimeoutException(WriteType.CAS, consistencyForPaxos, -1, -1);
+        throw new WriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, consistencyForPaxos.blockFor(Keyspace.open(metadata.ksName)));
     }
 
     /**
@@ -1110,8 +1108,7 @@ public class StorageProxy implements StorageProxyMBean
     private static Runnable counterWriteTask(final IMutation mutation,
                                              final Iterable<InetAddress> targets,
                                              final AbstractWriteResponseHandler responseHandler,
-                                             final String localDataCenter,
-                                             final ConsistencyLevel consistency_level)
+                                             final String localDataCenter)
     {
         return new DroppableRunnable(MessagingService.Verb.COUNTER_MUTATION)
         {
@@ -1130,7 +1127,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 // then send to replicas, if any
                 final Set<InetAddress> remotes = Sets.difference(ImmutableSet.copyOf(targets), ImmutableSet.of(FBUtilities.getBroadcastAddress()));
-                if (cm.shouldReplicateOnWrite() && !remotes.isEmpty())
+                if (!remotes.isEmpty() && cm.shouldReplicateOnWrite())
                 {
                     // We do the replication on another stage because it involves a read (see CM.makeReplicationMutation)
                     // and we want to avoid blocking too much the MUTATION stage
@@ -1193,7 +1190,7 @@ public class StorageProxy implements StorageProxyMBean
                 }
                 catch (WriteTimeoutException e)
                 {
-                    throw new ReadTimeoutException(consistency_level, -1, -1, false);
+                    throw new ReadTimeoutException(consistency_level, 0, consistency_level.blockFor(Keyspace.open(command.ksName)), false);
                 }
 
                 rows = fetchRows(commands, ConsistencyLevel.QUORUM);
@@ -1474,7 +1471,7 @@ public class StorageProxy implements StorageProxyMBean
             SecondaryIndexSearcher searcher = Iterables.getOnlyElement(cfs.indexManager.getIndexSearchersForQuery(command.rowFilter));
             SecondaryIndex highestSelectivityIndex = searcher.highestSelectivityIndex(command.rowFilter);
             // use our own mean column count as our estimate for how many matching rows each node will have
-            resultRowsPerRange = highestSelectivityIndex.getIndexCfs().getMeanColumns();
+            resultRowsPerRange = highestSelectivityIndex.estimateResultRows();
         }
         else if (!command.countCQL3Rows())
         {
@@ -2015,7 +2012,11 @@ public class StorageProxy implements StorageProxyMBean
 
     public interface WritePerformer
     {
-        public void apply(IMutation mutation, Iterable<InetAddress> targets, AbstractWriteResponseHandler responseHandler, String localDataCenter, ConsistencyLevel consistency_level) throws OverloadedException;
+        public void apply(IMutation mutation,
+                          Iterable<InetAddress> targets,
+                          AbstractWriteResponseHandler responseHandler,
+                          String localDataCenter,
+                          ConsistencyLevel consistencyLevel) throws OverloadedException;
     }
 
     /**

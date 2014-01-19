@@ -77,6 +77,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         int minThreshold = cfs.getMinimumCompactionThreshold(); //默认是4
         int maxThreshold = cfs.getMaximumCompactionThreshold(); //默认是32
 
+        //过滤到发生过异常的SSTableReader
         Iterable<SSTableReader> candidates = filterSuspectSSTables(cfs.getUncompactingSSTables());
         candidates = filterColdSSTables(Lists.newArrayList(candidates), options.coldReadsToOmit);
 
@@ -229,6 +230,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
     private static double hotness(SSTableReader sstr)
     {
         // system tables don't have read meters, just use 0.0 for the hotness
+        //sstr.readMeter.twoHourRate()是读次数
         return sstr.readMeter == null ? 0.0 : sstr.readMeter.twoHourRate() / sstr.estimatedKeys();
     }
 

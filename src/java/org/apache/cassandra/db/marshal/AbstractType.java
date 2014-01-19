@@ -106,12 +106,6 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
 
     public abstract TypeSerializer<T> getSerializer();
 
-    /** @deprecated use reverseComparator field instead */
-    public Comparator<ByteBuffer> getReverseComparator()
-    {
-        return reverseComparator;
-    }
-
     /* convenience method */
     public String getString(Collection<ByteBuffer> names)
     {
@@ -123,7 +117,7 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         return builder.toString();
     }
 
-    public boolean isCommutative() //只有AbstractCommutativeType是true，包含它的子类CounterColumnType
+    public boolean isCounter()
     {
         return false;
     }

@@ -23,17 +23,28 @@
  * Add cardinality estimator for key count estimation (CASSANDRA-5906)
  * CF id is changed to be non-deterministic. Data dir/key cache are created
    uniquely for CF id (CASSANDRA-5202)
+ * Cassandra won't start by default without jna (CASSANDRA-6575)
 
 
 2.0.5
+ * Add ks.cf names to tombstone logging (CASSANDRA-6597)
+ * Use LOCAL_QUORUM for LWT operations at LOCAL_SERIAL (CASSANDRA-6495)
  * Wait for gossip to settle before accepting client connections (CASSANDRA-4288)
  * Delete unfinished compaction incrementally (CASSANDRA-6086)
  * Allow specifying custom secondary index options in CQL3 (CASSANDRA-6480)
+ * Improve replica pinning for cache efficiency in DES (CASSANDRA-6485)
+ * Fix LOCAL_SERIAL from thrift (CASSANDRA-6584)
+ * Don't special case received counts in CAS timeout exceptions (CASSANDRA-6595)
+ * Add support for 2.1 global counter shards (CASSANDRA-6505)
 Merged from 1.2:
  * fsync compression metadata (CASSANDRA-6531)
  * Validate CF existence on execution for prepared statement (CASSANDRA-6535)
  * Add ability to throttle batchlog replay (CASSANDRA-6550)
  * Fix executing LOCAL_QUORUM with SimpleStrategy (CASSANDRA-6545)
+ * Avoid StackOverflow when using large IN queries (CASSANDRA-6567)
+ * Nodetool upgradesstables includes secondary indexes (CASSANDRA-6589)
+ * Paginate batchlog replay (CASSANDRA-6569)
+ * skip blocking on streaming during drain (CASSANDRA-6603)
 
 
 2.0.4

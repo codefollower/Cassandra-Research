@@ -31,7 +31,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -183,7 +182,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
 
     public void setup() //由Auth.setup()触发
     {
-        setupCredentialsTable(); //创建system_auth.credentials表
+        Auth.setupTable(CREDENTIALS_CF, CREDENTIALS_CF_SCHEMA); //创建system_auth.credentials表
 
         // the delay is here to give the node some time to see its peers - to reduce
         // "skipped default user setup: some nodes are were not ready" log spam.
@@ -219,21 +218,6 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
     public SaslAuthenticator newAuthenticator()
     {
         return new PlainTextSaslAuthenticator();
-    }
-
-    private void setupCredentialsTable()
-    {
-        if (Schema.instance.getCFMetaData(Auth.AUTH_KS, CREDENTIALS_CF) == null)
-        {
-            try
-            {
-                process(CREDENTIALS_CF_SCHEMA, ConsistencyLevel.ANY);
-            }
-            catch (RequestExecutionException e)
-            {
-                throw new AssertionError(e);
-            }
-        }
     }
 
     // if there are no users yet - add default superuser.

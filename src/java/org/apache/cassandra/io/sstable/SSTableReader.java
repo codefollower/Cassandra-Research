@@ -119,7 +119,7 @@ public class SSTableReader extends SSTable implements Closeable
     // technically isCompacted is not necessary since it should never be unreferenced unless it is also compacted,
     // but it seems like a good extra layer of protection against reference counting bugs to not delete data based on that alone
     private final AtomicBoolean isCompacted = new AtomicBoolean(false);
-    private final AtomicBoolean isSuspect = new AtomicBoolean(false);
+    private final AtomicBoolean isSuspect = new AtomicBoolean(false); //捕获到异常时设为true
     private final AtomicBoolean isReplaced = new AtomicBoolean(false);
 
     private final SSTableDeletingTask deletingTask;

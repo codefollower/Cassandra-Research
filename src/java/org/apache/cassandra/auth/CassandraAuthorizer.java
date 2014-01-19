@@ -25,7 +25,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -257,17 +256,7 @@ public class CassandraAuthorizer implements IAuthorizer
 
     public void setup() //由Auth.setup()触发
     {
-        if (Schema.instance.getCFMetaData(Auth.AUTH_KS, PERMISSIONS_CF) == null)
-        {
-            try
-            {
-                process(PERMISSIONS_CF_SCHEMA);  //创建permissions表
-            }
-            catch (RequestExecutionException e)
-            {
-                throw new AssertionError(e);
-            }
-        }
+        Auth.setupTable(PERMISSIONS_CF, PERMISSIONS_CF_SCHEMA);  //创建permissions表
 
         try
         {

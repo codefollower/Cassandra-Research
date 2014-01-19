@@ -183,24 +183,20 @@ public class AtomicBTreeColumns extends ColumnFamily
             this.indexer = indexer;
         }
 
+        public Cell apply(Cell inserted)
+        {
+            indexer.insert(inserted);
+            delta += inserted.dataSize();
+            return transform.apply(inserted);
+        }
+
         public Cell apply(Cell replaced, Cell update)
         {
-            if (replaced == null)
-            {
-                indexer.insert(update);
-                delta += update.dataSize();
-            }
-            else
-            {
-                Cell reconciled = update.reconcile(replaced, allocator);
-                if (reconciled == update)
-                    indexer.update(replaced, reconciled);
-                else
-                    indexer.update(update, reconciled);
-                delta += reconciled.dataSize() - replaced.dataSize();
-            }
+            Cell reconciled = update.reconcile(replaced, allocator);
+            indexer.update(replaced, reconciled);
+            delta += reconciled.dataSize() - replaced.dataSize();
 
-            return transform.apply(update);
+            return transform.apply(reconciled);
         }
     }
 

@@ -19,28 +19,16 @@ package org.apache.cassandra.db;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.net.InetAddress;
 import java.security.MessageDigest;
-import java.util.Set;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import org.apache.cassandra.serializers.MarshalException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.context.IContext.ContextRelationship;
-import org.apache.cassandra.exceptions.OverloadedException;
-import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.utils.Allocator;
-import org.apache.cassandra.service.AbstractWriteResponseHandler;
-import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.utils.*;
 
 /**
@@ -48,20 +36,18 @@ import org.apache.cassandra.utils.*;
  */
 public class CounterCell extends Cell
 {
-    private static final Logger logger = LoggerFactory.getLogger(CounterCell.class);
-
     protected static final CounterContext contextManager = CounterContext.instance();
 
     private final long timestampOfLastDelete;
 
     public CounterCell(CellName name, long value, long timestamp)
     {
-        this(name, contextManager.create(value, HeapAllocator.instance), timestamp);
+        this(name, contextManager.createLocal(value, HeapAllocator.instance), timestamp);
     }
 
     public CounterCell(CellName name, long value, long timestamp, long timestampOfLastDelete)
     {
-        this(name, contextManager.create(value, HeapAllocator.instance), timestamp, timestampOfLastDelete);
+        this(name, contextManager.createLocal(value, HeapAllocator.instance), timestamp, timestampOfLastDelete);
     }
 
     public CounterCell(CellName name, ByteBuffer value, long timestamp)
@@ -77,10 +63,8 @@ public class CounterCell extends Cell
 
     public static CounterCell create(CellName name, ByteBuffer value, long timestamp, long timestampOfLastDelete, ColumnSerializer.Flag flag)
     {
-        // #elt being negative means we have to clean delta
-        short count = value.getShort(value.position());
-        if (flag == ColumnSerializer.Flag.FROM_REMOTE || (flag == ColumnSerializer.Flag.LOCAL && count < 0))
-            value = CounterContext.instance().clearAllDelta(value);
+        if (flag == ColumnSerializer.Flag.FROM_REMOTE || (flag == ColumnSerializer.Flag.LOCAL && contextManager.shouldClearLocal(value)))
+            value = contextManager.clearAllLocal(value);
         return new CounterCell(name, value, timestamp, timestampOfLastDelete);
     }
 
@@ -103,10 +87,7 @@ public class CounterCell extends Cell
     @Override
     public int dataSize()
     {
-        /*
-         * A counter column adds to a Cell :
-         *  + 8 bytes for timestampOfLastDelete
-         */
+        // A counter column adds 8 bytes for timestampOfLastDelete to Cell.
         return super.dataSize() + TypeSizes.NATIVE.sizeof(timestampOfLastDelete);
     }
 
@@ -168,8 +149,6 @@ public class CounterCell extends Cell
     @Override
     public Cell reconcile(Cell cell, Allocator allocator)
     {
-        assert (cell instanceof CounterCell) || (cell instanceof DeletedCell) : "Wrong class type: " + cell.getClass();
-
         // live + tombstone: track last tombstone
         if (cell.isMarkedForDelete(Long.MIN_VALUE)) // cannot be an expired cell, so the current time is irrelevant
         {
@@ -186,6 +165,9 @@ public class CounterCell extends Cell
             // live last delete < tombstone
             return new CounterCell(name(), value(), timestamp(), cell.timestamp());
         }
+
+        assert cell instanceof CounterCell : "Wrong class type: " + cell.getClass();
+
         // live < live last delete
         if (timestamp() < ((CounterCell) cell).timestampOfLastDelete())
             return cell;
@@ -193,11 +175,10 @@ public class CounterCell extends Cell
         if (timestampOfLastDelete() > cell.timestamp())
             return this;
         // live + live: merge clocks; update value
-        return new CounterCell(
-            name(),
-            contextManager.merge(value(), cell.value(), allocator),
-            Math.max(timestamp(), cell.timestamp()),
-            Math.max(timestampOfLastDelete(), ((CounterCell) cell).timestampOfLastDelete()));
+        return new CounterCell(name(),
+                               contextManager.merge(value(), cell.value(), allocator),
+                               Math.max(timestamp(), cell.timestamp()),
+                               Math.max(timestampOfLastDelete(), ((CounterCell) cell).timestampOfLastDelete()));
     }
 
     @Override
@@ -210,9 +191,7 @@ public class CounterCell extends Cell
     @Override
     public int hashCode()
     {
-        int result = super.hashCode();
-        result = 31 * result + (int)(timestampOfLastDelete ^ (timestampOfLastDelete >>> 32));
-        return result;
+        return 31 * super.hashCode() + (int)(timestampOfLastDelete ^ (timestampOfLastDelete >>> 32));
     }
 
     @Override
@@ -230,17 +209,11 @@ public class CounterCell extends Cell
     @Override
     public String getString(CellNameType comparator)
     {
-        StringBuilder sb = new StringBuilder();
-        sb.append(comparator.getString(name));
-        sb.append(":");
-        sb.append(false);
-        sb.append(":");
-        sb.append(contextManager.toString(value));
-        sb.append("@");
-        sb.append(timestamp());
-        sb.append("!");
-        sb.append(timestampOfLastDelete);
-        return sb.toString();
+        return String.format("%s:false:%s@%d!%d",
+                             comparator.getString(name),
+                             contextManager.toString(value),
+                             timestamp,
+                             timestampOfLastDelete);
     }
 
     @Override
@@ -266,107 +239,9 @@ public class CounterCell extends Cell
         return contextManager.hasCounterId(value(), id);
     }
 
-    private CounterCell computeOldShardMerger(int mergeBefore)
+    public Cell markLocalToBeCleared()
     {
-        ByteBuffer bb = contextManager.computeOldShardMerger(value(), CounterId.getOldLocalCounterIds(), mergeBefore);
-        if (bb == null)
-            return null;
-        else
-            return new CounterCell(name(), bb, timestamp(), timestampOfLastDelete);
-    }
-
-    private CounterCell removeOldShards(int gcBefore)
-    {
-        ByteBuffer bb = contextManager.removeOldShards(value(), gcBefore);
-        if (bb == value())
-            return this;
-        else
-        {
-            return new CounterCell(name(), bb, timestamp(), timestampOfLastDelete);
-        }
-    }
-
-    public static void mergeAndRemoveOldShards(DecoratedKey key, ColumnFamily cf, int gcBefore, int mergeBefore)
-    {
-        mergeAndRemoveOldShards(key, cf, gcBefore, mergeBefore, true);
-    }
-
-    /**
-     * There is two phase to the removal of old shards.
-     * First phase: we merge the old shard value to the current shard and
-     * 'nulify' the old one. We then send the counter context with the old
-     * shard nulified to all other replica.
-     * Second phase: once an old shard has been nulified for longer than
-     * gc_grace (to be sure all other replica had been aware of the merge), we
-     * simply remove that old shard from the context (it's value is 0).
-     * This method does both phases.
-     * (Note that the sendToOtherReplica flag is here only to facilitate
-     * testing. It should be true in real code so use the method above
-     * preferably)
-     */
-    public static void mergeAndRemoveOldShards(DecoratedKey key, ColumnFamily cf, int gcBefore, int mergeBefore, boolean sendToOtherReplica)
-    {
-        ColumnFamily remoteMerger = null;
-
-        for (Cell c : cf)
-        {
-            if (!(c instanceof CounterCell))
-                continue;
-            CounterCell cc = (CounterCell) c;
-            CounterCell shardMerger = cc.computeOldShardMerger(mergeBefore);
-            CounterCell merged = cc;
-            if (shardMerger != null)
-            {
-                merged = (CounterCell) cc.reconcile(shardMerger);
-                if (remoteMerger == null)
-                    remoteMerger = cf.cloneMeShallow();
-                remoteMerger.addColumn(merged);
-            }
-            CounterCell cleaned = merged.removeOldShards(gcBefore);
-            if (cleaned != cc)
-            {
-                cf.replace(cc, cleaned);
-            }
-        }
-
-        if (remoteMerger != null && sendToOtherReplica)
-        {
-            try
-            {
-                sendToOtherReplica(key, remoteMerger);
-            }
-            catch (Exception e)
-            {
-                logger.error("Error while sending shard merger mutation to remote endpoints", e);
-            }
-        }
-    }
-
-    public Cell markDeltaToBeCleared()
-    {
-        return new CounterCell(name, contextManager.markDeltaToBeCleared(value), timestamp, timestampOfLastDelete);
-    }
-
-    private static void sendToOtherReplica(DecoratedKey key, ColumnFamily cf) throws RequestExecutionException
-    {
-        Mutation mutation = new Mutation(cf.metadata().ksName, key.key, cf);
-
-        final InetAddress local = FBUtilities.getBroadcastAddress();
-        String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(local);
-
-        StorageProxy.performWrite(mutation, ConsistencyLevel.ANY, localDataCenter, new StorageProxy.WritePerformer()
-        {
-            public void apply(IMutation mutation, Iterable<InetAddress> targets, AbstractWriteResponseHandler responseHandler, String localDataCenter, ConsistencyLevel consistency_level)
-            throws OverloadedException
-            {
-                // We should only send to the remote replica, not the local one
-                Set<InetAddress> remotes = Sets.difference(ImmutableSet.copyOf(targets), ImmutableSet.of(local));
-                // Fake local response to be a good lad but we won't wait on the responseHandler
-                responseHandler.response(null);
-                StorageProxy.sendToHintedEndpoints((Mutation) mutation, remotes, responseHandler, localDataCenter);
-            }
-        }, null, WriteType.SIMPLE);
-
-        // we don't wait for answers
+        ByteBuffer marked = contextManager.markLocalToBeCleared(value);
+        return marked == value ? this : new CounterCell(name, marked, timestamp, timestampOfLastDelete);
     }
 }

@@ -170,4 +170,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         indexCfs.metadata.reloadSecondaryIndexMetadata(baseCfs.metadata);
         indexCfs.reload();
     }
+    
+    public long estimateResultRows()
+    {
+        return getIndexCfs().getMeanColumns();
+    } 
 }
