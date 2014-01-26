@@ -118,6 +118,8 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 
         // Sort the sstables by hotness (coldest-first). We first build a map because the hotness may change during the sort.
         final Map<SSTableReader, Double> hotnessSnapshot = getHotnessMap(sstables);
+        //执行完sort之后，sstables的值按hotnessSnapshot中的Double值从小到大排列
+        //相当于sstables中最冷的(最不经常访问的)SSTableReader排在最前面
         Collections.sort(sstables, new Comparator<SSTableReader>()
         {
             public int compare(SSTableReader o1, SSTableReader o2)
@@ -148,6 +150,8 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             return sstables;
 
         // iteratively ignore the coldest sstables until ignoring one more would put us over the coldReadsToOmit threshold
+        //coldReadsToOmit默认是0.02，这里的意思是只过滤总的读次数的2%
+        //也就是说sstables中排在前面的SSTableReader合计的读次数达到总的读次数的2%就退出下面的while循环了
         double maxColdReads = coldReadsToOmit * totalReads;
 
         double totalColdReads = 0.0;
@@ -162,7 +166,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             cutoffIndex++;
         }
 
-        return sstables.subList(cutoffIndex, sstables.size());
+        return sstables.subList(cutoffIndex, sstables.size()); //返回的是后面最热的
     }
 
     /**
@@ -231,6 +235,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
     {
         // system tables don't have read meters, just use 0.0 for the hotness
         //sstr.readMeter.twoHourRate()是读次数
+        //读次数除以预估的key个数
         return sstr.readMeter == null ? 0.0 : sstr.readMeter.twoHourRate() / sstr.estimatedKeys();
     }
 
@@ -303,6 +308,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 
         Map<Long, List<T>> buckets = new HashMap<Long, List<T>>();
 
+        //把files中相同size的放入一组中
         outer:
         for (Pair<T, Long> pair: sortedFiles)
         {

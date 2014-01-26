@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
@@ -94,6 +95,14 @@ public class CassandraDaemon
      */
     protected void setup()
     {
+        try 
+        {
+            logger.info("Hostname: {}", InetAddress.getLocalHost().getHostName());
+        }
+        catch (UnknownHostException e1)
+        {
+            logger.info("Could not resolve local host");
+        }
         //前面这一段代码说明Cassandra推荐用64位的Oracle HotSpot JVM，不推荐OpenJDK
         // log warnings for different kinds of sub-optimal JVMs.  tldr use 64-bit Oracle >= 1.6u32
         if (!System.getProperty("os.arch").contains("64"))

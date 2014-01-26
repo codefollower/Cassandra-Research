@@ -150,9 +150,6 @@ public class DatabaseDescriptor
     {
         conf = config;
 
-        logger.info("Data files directories: {}", Arrays.toString(conf.data_file_directories));
-        logger.info("Commit log directory: {}", conf.commitlog_directory);
-
         if (conf.commitlog_sync == null) //必须配置commitlog_sync参数
         {
             throw new ConfigurationException("Missing required directive CommitLogSync");
@@ -206,8 +203,6 @@ public class DatabaseDescriptor
             indexAccessMode = conf.disk_access_mode;
             logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
         }
-
-        logger.info("disk_failure_policy is {}", conf.disk_failure_policy);
 
         /* Authentication and authorization backend, implementing IAuthenticator and IAuthorizer */
         if (conf.authenticator != null)
@@ -404,11 +399,6 @@ public class DatabaseDescriptor
         {
             // Default to Keyspace
             requestSchedulerId = RequestSchedulerId.keyspace; //只有一个keyspace
-        }
-
-        if (logger.isDebugEnabled() && conf.auto_bootstrap != null)
-        {
-            logger.debug("setting auto_bootstrap to {}", conf.auto_bootstrap);
         }
 
         if (conf.in_memory_compaction_limit_in_mb != null && conf.in_memory_compaction_limit_in_mb <= 0)
