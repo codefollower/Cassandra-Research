@@ -27,6 +27,9 @@ import java.util.Collection;
 import java.util.UUID;
 
 import com.google.common.base.Throwables;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.ning.compress.lzf.LZFInputStream;
 
 import org.apache.cassandra.config.Schema;
@@ -36,7 +39,6 @@ import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.messages.FileMessageHeader;
@@ -49,11 +51,13 @@ import org.apache.cassandra.utils.Pair;
  */
 public class StreamReader
 {
+    private static final Logger logger = LoggerFactory.getLogger(StreamReader.class);
     protected final UUID cfId;
     protected final long estimatedKeys;
     protected final Collection<Pair<Long, Long>> sections;
     protected final StreamSession session;
     protected final Descriptor.Version inputVersion;
+    protected final long repairedAt;
 
     protected Descriptor desc;
 
@@ -64,6 +68,7 @@ public class StreamReader
         this.estimatedKeys = header.estimatedKeys;
         this.sections = header.sections;
         this.inputVersion = new Descriptor.Version(header.version);
+        this.repairedAt = header.repairedAt;
     }
 
     /**
@@ -71,14 +76,15 @@ public class StreamReader
      * @return SSTable transferred
      * @throws IOException if reading the remote sstable fails. Will throw an RTE if local write fails.
      */
-    public SSTableReader read(ReadableByteChannel channel) throws IOException
+    public SSTableWriter read(ReadableByteChannel channel) throws IOException
     {
+        logger.info("reading file from {}, repairedAt = {}", session.peer, repairedAt);
         long totalSize = totalSize();
 
         Pair<String, String> kscf = Schema.instance.getCF(cfId);
         ColumnFamilyStore cfs = Keyspace.open(kscf.left).getColumnFamilyStore(kscf.right);
 
-        SSTableWriter writer = createWriter(cfs, totalSize);
+        SSTableWriter writer = createWriter(cfs, totalSize, repairedAt);
         DataInputStream dis = new DataInputStream(new LZFInputStream(Channels.newInputStream(channel)));
         BytesReadTracker in = new BytesReadTracker(dis);
         try
@@ -89,7 +95,7 @@ public class StreamReader
                 // TODO move this to BytesReadTracker
                 session.progress(desc, ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
             }
-            return writer.closeAndOpenReader();
+            return writer;
         }
         catch (Throwable e)
         {
@@ -102,14 +108,14 @@ public class StreamReader
         }
     }
 
-    protected SSTableWriter createWriter(ColumnFamilyStore cfs, long totalSize) throws IOException
+    protected SSTableWriter createWriter(ColumnFamilyStore cfs, long totalSize, long repairedAt) throws IOException
     {
-        Directories.DataDirectory localDir = cfs.directories.getWriteableLocation();
+        Directories.DataDirectory localDir = cfs.directories.getCompactionLocation();
         if (localDir == null)
             throw new IOException("Insufficient disk space to store " + totalSize + " bytes");
         desc = Descriptor.fromFilename(cfs.getTempSSTablePath(cfs.directories.getLocationForDisk(localDir)));
 
-        return new SSTableWriter(desc.filenameFor(Component.DATA), estimatedKeys);
+        return new SSTableWriter(desc.filenameFor(Component.DATA), estimatedKeys, repairedAt);
     }
 
     protected void drain(InputStream dis, long bytesRead) throws IOException

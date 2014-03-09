@@ -46,7 +46,6 @@ import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.compaction.ICompactionScanner;
-import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.dht.LocalToken;
 import org.apache.cassandra.dht.Range;
@@ -62,7 +61,6 @@ import org.apache.cassandra.utils.Pair;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.apache.cassandra.Util.cellname;
 
 @RunWith(OrderedJUnit4ClassRunner.class)
@@ -76,7 +74,7 @@ public class SSTableReaderTest extends SchemaLoader
     }
 
     @Test
-    public void testGetPositionsForRanges() throws IOException, ExecutionException, InterruptedException
+    public void testGetPositionsForRanges() throws ExecutionException, InterruptedException
     {
         Keyspace keyspace = Keyspace.open("Keyspace1");
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");
@@ -153,7 +151,7 @@ public class SSTableReaderTest extends SchemaLoader
     }
 
     @Test
-    public void testPersistentStatistics() throws IOException, ExecutionException, InterruptedException
+    public void testPersistentStatistics()
     {
 
         Keyspace keyspace = Keyspace.open("Keyspace1");
@@ -172,14 +170,14 @@ public class SSTableReaderTest extends SchemaLoader
         assert store.getMaxRowSize() != 0;
     }
 
-    private void clearAndLoad(ColumnFamilyStore cfs) throws IOException
+    private void clearAndLoad(ColumnFamilyStore cfs)
     {
         cfs.clearUnsafe();
         cfs.loadNewSSTables();
     }
 
     @Test
-    public void testGetPositionsForRangesWithKeyCache() throws IOException, ExecutionException, InterruptedException
+    public void testGetPositionsForRangesWithKeyCache() throws ExecutionException, InterruptedException
     {
         Keyspace keyspace = Keyspace.open("Keyspace1");
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");
@@ -203,7 +201,7 @@ public class SSTableReaderTest extends SchemaLoader
         long p6 = sstable.getPosition(k(6), SSTableReader.Operator.EQ).position;
         long p7 = sstable.getPosition(k(7), SSTableReader.Operator.EQ).position;
 
-        Pair<Long, Long> p = sstable.getPositionsForRanges(makeRanges(t(2), t(6))).iterator().next();
+        Pair<Long, Long> p = sstable.getPositionsForRanges(makeRanges(t(2), t(6))).get(0);
 
         // range are start exclusive so we should start at 3
         assert p.left == p3;
@@ -213,7 +211,7 @@ public class SSTableReaderTest extends SchemaLoader
     }
 
     @Test
-    public void testPersistentStatisticsWithSecondaryIndex() throws IOException, ExecutionException, InterruptedException
+    public void testPersistentStatisticsWithSecondaryIndex()
     {
         // Create secondary index and flush to disk
         Keyspace keyspace = Keyspace.open("Keyspace1");
@@ -242,7 +240,7 @@ public class SSTableReaderTest extends SchemaLoader
 
         DecoratedKey firstKey = null, lastKey = null;
         long timestamp = System.currentTimeMillis();
-        for (int i = 0; i < store.metadata.getIndexInterval(); i++)
+        for (int i = 0; i < store.metadata.getMinIndexInterval(); i++)
         {
             DecoratedKey key = Util.dk(String.valueOf(i));
             if (firstKey == null)
@@ -359,7 +357,7 @@ public class SSTableReaderTest extends SchemaLoader
         final ColumnFamilyStore store = keyspace.getColumnFamilyStore("StandardLowIndexInterval"); // index interval of 8, no key caching
         CompactionManager.instance.disableAutoCompaction();
 
-        final int NUM_ROWS = 1000;
+        final int NUM_ROWS = 512;
         for (int j = 0; j < NUM_ROWS; j++)
         {
             ByteBuffer key = ByteBufferUtil.bytes(String.format("%3d", j));
@@ -402,7 +400,7 @@ public class SSTableReaderTest extends SchemaLoader
             }));
         }
 
-        SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(Downsampling.MIN_SAMPLING_LEVEL);
+        SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(1);
         store.getDataTracker().replaceReaders(Arrays.asList(sstable), Arrays.asList(replacement));
         for (Future future : futures)
             future.get();
@@ -410,7 +408,7 @@ public class SSTableReaderTest extends SchemaLoader
         assertEquals(sstable.estimatedKeys(), replacement.estimatedKeys(), 1);
     }
 
-    private void assertIndexQueryWorks(ColumnFamilyStore indexedCFS) throws IOException
+    private void assertIndexQueryWorks(ColumnFamilyStore indexedCFS)
     {
         assert "Indexed1".equals(indexedCFS.name);
 
@@ -421,7 +419,6 @@ public class SSTableReaderTest extends SchemaLoader
         // query using index to see if sstable for secondary index opens
         IndexExpression expr = new IndexExpression(ByteBufferUtil.bytes("birthdate"), IndexExpression.Operator.EQ, ByteBufferUtil.bytes(1L));
         List<IndexExpression> clause = Arrays.asList(expr);
-        IPartitioner p = StorageService.getPartitioner();
         Range<RowPosition> range = Util.range("", "");
         List<Row> rows = indexedCFS.search(range, clause, new IdentityQueryFilter(), 100);
         assert rows.size() == 1;

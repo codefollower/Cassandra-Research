@@ -301,7 +301,7 @@ public abstract class Constants
         public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
         {
             //对于COMPACT_VALUE列，cname为null
-            CellName cname = cf.getComparator().create(prefix, column.name);
+            CellName cname = cf.getComparator().create(prefix, column);
             ByteBuffer value = t.bindAndGet(params.variables);
             //生成一个org.apache.cassandra.db.Column或其子类的实例
             cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
@@ -322,7 +322,7 @@ public abstract class Constants
             if (bytes == null)
                 throw new InvalidRequestException("Invalid null value for counter increment");
             long increment = ByteBufferUtil.toLong(bytes);
-            CellName cname = cf.getComparator().create(prefix, column.name);
+            CellName cname = cf.getComparator().create(prefix, column);
             cf.addCounter(cname, increment);
         }
     }
@@ -345,7 +345,7 @@ public abstract class Constants
             if (increment == Long.MIN_VALUE)
                 throw new InvalidRequestException("The negation of " + increment + " overflows supported counter precision (signed 8 bytes integer)");
 
-            CellName cname = cf.getComparator().create(prefix, column.name);
+            CellName cname = cf.getComparator().create(prefix, column);
             cf.addCounter(cname, -increment);
         }
     }
@@ -362,7 +362,7 @@ public abstract class Constants
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
         {
-            CellName cname = cf.getComparator().create(prefix, column.name);
+            CellName cname = cf.getComparator().create(prefix, column);
             if (column.type.isCollection())
                 cf.addAtom(params.makeRangeTombstone(cname.slice()));
             else

@@ -191,9 +191,9 @@ public class NodeProbe implements AutoCloseable
         ssProxy.forceKeyspaceCleanup(keyspaceName, columnFamilies);
     }
 
-    public void scrub(boolean disableSnapshot, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    public void scrub(boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
-        ssProxy.scrub(disableSnapshot, keyspaceName, columnFamilies);
+        ssProxy.scrub(disableSnapshot, skipCorrupted, keyspaceName, columnFamilies);
     }
 
     public void upgradeSSTables(String keyspaceName, boolean excludeCurrentVersion, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
@@ -211,19 +211,19 @@ public class NodeProbe implements AutoCloseable
         ssProxy.forceKeyspaceFlush(keyspaceName, columnFamilies);
     }
 
-    public void forceKeyspaceRepair(String keyspaceName, boolean isSequential, boolean isLocal, String... columnFamilies) throws IOException
+    public void forceKeyspaceRepair(String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, String... columnFamilies) throws IOException
     {
-        ssProxy.forceKeyspaceRepair(keyspaceName, isSequential, isLocal, columnFamilies);
+        ssProxy.forceKeyspaceRepair(keyspaceName, isSequential, isLocal, fullRepair, columnFamilies);
     }
 
-    public void forceRepairAsync(final PrintStream out, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, boolean primaryRange, String... columnFamilies) throws IOException
+    public void forceRepairAsync(final PrintStream out, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, boolean primaryRange, boolean fullRepair, String... columnFamilies) throws IOException
     {
         RepairRunner runner = new RepairRunner(out, keyspaceName, columnFamilies);
         try
         {
             jmxc.addConnectionNotificationListener(runner, null, null);
             ssProxy.addNotificationListener(runner, null, null);
-            if (!runner.repairAndWait(ssProxy, isSequential, dataCenters, primaryRange))
+            if (!runner.repairAndWait(ssProxy, isSequential, dataCenters, hosts, primaryRange, fullRepair))
                 failed = true;
         }
         catch (Exception e)
@@ -237,18 +237,21 @@ public class NodeProbe implements AutoCloseable
                 ssProxy.removeNotificationListener(runner);
                 jmxc.removeConnectionNotificationListener(runner);
             }
-            catch (Throwable ignored) {}
+            catch (Throwable e) 
+            {
+                out.println("Exception occurred during clean-up. " + e);
+            }
         }
     }
 
-    public void forceRepairRangeAsync(final PrintStream out, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, final String startToken, final String endToken, String... columnFamilies) throws IOException
+    public void forceRepairRangeAsync(final PrintStream out, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, final String startToken, final String endToken, boolean fullRepair, String... columnFamilies) throws IOException
     {
         RepairRunner runner = new RepairRunner(out, keyspaceName, columnFamilies);
         try
         {
             jmxc.addConnectionNotificationListener(runner, null, null);
             ssProxy.addNotificationListener(runner, null, null);
-            if (!runner.repairRangeAndWait(ssProxy,  isSequential, dataCenters, startToken, endToken))
+            if (!runner.repairRangeAndWait(ssProxy,  isSequential, dataCenters, hosts, startToken, endToken, fullRepair))
                 failed = true;
         }
         catch (Exception e)
@@ -262,18 +265,26 @@ public class NodeProbe implements AutoCloseable
                 ssProxy.removeNotificationListener(runner);
                 jmxc.removeConnectionNotificationListener(runner);
             }
-            catch (Throwable ignored) {}
+            catch (Throwable e)
+            {
+                out.println("Exception occurred during clean-up. " + e);
+            }
         }
     }
 
-    public void forceKeyspaceRepairPrimaryRange(String keyspaceName, boolean isSequential, boolean isLocal, String... columnFamilies) throws IOException
+    public void forceKeyspaceRepairPrimaryRange(String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, String... columnFamilies) throws IOException
     {
-        ssProxy.forceKeyspaceRepairPrimaryRange(keyspaceName, isSequential, isLocal, columnFamilies);
+        ssProxy.forceKeyspaceRepairPrimaryRange(keyspaceName, isSequential, isLocal, fullRepair, columnFamilies);
     }
 
-    public void forceKeyspaceRepairRange(String beginToken, String endToken, String keyspaceName, boolean isSequential, boolean isLocal, String... columnFamilies) throws IOException
+    public void forceKeyspaceRepairRange(String beginToken, String endToken, String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, String... columnFamilies) throws IOException
     {
-        ssProxy.forceKeyspaceRepairRange(beginToken, endToken, keyspaceName, isSequential, isLocal, columnFamilies);
+        ssProxy.forceKeyspaceRepairRange(beginToken, endToken, keyspaceName, isSequential, isLocal, fullRepair, columnFamilies);
+    }
+
+    public void invalidateCounterCache()
+    {
+        cacheService.invalidateCounterCache();
     }
 
     public void invalidateKeyCache()
@@ -482,6 +493,11 @@ public class NodeProbe implements AutoCloseable
         ssProxy.move(newToken);
     }
 
+    public void takeTokens(List<String> tokens) throws IOException
+    {
+        ssProxy.relocate(tokens);
+    }
+
     public void removeNode(String token)
     {
         ssProxy.removeNode(token);
@@ -540,7 +556,7 @@ public class NodeProbe implements AutoCloseable
         ssProxy.setIncrementalBackupsEnabled(enabled);
     }
 
-    public void setCacheCapacities(int keyCacheCapacity, int rowCacheCapacity)
+    public void setCacheCapacities(int keyCacheCapacity, int rowCacheCapacity, int counterCacheCapacity)
     {
         try
         {
@@ -548,6 +564,7 @@ public class NodeProbe implements AutoCloseable
             CacheServiceMBean cacheMBean = JMX.newMBeanProxy(mbeanServerConn, new ObjectName(keyCachePath), CacheServiceMBean.class);
             cacheMBean.setKeyCacheCapacityInMB(keyCacheCapacity);
             cacheMBean.setRowCacheCapacityInMB(rowCacheCapacity);
+            cacheMBean.setCounterCacheCapacityInMB(counterCacheCapacity);
         }
         catch (MalformedObjectNameException e)
         {
@@ -555,7 +572,7 @@ public class NodeProbe implements AutoCloseable
         }
     }
 
-    public void setCacheKeysToSave(int keyCacheKeysToSave, int rowCacheKeysToSave)
+    public void setCacheKeysToSave(int keyCacheKeysToSave, int rowCacheKeysToSave, int counterCacheKeysToSave)
     {
         try
         {
@@ -563,6 +580,7 @@ public class NodeProbe implements AutoCloseable
             CacheServiceMBean cacheMBean = JMX.newMBeanProxy(mbeanServerConn, new ObjectName(keyCachePath), CacheServiceMBean.class);
             cacheMBean.setKeyCacheKeysToSave(keyCacheKeysToSave);
             cacheMBean.setRowCacheKeysToSave(rowCacheKeysToSave);
+            cacheMBean.setCounterCacheKeysToSave(counterCacheKeysToSave);
         }
         catch (MalformedObjectNameException e)
         {
@@ -669,7 +687,7 @@ public class NodeProbe implements AutoCloseable
 
         for (Map.Entry<String, String> pair : tokenToEndpoint.entrySet())
         {
-            if (pair.getKey().toString().equals(stringToken))
+            if (pair.getKey().equals(stringToken))
             {
                 return pair.getValue();
             }
@@ -725,6 +743,11 @@ public class NodeProbe implements AutoCloseable
     public void enableHintedHandoff()
     {
         spProxy.setHintedHandoffEnabled(true);
+    }
+
+    public void enableHintedHandoff(String dcNames)
+    {
+        spProxy.setHintedHandoffEnabledByDCList(dcNames);
     }
 
     public void pauseHintsDelivery()
@@ -910,8 +933,8 @@ public class NodeProbe implements AutoCloseable
 
     // JMX getters for the o.a.c.metrics API below.
     /**
-     * Retrieve cache metrics based on the cache type (KeyCache or RowCache)
-     * @param cacheType KeyCache or RowCache
+     * Retrieve cache metrics based on the cache type (KeyCache, RowCache, or CounterCache)
+     * @param cacheType KeyCach, RowCache, or CounterCache
      * @param metricName Capacity, Entries, HitRate, Size, Requests or Hits.
      */
     public Object getCacheMetric(String cacheType, String metricName)
@@ -968,9 +991,8 @@ public class NodeProbe implements AutoCloseable
                 case "MaxRowSize":
                 case "MeanRowSize":
                 case "MemtableColumnsCount":
-                case "MemtableDataSize":
+                case "MemtableLiveDataSize":
                 case "MinRowSize":
-                case "PendingTasks":
                 case "RecentBloomFilterFalsePositives":
                 case "RecentBloomFilterFalseRatio":
                 case "SnapshotsSize":
@@ -981,6 +1003,7 @@ public class NodeProbe implements AutoCloseable
                 case "TotalDiskSpaceUsed":
                 case "WriteTotalLatency":
                 case "ReadTotalLatency":
+                case "PendingFlushes":
                     return JMX.newMBeanProxy(mbeanServerConn, oName, JmxReporter.CounterMBean.class).getCount();
                 case "ReadLatency":
                 case "CoordinatorReadLatency":
@@ -1114,7 +1137,7 @@ class ColumnFamilyStoreMBeanIterator implements Iterator<Map.Entry<String, Colum
 
                 // get CF name and split it for index name
                 String e1CF[] = e1.getValue().getColumnFamilyName().split("\\.");
-                String e2CF[] = e1.getValue().getColumnFamilyName().split("\\.");
+                String e2CF[] = e2.getValue().getColumnFamilyName().split("\\.");
                 assert e1CF.length <= 2 && e2CF.length <= 2 : "unexpected split count for column family name";
 
                 //if neither are indexes, just compare CF names
@@ -1219,16 +1242,16 @@ class RepairRunner implements NotificationListener
         this.columnFamilies = columnFamilies;
     }
 
-    public boolean repairAndWait(StorageServiceMBean ssProxy, boolean isSequential, Collection<String> dataCenters, boolean primaryRangeOnly) throws Exception
+    public boolean repairAndWait(StorageServiceMBean ssProxy, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, boolean primaryRangeOnly, boolean fullRepair) throws Exception
     {
-        cmd = ssProxy.forceRepairAsync(keyspace, isSequential, dataCenters, primaryRangeOnly, columnFamilies);
+        cmd = ssProxy.forceRepairAsync(keyspace, isSequential, dataCenters, hosts, primaryRangeOnly, fullRepair, columnFamilies);
         waitForRepair();
         return success;
     }
 
-    public boolean repairRangeAndWait(StorageServiceMBean ssProxy, boolean isSequential, Collection<String> dataCenters, String startToken, String endToken) throws Exception
+    public boolean repairRangeAndWait(StorageServiceMBean ssProxy, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, String startToken, String endToken, boolean fullRepair) throws Exception
     {
-        cmd = ssProxy.forceRepairRangeAsync(startToken, endToken, keyspace, isSequential, dataCenters, columnFamilies);
+        cmd = ssProxy.forceRepairRangeAsync(startToken, endToken, keyspace, isSequential, dataCenters, hosts, fullRepair, columnFamilies);
         waitForRepair();
         return success;
     }

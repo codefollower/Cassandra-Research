@@ -20,7 +20,6 @@ package org.apache.cassandra.db;
 
 import java.io.IOException;
 import java.util.Date;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.Util;
@@ -43,7 +42,7 @@ public class RecoveryManagerTest extends SchemaLoader
     }
 
     @Test
-    public void testOne() throws IOException, ExecutionException, InterruptedException
+    public void testOne() throws IOException
     {
         Keyspace keyspace1 = Keyspace.open("Keyspace1");
         Keyspace keyspace2 = Keyspace.open("Keyspace2");
@@ -52,12 +51,12 @@ public class RecoveryManagerTest extends SchemaLoader
         DecoratedKey dk = Util.dk("keymulti");
         ColumnFamily cf;
 
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
         cf.addColumn(column("col1", "val1", 1L));
         rm = new Mutation("Keyspace1", dk.key, cf);
         rm.apply();
 
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace2", "Standard3");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace2", "Standard3");
         cf.addColumn(column("col2", "val2", 1L));
         rm = new Mutation("Keyspace2", dk.key, cf);
         rm.apply();
@@ -73,7 +72,7 @@ public class RecoveryManagerTest extends SchemaLoader
     }
 
     @Test
-    public void testRecoverCounter() throws IOException, ExecutionException, InterruptedException
+    public void testRecoverCounter() throws IOException
     {
         Keyspace keyspace1 = Keyspace.open("Keyspace1");
 
@@ -83,8 +82,8 @@ public class RecoveryManagerTest extends SchemaLoader
 
         for (int i = 0; i < 10; ++i)
         {
-            cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Counter1");
-            cf.addColumn(new CounterCell(cellname("col"), 1L, 1L));
+            cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Counter1");
+            cf.addColumn(CounterCell.createLocal(cellname("col"), 1L, 1L, Long.MIN_VALUE));
             rm = new Mutation("Keyspace1", dk.key, cf);
             rm.apply();
         }
@@ -114,7 +113,7 @@ public class RecoveryManagerTest extends SchemaLoader
         for (int i = 0; i < 10; ++i)
         {
             long ts = TimeUnit.MILLISECONDS.toMicros(timeMS + (i * 1000));
-            ColumnFamily cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+            ColumnFamily cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
             cf.addColumn(column("name-" + i, "value", ts));
             Mutation rm = new Mutation("Keyspace1", dk.key, cf);
             rm.apply();

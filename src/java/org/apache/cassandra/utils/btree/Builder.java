@@ -1,11 +1,26 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.apache.cassandra.utils.btree;
 
 import java.util.Collection;
 import java.util.Comparator;
 
-import com.google.common.base.Function;
-
-import static org.apache.cassandra.utils.btree.BTree.EMPTY_BRANCH;
 import static org.apache.cassandra.utils.btree.BTree.EMPTY_LEAF;
 import static org.apache.cassandra.utils.btree.BTree.FAN_SHIFT;
 import static org.apache.cassandra.utils.btree.BTree.POSITIVE_INFINITY;
@@ -40,21 +55,23 @@ final class Builder
      * we assume @param source has been sorted, e.g. by BTree.update, so the update of each key resumes where
      * the previous left off.
      */
-    public <V> Object[] update(Object[] btree, Comparator<V> comparator, Collection<V> source, ReplaceFunction<V> replaceF, Function<?, Boolean> terminateEarly)
+    public <V> Object[] update(Object[] btree, Comparator<V> comparator, Collection<V> source, UpdateFunction<V> updateF)
     {
+        assert updateF != null;
+
         NodeBuilder current = rootBuilder;
-        current.reset(btree, POSITIVE_INFINITY);
+        current.reset(btree, POSITIVE_INFINITY, updateF, comparator);
 
         for (V key : source)
         {
             while (true)
             {
-                if (terminateEarly != null && terminateEarly.apply(null) == Boolean.TRUE)
+                if (updateF.abortEarly())
                 {
                     rootBuilder.clear();
                     return null;
                 }
-                NodeBuilder next = current.update(key, comparator, replaceF);
+                NodeBuilder next = current.update(key);
                 if (next == null)
                     break;
                 // we were in a subtree from a previous key that didn't contain this new key;
@@ -66,7 +83,7 @@ final class Builder
         // finish copying any remaining keys from the original btree
         while (true)
         {
-            NodeBuilder next = current.update(POSITIVE_INFINITY, comparator, replaceF);
+            NodeBuilder next = current.update(POSITIVE_INFINITY);
             if (next == null)
                 break;
             current = next;
@@ -88,9 +105,9 @@ final class Builder
         while ((size >>= FAN_SHIFT) > 0)
             current = current.ensureChild();
 
-        current.reset(EMPTY_LEAF, POSITIVE_INFINITY);
+        current.reset(EMPTY_LEAF, POSITIVE_INFINITY, UpdateFunction.NoOp.instance(), null);
         for (V key : source)
-            current.addNewKey(key, null);
+            current.addNewKey(key);
 
         current = current.ascendToRoot();
 

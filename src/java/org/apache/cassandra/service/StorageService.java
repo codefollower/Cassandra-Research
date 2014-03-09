@@ -176,8 +176,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private static enum Mode { STARTING, NORMAL, CLIENT, JOINING, LEAVING, DECOMMISSIONED, MOVING, DRAINING, DRAINED, RELOCATING }
     private Mode operationMode = Mode.STARTING;
 
-    private final MigrationManager migrationManager = MigrationManager.instance;
-
     /* Used for tracking drain progress */
     private volatile int totalCFs, remainingCFs;
 
@@ -365,7 +363,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public void stopClient()
     {
-        Gossiper.instance.unregister(migrationManager);
         Gossiper.instance.unregister(this);
         Gossiper.instance.stop();
         MessagingService.instance().shutdown();
@@ -471,7 +468,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         logger.info("Starting up client gossip");
         setMode(Mode.CLIENT, false);
         Gossiper.instance.register(this);
-        Gossiper.instance.register(migrationManager);
         Gossiper.instance.start((int) (System.currentTimeMillis() / 1000)); // needed for node-ring gathering.
         Gossiper.instance.addLocalApplicationState(ApplicationState.NET_VERSION, valueFactory.networkVersion());
 
@@ -540,14 +536,20 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             CounterId.renewLocalId();
         }
 
+        // Can't do this in CassandraDaemon before the SS start b/c local counter id can be renewed afterwards.
+        for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
+            if (cfs.metadata.isCounter())
+                cfs.initCounterCache();
+
         // daemon threads, like our executors', continue to run while shutdown hooks are invoked
         Thread drainOnShutdown = new Thread(new WrappedRunnable()
         {
             @Override
             public void runMayThrow() throws ExecutionException, InterruptedException, IOException
             {
+                ExecutorService counterMutationStage = StageManager.getStage(Stage.COUNTER_MUTATION);
                 ExecutorService mutationStage = StageManager.getStage(Stage.MUTATION);
-                if (mutationStage.isShutdown())
+                if (mutationStage.isShutdown() && counterMutationStage.isShutdown())
                     return; // drained already
 
                 shutdownClientServers();
@@ -557,7 +559,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 // In-progress writes originating here could generate hints to be written, so shut down MessagingService
                 // before mutation stage, so we can get all the hints saved before shutting down
                 MessagingService.instance().shutdown();
+                counterMutationStage.shutdown();
                 mutationStage.shutdown();
+                counterMutationStage.awaitTermination(3600, TimeUnit.SECONDS);
                 mutationStage.awaitTermination(3600, TimeUnit.SECONDS);
                 StorageProxy.instance.verifyNoHintsInProgress();
 
@@ -571,7 +575,15 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                             flushes.add(cfs.forceFlush());
                     }
                 }
-                FBUtilities.waitOnFutures(flushes);
+                try
+                {
+                    FBUtilities.waitOnFutures(flushes);
+                }
+                catch (Throwable e)
+                {
+                    // don't let this stop us from shutting down the commitlog and other thread pools
+                    logger.warn("Caught exception while waiting for memtable flushes during shutdown hook", e);
+                }
 
                 CommitLog.instance.shutdownBlocking();
 
@@ -627,11 +639,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         getTokenMetadata().updateHostId(SystemKeyspace.getLocalHostId(), FBUtilities.getBroadcastAddress());
         appStates.put(ApplicationState.NET_VERSION, valueFactory.networkVersion());
         appStates.put(ApplicationState.HOST_ID, valueFactory.hostId(SystemKeyspace.getLocalHostId()));
-        appStates.put(ApplicationState.RPC_ADDRESS, valueFactory.rpcaddress(DatabaseDescriptor.getRpcAddress()));
+        appStates.put(ApplicationState.RPC_ADDRESS, valueFactory.rpcaddress(DatabaseDescriptor.getBroadcastRpcAddress()));
         appStates.put(ApplicationState.RELEASE_VERSION, valueFactory.releaseVersion());
         logger.info("Starting up server gossip");
         Gossiper.instance.register(this);
-        Gossiper.instance.register(migrationManager);
         Gossiper.instance.start(SystemKeyspace.incrementAndGetGeneration(), appStates); // needed for node-ring gathering.
         // gossip snitch infos (local DC and rack)
         gossipSnitchInfo();
@@ -736,6 +747,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         }
                     }
                 }
+                else
+                {
+                    try
+                    {
+                        Thread.sleep(RING_DELAY);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        throw new AssertionError(e);
+                    }
+
+                }
                 setMode(Mode.JOINING, "Replacing a node with token(s): " + tokens, true);
             }
 
@@ -832,7 +855,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             if (!current.isEmpty())
                 for (InetAddress existing : current)
                     Gossiper.instance.replacedEndpoint(existing);
-            logger.info("Startup completed! Now serving reads.");
             assert tokenMetadata.sortedTokens().size() > 0;
 
             Auth.setup();
@@ -1031,7 +1053,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public String getRpcaddress(InetAddress endpoint)
     {
         if (endpoint.equals(FBUtilities.getBroadcastAddress()))
-            return DatabaseDescriptor.getRpcAddress().getHostAddress();
+            return DatabaseDescriptor.getBroadcastRpcAddress().getHostAddress();
         else if (Gossiper.instance.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.RPC_ADDRESS) == null)
             return endpoint.getHostAddress();
         else
@@ -1394,7 +1416,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * Handle node bootstrap
      *
      * @param endpoint bootstrapping node
-     * @param pieces STATE_BOOTSTRAPPING,bootstrap token as string
      */
     private void handleStateBootstrap(InetAddress endpoint)
     {
@@ -1439,6 +1460,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         tokens = getTokensFor(endpoint);
 
+        Set<Token> tokensToUpdateInMetadata = new HashSet<Token>();
+        Set<Token> tokensToUpdateInSystemKeyspace = new HashSet<Token>();
+        Set<Token> localTokensToRemove = new HashSet<Token>();
+        Set<InetAddress> endpointsToRemove = new HashSet<InetAddress>();
+
+
         if (logger.isDebugEnabled())
             logger.debug("Node {} state normal, token {}", endpoint, tokens);
 
@@ -1449,16 +1476,37 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (Gossiper.instance.usesHostId(endpoint))
         {
             UUID hostId = Gossiper.instance.getHostId(endpoint);
+            InetAddress existing = tokenMetadata.getEndpointForHostId(hostId);
             if (DatabaseDescriptor.isReplacing() && Gossiper.instance.getEndpointStateForEndpoint(DatabaseDescriptor.getReplaceAddress()) != null && (hostId.equals(Gossiper.instance.getHostId(DatabaseDescriptor.getReplaceAddress()))))
                 logger.warn("Not updating token metadata for {} because I am replacing it", endpoint);
             else
-                tokenMetadata.updateHostId(hostId, endpoint);
+            {
+                if (existing != null && !existing.equals(endpoint))
+                {
+                    if (existing.equals(FBUtilities.getBroadcastAddress()))
+                    {
+                        logger.warn("Not updating host ID {} for {} because it's mine", hostId, endpoint);
+                        tokenMetadata.removeEndpoint(endpoint);
+                        endpointsToRemove.add(endpoint);
+                    }
+                    else if (Gossiper.instance.compareEndpointStartup(endpoint, existing) > 0)
+                    {
+                        logger.warn("Host ID collision for {} between {} and {}; {} is the new owner", hostId, existing, endpoint, endpoint);
+                        tokenMetadata.removeEndpoint(existing);
+                        endpointsToRemove.add(existing);
+                        tokenMetadata.updateHostId(hostId, endpoint);
+                    }
+                    else
+                    {
+                        logger.warn("Host ID collision for {} between {} and {}; ignored {}", hostId, existing, endpoint, endpoint);
+                        tokenMetadata.removeEndpoint(endpoint);
+                        endpointsToRemove.add(endpoint);
+                    }
+                }
+                else
+                    tokenMetadata.updateHostId(hostId, endpoint);
+            }
         }
-
-        Set<Token> tokensToUpdateInMetadata = new HashSet<Token>();
-        Set<Token> tokensToUpdateInSystemKeyspace = new HashSet<Token>();
-        Set<Token> localTokensToRemove = new HashSet<Token>();
-        Set<InetAddress> endpointsToRemove = new HashSet<InetAddress>();
 
         for (final Token token : tokens)
         {
@@ -1921,6 +1969,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             onChange(endpoint, entry.getKey(), entry.getValue());
         }
+        MigrationManager.instance.scheduleSchemaPull(endpoint, epState);
     }
 
     public void onAlive(InetAddress endpoint, EndpointState state)
@@ -1939,6 +1988,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             for (IEndpointLifecycleSubscriber subscriber : lifecycleSubscribers)
                 subscriber.onJoinCluster(endpoint);
         }
+        MigrationManager.instance.scheduleSchemaPull(endpoint, state);
     }
 
     public void onRemove(InetAddress endpoint)
@@ -2106,17 +2156,16 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (keyspaceName.equals(Keyspace.SYSTEM_KS))
             throw new RuntimeException("Cleanup of the system keyspace is neither necessary nor wise");
 
-        CounterId.OneShotRenewer counterIdRenewer = new CounterId.OneShotRenewer();
         for (ColumnFamilyStore cfStore : getValidColumnFamilies(false, false, keyspaceName, columnFamilies))
         {
-            cfStore.forceCleanup(counterIdRenewer);
+            cfStore.forceCleanup();
         }
     }
 
-    public void scrub(boolean disableSnapshot, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    public void scrub(boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
         for (ColumnFamilyStore cfStore : getValidColumnFamilies(false, false, keyspaceName, columnFamilies))
-            cfStore.scrub(disableSnapshot);
+            cfStore.scrub(disableSnapshot, skipCorrupted);
     }
 
     public void upgradeSSTables(String keyspaceName, boolean excludeCurrentVersion, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
@@ -2300,8 +2349,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 {
                     for (SecondaryIndex si : cfStore.indexManager.getIndexes())
                     {
-                        logger.info("adding secondary index {} to operation", si.getIndexName());
-                        valid.add(si.getIndexCfs());
+                        if (si.getIndexCfs() != null) {
+                            logger.info("adding secondary index {} to operation", si.getIndexName());
+                            valid.add(si.getIndexCfs());
+                        }
                     }
 
                 }
@@ -2349,8 +2400,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 {
                     for(SecondaryIndex si : cfStore.indexManager.getIndexes())
                     {
-                        logger.info("adding secondary index {} to operation", si.getIndexName());
-                        valid.add(si.getIndexCfs());
+                        if (si.getIndexCfs() != null) {
+                            logger.info("adding secondary index {} to operation", si.getIndexName());
+                            valid.add(si.getIndexCfs());
+                        }
                     }
                 }
             }
@@ -2387,13 +2440,14 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         sendNotification(jmxNotification);
     }
 
-    public int forceRepairAsync(final String keyspace, final boolean isSequential, final Collection<String> dataCenters, final boolean primaryRange, final String... columnFamilies)
+    public int forceRepairAsync(final String keyspace, final boolean isSequential, final Collection<String> dataCenters, Collection<String> hosts, final boolean primaryRange, final boolean fullRepair, final String... columnFamilies) throws IOException
     {
         final Collection<Range<Token>> ranges = primaryRange ? getLocalPrimaryRanges(keyspace) : getLocalRanges(keyspace);
-        return forceRepairAsync(keyspace, isSequential, dataCenters, ranges, columnFamilies);
+
+        return forceRepairAsync(keyspace, isSequential, dataCenters, hosts, ranges, fullRepair, columnFamilies);
     }
 
-    public int forceRepairAsync(final String keyspace, final boolean isSequential, final Collection<String> dataCenters, final Collection<Range<Token>> ranges, final String... columnFamilies)
+    public int forceRepairAsync(final String keyspace, final boolean isSequential, final Collection<String> dataCenters, Collection<String> hosts, final Collection<Range<Token>> ranges, final boolean fullRepair, final String... columnFamilies) throws IOException
     {
         if (Keyspace.SYSTEM_KS.equals(keyspace) || ranges.isEmpty())
             return 0;
@@ -2401,18 +2455,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         final int cmd = nextRepairCommand.incrementAndGet();
         if (ranges.size() > 0)
         {
-            new Thread(createRepairTask(cmd, keyspace, ranges, isSequential, dataCenters, columnFamilies)).start();
+            new Thread(createRepairTask(cmd, keyspace, ranges, isSequential, dataCenters, hosts, fullRepair, columnFamilies)).start();
         }
         return cmd;
     }
 
-    public int forceRepairAsync(final String keyspace, final boolean isSequential, final boolean isLocal, final boolean primaryRange, final String... columnFamilies)
+    public int forceRepairAsync(final String keyspace, final boolean isSequential, final boolean isLocal, final boolean primaryRange, final boolean fullRepair, final String... columnFamilies)
     {
         final Collection<Range<Token>> ranges = primaryRange ? getLocalPrimaryRanges(keyspace) : getLocalRanges(keyspace);
-        return forceRepairAsync(keyspace, isSequential, isLocal, ranges, columnFamilies);
+        return forceRepairAsync(keyspace, isSequential, isLocal, ranges, fullRepair, columnFamilies);
     }
 
-    public int forceRepairAsync(final String keyspace, final boolean isSequential, final boolean isLocal, final Collection<Range<Token>> ranges, final String... columnFamilies)
+    public int forceRepairAsync(final String keyspace, final boolean isSequential, final boolean isLocal, final Collection<Range<Token>> ranges, final boolean fullRepair, final String... columnFamilies)
     {
         if (Keyspace.SYSTEM_KS.equals(keyspace) || ranges.isEmpty())
             return 0;
@@ -2420,29 +2474,29 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         final int cmd = nextRepairCommand.incrementAndGet();
         if (ranges.size() > 0)
         {
-            new Thread(createRepairTask(cmd, keyspace, ranges, isSequential, isLocal, columnFamilies)).start();
+            new Thread(createRepairTask(cmd, keyspace, ranges, isSequential, isLocal, fullRepair, columnFamilies)).start();
         }
         return cmd;
     }
 
-    public int forceRepairRangeAsync(String beginToken, String endToken, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, final String... columnFamilies)
+    public int forceRepairRangeAsync(String beginToken, String endToken, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, boolean fullRepair, final String... columnFamilies) throws IOException
     {
         Token parsedBeginToken = getPartitioner().getTokenFactory().fromString(beginToken);
         Token parsedEndToken = getPartitioner().getTokenFactory().fromString(endToken);
 
         logger.info("starting user-requested repair of range ({}, {}] for keyspace {} and column families {}",
                     parsedBeginToken, parsedEndToken, keyspaceName, columnFamilies);
-        return forceRepairAsync(keyspaceName, isSequential, dataCenters, Collections.singleton(new Range<Token>(parsedBeginToken, parsedEndToken)), columnFamilies);
+        return forceRepairAsync(keyspaceName, isSequential, dataCenters, hosts, Collections.singleton(new Range<Token>(parsedBeginToken, parsedEndToken)), fullRepair, columnFamilies);
     }
 
-    public int forceRepairRangeAsync(String beginToken, String endToken, final String keyspaceName, boolean isSequential, boolean isLocal, final String... columnFamilies)
+    public int forceRepairRangeAsync(String beginToken, String endToken, final String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, final String... columnFamilies)
     {
         Token parsedBeginToken = getPartitioner().getTokenFactory().fromString(beginToken);
         Token parsedEndToken = getPartitioner().getTokenFactory().fromString(endToken);
 
         logger.info("starting user-requested repair of range ({}, {}] for keyspace {} and column families {}",
                     parsedBeginToken, parsedEndToken, keyspaceName, columnFamilies);
-        return forceRepairAsync(keyspaceName, isSequential, isLocal, Collections.singleton(new Range<Token>(parsedBeginToken, parsedEndToken)), columnFamilies);
+        return forceRepairAsync(keyspaceName, isSequential, isLocal, Collections.singleton(new Range<Token>(parsedBeginToken, parsedEndToken)), fullRepair, columnFamilies);
     }
 
 
@@ -2452,53 +2506,73 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param columnFamilies
      * @throws IOException
      */
-    public void forceKeyspaceRepair(final String keyspaceName, boolean isSequential, boolean isLocal, final String... columnFamilies) throws IOException
+    public void forceKeyspaceRepair(final String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, final String... columnFamilies) throws IOException
     {
-        forceKeyspaceRepairRange(keyspaceName, getLocalRanges(keyspaceName), isSequential, isLocal, columnFamilies);
+        forceKeyspaceRepairRange(keyspaceName, getLocalRanges(keyspaceName), isSequential, isLocal, fullRepair, columnFamilies);
     }
 
-    public void forceKeyspaceRepairPrimaryRange(final String keyspaceName, boolean isSequential, boolean isLocal, final String... columnFamilies) throws IOException
+    public void forceKeyspaceRepairPrimaryRange(final String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, final String... columnFamilies) throws IOException
     {
-        forceKeyspaceRepairRange(keyspaceName, getLocalPrimaryRanges(keyspaceName), isSequential, isLocal, columnFamilies);
+        forceKeyspaceRepairRange(keyspaceName, getLocalPrimaryRanges(keyspaceName), isSequential, isLocal, fullRepair, columnFamilies);
     }
 
-    public void forceKeyspaceRepairRange(String beginToken, String endToken, final String keyspaceName, boolean isSequential, boolean isLocal, final String... columnFamilies) throws IOException
+    public void forceKeyspaceRepairRange(String beginToken, String endToken, final String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, final String... columnFamilies) throws IOException
     {
         Token parsedBeginToken = getPartitioner().getTokenFactory().fromString(beginToken);
         Token parsedEndToken = getPartitioner().getTokenFactory().fromString(endToken);
 
         logger.info("starting user-requested repair of range ({}, {}] for keyspace {} and column families {}",
                     parsedBeginToken, parsedEndToken, keyspaceName, columnFamilies);
-        forceKeyspaceRepairRange(keyspaceName, Collections.singleton(new Range<Token>(parsedBeginToken, parsedEndToken)), isSequential, isLocal, columnFamilies);
+        forceKeyspaceRepairRange(keyspaceName, Collections.singleton(new Range<Token>(parsedBeginToken, parsedEndToken)), isSequential, isLocal, fullRepair, columnFamilies);
     }
 
-    public void forceKeyspaceRepairRange(final String keyspaceName, final Collection<Range<Token>> ranges, boolean isSequential, boolean isLocal, final String... columnFamilies) throws IOException
+    public void forceKeyspaceRepairRange(final String keyspaceName, final Collection<Range<Token>> ranges, boolean isSequential, boolean isLocal, boolean fullRepair, final String... columnFamilies) throws IOException
     {
         if (Keyspace.SYSTEM_KS.equalsIgnoreCase(keyspaceName))
             return;
-        createRepairTask(nextRepairCommand.incrementAndGet(), keyspaceName, ranges, isSequential, isLocal, columnFamilies).run();
+        createRepairTask(nextRepairCommand.incrementAndGet(), keyspaceName, ranges, isSequential, isLocal, fullRepair, columnFamilies).run();
     }
 
-    private FutureTask<Object> createRepairTask(final int cmd, final String keyspace, final Collection<Range<Token>> ranges, final boolean isSequential, final boolean isLocal, final String... columnFamilies)
+    private FutureTask<Object> createRepairTask(final int cmd,
+                                                final String keyspace,
+                                                final Collection<Range<Token>> ranges,
+                                                final boolean isSequential,
+                                                final boolean isLocal,
+                                                final boolean fullRepair,
+                                                final String... columnFamilies)
     {
         Set<String> dataCenters = null;
         if (isLocal)
         {
             dataCenters = Sets.newHashSet(DatabaseDescriptor.getLocalDataCenter());
         }
-        return createRepairTask(cmd, keyspace, ranges, isSequential, dataCenters, columnFamilies);
+        return createRepairTask(cmd, keyspace, ranges, isSequential, dataCenters, null, fullRepair, columnFamilies);
     }
 
-    private FutureTask<Object> createRepairTask(final int cmd, final String keyspace, final Collection<Range<Token>> ranges, final boolean isSequential, final Collection<String> dataCenters, final String... columnFamilies)
+    private FutureTask<Object> createRepairTask(final int cmd,
+                                                final String keyspace,
+                                                final Collection<Range<Token>> ranges,
+                                                final boolean isSequential,
+                                                final Collection<String> dataCenters,
+                                                final Collection<String> hosts,
+                                                final boolean fullRepair,
+                                                final String... columnFamilies)
     {
-        return new FutureTask<Object>(new WrappedRunnable()
+        return new FutureTask<>(new WrappedRunnable()
         {
             protected void runMayThrow() throws Exception
             {
-                String message = String.format("Starting repair command #%d, repairing %d ranges for keyspace %s", cmd, ranges.size(), keyspace);
+                String message = String.format("Starting repair command #%d, repairing %d ranges for keyspace %s (seq=%b, full=%b)", cmd, ranges.size(), keyspace, isSequential, fullRepair);
                 logger.info(message);
                 sendNotification("repair", message, new int[]{cmd, ActiveRepairService.Status.STARTED.ordinal()});
 
+                if (isSequential && !fullRepair)
+                {
+                    message = "It is not possible to mix sequential repair and incremental repairs.";
+                    logger.error(message);
+                    sendNotification("repair", message, new int[]{cmd, ActiveRepairService.Status.FINISHED.ordinal()});
+                    return;
+                }
                 if (dataCenters != null && !dataCenters.contains(DatabaseDescriptor.getLocalDataCenter()))
                 {
                     message = String.format("Cancelling repair command #%d (the local data center must be part of the repair)", cmd);
@@ -2507,13 +2581,30 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     return;
                 }
 
-                List<RepairFuture> futures = new ArrayList<RepairFuture>(ranges.size());
+                Set<InetAddress> allNeighbors = new HashSet<>();
+                Map<Range, Set<InetAddress>> rangeToNeighbors = new HashMap<>();
+                for (Range<Token> range : ranges)
+                {
+                    Set<InetAddress> neighbors = ActiveRepairService.getNeighbors(keyspace, range, dataCenters, hosts);
+                    rangeToNeighbors.put(range, neighbors);
+                    allNeighbors.addAll(neighbors);
+                }
+
+                List<ColumnFamilyStore> columnFamilyStores = new ArrayList<>();
+                for (ColumnFamilyStore cfs : getValidColumnFamilies(false, false, keyspace, columnFamilies))
+                    columnFamilyStores.add(cfs);
+
+                UUID parentSession = null;
+                if (!fullRepair)
+                    parentSession = ActiveRepairService.instance.prepareForRepair(allNeighbors, ranges, columnFamilyStores);
+
+                List<RepairFuture> futures = new ArrayList<>(ranges.size());
                 for (Range<Token> range : ranges)
                 {
                     RepairFuture future;
                     try
                     {
-                        future = forceKeyspaceRepair(range, keyspace, isSequential, dataCenters, columnFamilies);
+                        future = forceKeyspaceRepair(parentSession, range, keyspace, isSequential, rangeToNeighbors.get(range), columnFamilies);
                     }
                     catch (IllegalArgumentException e)
                     {
@@ -2536,6 +2627,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         sendNotification("repair", message, new int[]{cmd, ActiveRepairService.Status.SESSION_FAILED.ordinal()});
                     }
                 }
+
                 for (RepairFuture future : futures)
                 {
                     try
@@ -2558,14 +2650,22 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         sendNotification("repair", message, new int[]{cmd, ActiveRepairService.Status.SESSION_FAILED.ordinal()});
                     }
                 }
+                if (!fullRepair)
+                    ActiveRepairService.instance.finishParentSession(parentSession, allNeighbors);
                 sendNotification("repair", String.format("Repair command #%d finished", cmd), new int[]{cmd, ActiveRepairService.Status.FINISHED.ordinal()});
             }
         }, null);
     }
 
-    public RepairFuture forceKeyspaceRepair(final Range<Token> range, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, final String... columnFamilies) throws IOException
+
+    public RepairFuture forceKeyspaceRepair(final UUID parentRepairSession,
+                                            final Range<Token> range,
+                                            final String keyspaceName,
+                                            boolean isSequential,
+                                            Set<InetAddress> endpoints,
+                                            String ... columnFamilies) throws IOException
     {
-        ArrayList<String> names = new ArrayList<String>();
+        ArrayList<String> names = new ArrayList<>();
         for (ColumnFamilyStore cfStore : getValidColumnFamilies(false, false, keyspaceName, columnFamilies))
         {
             names.add(cfStore.name);
@@ -2577,7 +2677,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             return null;
         }
 
-        return ActiveRepairService.instance.submitRepairSession(range, keyspaceName, isSequential, dataCenters, names.toArray(new String[names.size()]));
+        return ActiveRepairService.instance.submitRepairSession(parentRepairSession, range, keyspaceName, isSequential, endpoints, names.toArray(new String[names.size()]));
     }
 
     public void forceTerminateAllRepairSessions() {
@@ -2741,7 +2841,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         ColumnFamilyStore cfs = t.getColumnFamilyStore(cfName);
         List<DecoratedKey> keys = keySamples(Collections.singleton(cfs), range);
 
-        final long totalRowCountEstimate = (keys.size() + 1) * metadata.getIndexInterval();
+        long totalRowCountEstimate = cfs.estimatedKeysForRange(range);
 
         // splitCount should be much smaller than number of key samples, to avoid huge sampling error
         final int minSamplesPerSplit = 4;
@@ -2749,22 +2849,20 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         final int splitCount = Math.max(1, Math.min(maxSplitCount, (int)(totalRowCountEstimate / keysPerSplit)));
 
         List<Token> tokens = keysToTokens(range, keys);
-        return getSplits(tokens, splitCount, metadata);
+        return getSplits(tokens, splitCount, metadata, cfs);
     }
 
-    private List<Pair<Range<Token>, Long>> getSplits(List<Token> tokens, int splitCount, CFMetaData metadata)
+    private List<Pair<Range<Token>, Long>> getSplits(List<Token> tokens, int splitCount, CFMetaData metadata, ColumnFamilyStore cfs)
     {
         final double step = (double) (tokens.size() - 1) / splitCount;
-        int prevIndex = 0;
         Token prevToken = tokens.get(0);
         List<Pair<Range<Token>, Long>> splits = Lists.newArrayListWithExpectedSize(splitCount);
         for (int i = 1; i <= splitCount; i++)
         {
             int index = (int) Math.round(i * step);
             Token token = tokens.get(index);
-            long rowCountEstimate = (index - prevIndex) * metadata.getIndexInterval();
-            splits.add(Pair.create(new Range<Token>(prevToken, token), rowCountEstimate));
-            prevIndex = index;
+            Range<Token> range = new Range<>(prevToken, token);
+            splits.add(Pair.create(range, cfs.estimatedKeysForRange(range)));
             prevToken = token;
         }
         return splits;
@@ -3098,6 +3196,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             for (String srcT : srcTokens)
             {
                 getPartitioner().getTokenFactory().validate(srcT);
+                Token token = getPartitioner().getTokenFactory().fromString(srcT);
+                if (tokenMetadata.getTokens(tokenMetadata.getEndpoint(token)).size() < 2)
+                    throw new IOException("Cannot relocate " + srcT + "; source node would have no tokens left");
                 tokens.add(getPartitioner().getTokenFactory().fromString(srcT));
             }
         }
@@ -3339,8 +3440,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public synchronized void drain() throws IOException, InterruptedException, ExecutionException
     {
+        ExecutorService counterMutationStage = StageManager.getStage(Stage.COUNTER_MUTATION);
         ExecutorService mutationStage = StageManager.getStage(Stage.MUTATION);
-        if (mutationStage.isTerminated())
+        if (mutationStage.isTerminated() && counterMutationStage.isTerminated())
         {
             logger.warn("Cannot drain node (did it already happen?)");
             return;
@@ -3354,7 +3456,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         MessagingService.instance().shutdown();
 
         setMode(Mode.DRAINING, "clearing mutation stage", false);
+        counterMutationStage.shutdown();
         mutationStage.shutdown();
+        counterMutationStage.awaitTermination(3600, TimeUnit.SECONDS);
         mutationStage.awaitTermination(3600, TimeUnit.SECONDS);
 
         StorageProxy.instance.verifyNoHintsInProgress();
@@ -3668,6 +3772,23 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public void bulkLoad(String directory)
     {
+        try
+        {
+            bulkLoadInternal(directory).get();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public String bulkLoadAsync(String directory)
+    {
+        return bulkLoadInternal(directory).planId.toString();
+    }
+
+    private StreamResultFuture bulkLoadInternal(String directory)
+    {
         File dir = new File(directory);
 
         if (!dir.exists() || !dir.isDirectory())
@@ -3700,14 +3821,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         };
 
         SSTableLoader loader = new SSTableLoader(dir, client, new OutputHandler.LogOutput());
-        try
-        {
-            loader.stream().get();
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
+        return loader.stream();
     }
 
     public int getExceptionCount()

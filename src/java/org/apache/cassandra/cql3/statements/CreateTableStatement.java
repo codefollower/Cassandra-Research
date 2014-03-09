@@ -110,14 +110,16 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
     //普通列: org.apache.cassandra.config.ColumnDefinition.Kind.REGULAR
     private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
+    private final Set<ColumnIdentifier> staticColumns;
     private final CFPropDefs properties;
     private final boolean ifNotExists;
 
-    public CreateTableStatement(CFName name, CFPropDefs properties, boolean ifNotExists)
+    public CreateTableStatement(CFName name, CFPropDefs properties, boolean ifNotExists, Set<ColumnIdentifier> staticColumns)
     {
         super(name);
         this.properties = properties;
         this.ifNotExists = ifNotExists;
+        this.staticColumns = staticColumns;
 
         try
         {
@@ -157,7 +159,12 @@ public class CreateTableStatement extends SchemaAlteringStatement
         //而fullType.get(0)刚好是CompoundSparseCellNameType.makeCType加入的columnNameType(也就是UTF8Type)
         Integer componentIndex = comparator.isCompound() ? comparator.clusteringPrefixSize() : null;
         for (Map.Entry<ColumnIdentifier, AbstractType> col : columns.entrySet())
-            columnDefs.add(ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
+        {
+            ColumnIdentifier id = col.getKey();
+            columnDefs.add(staticColumns.contains(id)
+                           ? ColumnDefinition.staticDef(cfm, col.getKey().bytes, col.getValue(), componentIndex)
+                           : ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
+        }
 
         return columnDefs;
     }
@@ -251,6 +258,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
         private final List<List<ColumnIdentifier>> keyAliases = new ArrayList<List<ColumnIdentifier>>();
         private final List<ColumnIdentifier> columnAliases = new ArrayList<ColumnIdentifier>();
         private final Map<ColumnIdentifier, Boolean> definedOrdering = new LinkedHashMap<ColumnIdentifier, Boolean>(); // Insertion ordering is important
+        private final Set<ColumnIdentifier> staticColumns = new HashSet<ColumnIdentifier>();
 
         private boolean useCompactStorage;
         //允许相同的元素出现多个(按元素的hash值确定)
@@ -292,7 +300,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
             //这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
             properties.validate();
 
-            CreateTableStatement stmt = new CreateTableStatement(cfName, properties, ifNotExists);
+            CreateTableStatement stmt = new CreateTableStatement(cfName, properties, ifNotExists, staticColumns);
 
             //以下代码用于确定stmt.columns的值
             ///////////////////////////////////////////////////////////////////////////
@@ -345,6 +353,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 //这个bug碰巧解决了
                 if (t instanceof CounterColumnType)
                     throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", alias));
+                if (staticColumns.contains(alias))
+                    throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", alias));
                 keyTypes.add(t);
             }
             stmt.keyValidator = keyTypes.size() == 1 ? keyTypes.get(0) : CompositeType.getInstance(keyTypes);
@@ -387,8 +397,13 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 {
                     if (definedCollections != null)
                         throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
-                    stmt.columnAliases.add(columnAliases.get(0).bytes);
-                    AbstractType<?> at = getTypeAndRemove(stmt.columns, columnAliases.get(0));
+
+                    ColumnIdentifier alias = columnAliases.get(0);
+                    if (staticColumns.contains(alias))
+                        throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", alias));
+
+                    stmt.columnAliases.add(alias.bytes);
+                    AbstractType<?> at = getTypeAndRemove(stmt.columns, alias);
                     if (at instanceof CounterColumnType)
                         throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", stmt.columnAliases.get(0)));
                     stmt.comparator = new SimpleDenseCellNameType(at);
@@ -403,6 +418,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
                         AbstractType<?> type = getTypeAndRemove(stmt.columns, t);
                         if (type instanceof CounterColumnType)
                             throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", t));
+                        if (staticColumns.contains(t))
+                            throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", t));
                         types.add(type);
                     }
 
@@ -421,10 +438,19 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     }
                 }
             }
-
             
             //以下代码用于确定stmt.defaultValidator和stmt.valueAlias的值
             ///////////////////////////////////////////////////////////////////////////
+            if (!staticColumns.isEmpty())
+            {
+                // Only CQL3 tables can have static columns
+                if (useCompactStorage)
+                    throw new InvalidRequestException("Static columns are not supported in COMPACT STORAGE tables");
+                // Static columns only make sense if we have at least one clustering column. Otherwise everything is static anyway
+                if (columnAliases.isEmpty())
+                    throw new InvalidRequestException("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
+            }
+
             if (useCompactStorage && !stmt.columnAliases.isEmpty())
             {
                 if (stmt.columns.isEmpty())
@@ -520,10 +546,12 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
         //definitions中会有keyAliases和columnAliases的内容，
         //在prepare方法中会进行处理
-        public void addDefinition(ColumnIdentifier def, CQL3Type.Raw type)
+        public void addDefinition(ColumnIdentifier def, CQL3Type.Raw type, boolean isStatic)
         {
             definedNames.add(def);
             definitions.put(def, type);
+            if (isStatic)
+                staticColumns.add(def);
         }
  
         //PARTITION_KEY可能由一个或多个字段构成，所以用List<ColumnIdentifier>

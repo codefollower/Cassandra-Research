@@ -19,7 +19,6 @@ NAME=cassandra
 PIDFILE=/var/run/$NAME/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
 CONFDIR=/etc/cassandra
-JSVC=/usr/bin/jsvc
 WAIT_FOR_START=10
 CASSANDRA_HOME=/usr/share/cassandra
 FD_LIMIT=100000
@@ -38,9 +37,6 @@ if [ -z "$JVM_OPTS" ]; then
     echo "Initialization failed; \$JVM_OPTS not set!" >&2
     exit 3
 fi
-
-# Add JNA to EXTRA_CLASSPATH
-export EXTRA_CLASSPATH="/usr/share/java/jna.jar:$EXTRA_CLASSPATH"
 
 # Export JAVA_HOME, if set.
 [ -n "$JAVA_HOME" ] && export JAVA_HOME

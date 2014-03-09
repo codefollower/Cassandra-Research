@@ -20,6 +20,7 @@ package org.apache.cassandra.stress.operations;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 
 import com.datastax.driver.core.PreparedStatement;
@@ -33,6 +34,7 @@ import org.apache.cassandra.stress.util.JavaDriverClient;
 import org.apache.cassandra.stress.util.ThriftClient;
 import org.apache.cassandra.thrift.Compression;
 import org.apache.cassandra.thrift.CqlResult;
+import org.apache.cassandra.thrift.CqlRow;
 import org.apache.cassandra.thrift.ThriftConversion;
 import org.apache.cassandra.transport.SimpleClient;
 import org.apache.cassandra.transport.messages.ResultMessage;
@@ -167,6 +169,39 @@ public abstract class CqlOperation<V> extends Operation
 
     }
 
+    protected final class CqlRunOpMatchResults extends CqlRunOp<ByteBuffer[][]>
+    {
+
+        final List<List<ByteBuffer>> expect;
+
+        // a null value for an item in expect means we just check the row is present
+        protected CqlRunOpMatchResults(ClientWrapper client, String query, Object queryId, List<ByteBuffer> params, String id, ByteBuffer key, List<List<ByteBuffer>> expect)
+        {
+            super(client, query, queryId, RowsHandler.INSTANCE, params, id, key);
+            this.expect = expect;
+        }
+
+        @Override
+        public int keyCount()
+        {
+            return result == null ? 0 : result.length;
+        }
+
+        public boolean validate(ByteBuffer[][] result)
+        {
+            if (result.length != expect.size())
+                return false;
+            for (int i = 0 ; i < result.length ; i++)
+            {
+                List<ByteBuffer> resultRow = Arrays.asList(result[i]);
+                resultRow = resultRow.subList(1, resultRow.size());
+                if (expect.get(i) != null && !expect.get(i).equals(resultRow))
+                    return false;
+            }
+            return true;
+        }
+    }
+
     // Cql
     protected abstract class CqlRunOp<V> implements RunOp
     {
@@ -233,10 +268,7 @@ public abstract class CqlOperation<V> extends Operation
 
     public ClientWrapper wrap(ThriftClient client)
     {
-        return state.isCql3()
-                ? new Cql3CassandraClientWrapper(client)
-                : new Cql2CassandraClientWrapper(client);
-
+        return new Cql3CassandraClientWrapper(client);
     }
 
     public ClientWrapper wrap(JavaDriverClient client)
@@ -267,7 +299,7 @@ public abstract class CqlOperation<V> extends Operation
         @Override
         public <V> V execute(String query, ByteBuffer key, List<ByteBuffer> queryParams, ResultHandler<V> handler)
         {
-            String formattedQuery = formatCqlQuery(query, queryParams, state.isCql3());
+            String formattedQuery = formatCqlQuery(query, queryParams);
             return handler.javaDriverHandler().apply(client.execute(formattedQuery, ThriftConversion.fromThrift(state.settings.command.consistencyLevel)));
         }
 
@@ -299,7 +331,7 @@ public abstract class CqlOperation<V> extends Operation
         @Override
         public <V> V execute(String query, ByteBuffer key, List<ByteBuffer> queryParams, ResultHandler<V> handler)
         {
-            String formattedQuery = formatCqlQuery(query, queryParams, state.isCql3());
+            String formattedQuery = formatCqlQuery(query, queryParams);
             return handler.thriftHandler().apply(client.execute(formattedQuery, ThriftConversion.fromThrift(state.settings.command.consistencyLevel)));
         }
 
@@ -332,7 +364,7 @@ public abstract class CqlOperation<V> extends Operation
         @Override
         public <V> V execute(String query, ByteBuffer key, List<ByteBuffer> queryParams, ResultHandler<V> handler) throws TException
         {
-            String formattedQuery = formatCqlQuery(query, queryParams, true);
+            String formattedQuery = formatCqlQuery(query, queryParams);
             return handler.simpleNativeHandler().apply(
                     client.execute_cql3_query(formattedQuery, key, Compression.NONE, state.settings.command.consistencyLevel)
             );
@@ -351,40 +383,6 @@ public abstract class CqlOperation<V> extends Operation
         public Object createPreparedStatement(String cqlQuery) throws TException
         {
             return client.prepare_cql3_query(cqlQuery, Compression.NONE);
-        }
-    }
-
-    // client wrapper for Cql2
-    private final class Cql2CassandraClientWrapper implements ClientWrapper
-    {
-        final ThriftClient client;
-        private Cql2CassandraClientWrapper(ThriftClient client)
-        {
-            this.client = client;
-        }
-
-        @Override
-        public <V> V execute(String query, ByteBuffer key, List<ByteBuffer> queryParams, ResultHandler<V> handler) throws TException
-        {
-            String formattedQuery = formatCqlQuery(query, queryParams, false);
-            return handler.simpleNativeHandler().apply(
-                    client.execute_cql_query(formattedQuery, key, Compression.NONE)
-            );
-        }
-
-        @Override
-        public <V> V execute(Object preparedStatementId, ByteBuffer key, List<ByteBuffer> queryParams, ResultHandler<V> handler) throws TException
-        {
-            Integer id = (Integer) preparedStatementId;
-            return handler.simpleNativeHandler().apply(
-                    client.execute_prepared_cql_query(id, key, queryParams)
-            );
-        }
-
-        @Override
-        public Object createPreparedStatement(String cqlQuery) throws TException
-        {
-            return client.prepare_cql_query(cqlQuery, Compression.NONE);
         }
     }
 
@@ -450,6 +448,86 @@ public abstract class CqlOperation<V> extends Operation
 
     }
 
+    // Processes results from each client into an array of all key bytes returned
+    protected static final class RowsHandler implements ResultHandler<ByteBuffer[][]>
+    {
+        static final RowsHandler INSTANCE = new RowsHandler();
+
+        @Override
+        public Function<ResultSet, ByteBuffer[][]> javaDriverHandler()
+        {
+            return new Function<ResultSet, ByteBuffer[][]>()
+            {
+
+                @Override
+                public ByteBuffer[][] apply(ResultSet result)
+                {
+                    if (result == null)
+                        return new ByteBuffer[0][];
+                    List<Row> rows = result.all();
+
+                    ByteBuffer[][] r = new ByteBuffer[rows.size()][];
+                    for (int i = 0 ; i < r.length ; i++)
+                    {
+                        Row row = rows.get(i);
+                        r[i] = new ByteBuffer[row.getColumnDefinitions().size() - 1];
+                        for (int j = 1 ; j < row.getColumnDefinitions().size() ; j++)
+                            r[i][j - 1] = row.getBytes(j);
+                    }
+                    return r;
+                }
+            };
+        }
+
+        @Override
+        public Function<ResultMessage, ByteBuffer[][]> thriftHandler()
+        {
+            return new Function<ResultMessage, ByteBuffer[][]>()
+            {
+
+                @Override
+                public ByteBuffer[][] apply(ResultMessage result)
+                {
+                    if (!(result instanceof ResultMessage.Rows))
+                        return new ByteBuffer[0][];
+
+                    ResultMessage.Rows rows = ((ResultMessage.Rows) result);
+                    ByteBuffer[][] r = new ByteBuffer[rows.result.size()][];
+                    for (int i = 0 ; i < r.length ; i++)
+                    {
+                        List<ByteBuffer> row = rows.result.rows.get(i);
+                        r[i] = new ByteBuffer[row.size()];
+                        for (int j = 0 ; j < row.size() ; j++)
+                            r[i][j] = row.get(j);
+                    }
+                    return r;
+                }
+            };
+        }
+
+        @Override
+        public Function<CqlResult, ByteBuffer[][]> simpleNativeHandler()
+        {
+            return new Function<CqlResult, ByteBuffer[][]>()
+            {
+
+                @Override
+                public ByteBuffer[][] apply(CqlResult result)
+                {
+                    ByteBuffer[][] r = new ByteBuffer[result.getRows().size()][];
+                    for (int i = 0 ; i < r.length ; i++)
+                    {
+                        CqlRow row = result.getRows().get(i);
+                        r[i] = new ByteBuffer[row.getColumns().size()];
+                        for (int j = 0 ; j < r[i].length ; j++)
+                            r[i][j] = ByteBuffer.wrap(row.getColumns().get(j).getValue());
+                    }
+                    return r;
+                }
+            };
+        }
+
+    }
     // Processes results from each client into an array of all key bytes returned
     protected static final class KeysHandler implements ResultHandler<byte[][]>
     {
@@ -517,11 +595,9 @@ public abstract class CqlOperation<V> extends Operation
 
     }
 
-    private static String getUnQuotedCqlBlob(ByteBuffer term, boolean isCQL3)
+    private static String getUnQuotedCqlBlob(ByteBuffer term)
     {
-        return isCQL3
-                ? "0x" + ByteBufferUtil.bytesToHex(term)
-                : ByteBufferUtil.bytesToHex(term);
+        return "0x" + ByteBufferUtil.bytesToHex(term);
     }
 
     /**
@@ -532,7 +608,7 @@ public abstract class CqlOperation<V> extends Operation
      * @param parms sequence of string query parameters
      * @return formatted CQL query string
      */
-    private static String formatCqlQuery(String query, List<ByteBuffer> parms, boolean isCql3)
+    private static String formatCqlQuery(String query, List<ByteBuffer> parms)
     {
         int marker, position = 0;
         StringBuilder result = new StringBuilder();
@@ -543,7 +619,7 @@ public abstract class CqlOperation<V> extends Operation
         for (ByteBuffer parm : parms)
         {
             result.append(query.substring(position, marker));
-            result.append(getUnQuotedCqlBlob(parm, isCql3));
+            result.append(getUnQuotedCqlBlob(parm));
 
             position = marker + 1;
             if (-1 == (marker = query.indexOf('?', position + 1)))
@@ -556,11 +632,9 @@ public abstract class CqlOperation<V> extends Operation
         return result.toString();
     }
 
-    protected String wrapInQuotesIfRequired(String string)
+    protected String wrapInQuotes(String string)
     {
-        return state.settings.mode.cqlVersion == CqlVersion.CQL3
-                ? "\"" + string + "\""
-                : string;
+        return "\"" + string + "\"";
     }
 
 }

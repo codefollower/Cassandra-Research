@@ -24,7 +24,6 @@ import com.yammer.metrics.core.*;
 import com.yammer.metrics.util.RatioGauge;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.utils.EstimatedHistogram;
@@ -34,10 +33,14 @@ import org.apache.cassandra.utils.EstimatedHistogram;
  */
 public class ColumnFamilyMetrics
 {
-    /** Total amount of data stored in the memtable, including column related overhead. */
-    public final Gauge<Long> memtableDataSize;
-    /** Total amount of data stored in the memtables (2i and pending flush memtables included). */
-    public final Gauge<Long> allMemtablesDataSize;
+    /** Total amount of data stored in the memtable that resides on-heap, including column related overhead and overwritten rows. */
+    public final Gauge<Long> memtableHeapSize;
+    /** Total amount of live data stored in the memtable, excluding any data structure overhead */
+    public final Gauge<Long> memtableLiveDataSize;
+    /** Total amount of data stored in the memtables (2i and pending flush memtables included) that resides on-heap. */
+    public final Gauge<Long> allMemtablesHeapSize;
+    /** Total amount of live data stored in the memtables (2i and pending flush memtables included) that resides off-heap, excluding any data structure overhead */
+    public final Gauge<Long> allMemtablesLiveDataSize;
     /** Total number of columns present in the memtable. */
     public final Gauge<Long> memtableColumnsCount;
     /** Number of times flush has resulted in the memtable being switched out. */
@@ -55,7 +58,7 @@ public class ColumnFamilyMetrics
     /** (Local) write metrics */
     public final LatencyMetrics writeLatency;
     /** Estimated number of tasks pending for this column family */
-    public final Gauge<Integer> pendingTasks;
+    public final Counter pendingFlushes;
     /** Number of SSTables on disk for this CF */
     public final Gauge<Integer> liveSSTableCount;
     /** Disk space used by SSTables belonging to this CF */
@@ -86,9 +89,18 @@ public class ColumnFamilyMetrics
     public final Histogram liveScannedHistogram;
     /** Disk space used by snapshot files which */
     public final Gauge<Long> trueSnapshotsSize;
+    /** Row cache hits, but result out of range */
+    public final Counter rowCacheHitOutOfRange;
+    /** Number of row cache hits */
+    public final Counter rowCacheHit;
+    /** Number of row cache misses */
+    public final Counter rowCacheMiss;
 
     public final Timer coordinatorReadLatency;
     public final Timer coordinatorScanLatency;
+
+    /** Time spent waiting for free memtable space, either on- or off-heap */
+    public final Timer waitingOnFreeMemtableSpace;
 
     private final MetricNameFactory factory;
 
@@ -97,6 +109,7 @@ public class ColumnFamilyMetrics
     // for backward compatibility
     @Deprecated public final EstimatedHistogram sstablesPerRead = new EstimatedHistogram(35);
     @Deprecated public final EstimatedHistogram recentSSTablesPerRead = new EstimatedHistogram(35);
+
 
     /**
      * Creates metrics for given {@link ColumnFamilyStore}.
@@ -111,21 +124,41 @@ public class ColumnFamilyMetrics
         {
             public Long value()
             {
-                return cfs.getDataTracker().getMemtable().getOperations();
+                return cfs.getDataTracker().getView().getCurrentMemtable().getOperations();
             }
         });
-        memtableDataSize = Metrics.newGauge(factory.createMetricName("MemtableDataSize"), new Gauge<Long>()
+        memtableHeapSize = Metrics.newGauge(factory.createMetricName("MemtableHeapSize"), new Gauge<Long>()
         {
             public Long value()
             {
-                return cfs.getDataTracker().getMemtable().getLiveSize();
+                return cfs.getDataTracker().getView().getCurrentMemtable().getAllocator().owns();
             }
         });
-        allMemtablesDataSize = Metrics.newGauge(factory.createMetricName("AllMemtablesDataSize"), new Gauge<Long>()
+        memtableLiveDataSize = Metrics.newGauge(factory.createMetricName("MemtableLiveDataSize"), new Gauge<Long>()
         {
             public Long value()
             {
-                return cfs.getTotalAllMemtablesLiveSize();
+                return cfs.getDataTracker().getView().getCurrentMemtable().getLiveDataSize();
+            }
+        });
+        allMemtablesHeapSize = Metrics.newGauge(factory.createMetricName("AllMemtablesHeapSize"), new Gauge<Long>()
+        {
+            public Long value()
+            {
+                long size = 0;
+                for (ColumnFamilyStore cfs2 : cfs.concatWithIndexes())
+                    size += cfs2.getDataTracker().getView().getCurrentMemtable().getAllocator().owns();
+                return size;
+            }
+        });
+        allMemtablesLiveDataSize = Metrics.newGauge(factory.createMetricName("AllMemtablesLiveDataSize"), new Gauge<Long>()
+        {
+            public Long value()
+            {
+                long size = 0;
+                for (ColumnFamilyStore cfs2 : cfs.concatWithIndexes())
+                    size += cfs2.getDataTracker().getView().getCurrentMemtable().getLiveDataSize();
+                return size;
             }
         });
         memtableSwitchCount = Metrics.newCounter(factory.createMetricName("MemtableSwitchCount"));
@@ -177,14 +210,7 @@ public class ColumnFamilyMetrics
         });
         readLatency = new LatencyMetrics(factory, "Read");
         writeLatency = new LatencyMetrics(factory, "Write");
-        pendingTasks = Metrics.newGauge(factory.createMetricName("PendingTasks"), new Gauge<Integer>()
-        {
-            public Integer value()
-            {
-                // TODO this actually isn't a good measure of pending tasks
-                return Keyspace.switchLock.getQueueLength();
-            }
-        });
+        pendingFlushes = Metrics.newCounter(factory.createMetricName("PendingFlushes"));
         liveSSTableCount = Metrics.newGauge(factory.createMetricName("LiveSSTableCount"), new Gauge<Integer>()
         {
             public Integer value()
@@ -228,8 +254,9 @@ public class ColumnFamilyMetrics
                 long count = 0;
                 for (SSTableReader sstable : cfs.getSSTables())
                 {
-                    sum += sstable.getEstimatedRowSize().mean();
-                    count++;
+                    long n = sstable.getEstimatedRowSize().count();
+                    sum += sstable.getEstimatedRowSize().mean() * n;
+                    count += n;
                 }
                 return count > 0 ? sum / count : 0;
             }
@@ -319,7 +346,8 @@ public class ColumnFamilyMetrics
         liveScannedHistogram = Metrics.newHistogram(factory.createMetricName("LiveScannedHistogram"), true);
         coordinatorReadLatency = Metrics.newTimer(factory.createMetricName("CoordinatorReadLatency"), TimeUnit.MICROSECONDS, TimeUnit.SECONDS);
         coordinatorScanLatency = Metrics.newTimer(factory.createMetricName("CoordinatorScanLatency"), TimeUnit.MICROSECONDS, TimeUnit.SECONDS);
-        
+        waitingOnFreeMemtableSpace = Metrics.newTimer(factory.createMetricName("WaitingOnFreeMemtableSpace"), TimeUnit.MICROSECONDS, TimeUnit.SECONDS);
+
         trueSnapshotsSize = Metrics.newGauge(factory.createMetricName("SnapshotsSize"), new Gauge<Long>()
         {
             public Long value()
@@ -327,6 +355,9 @@ public class ColumnFamilyMetrics
                 return cfs.trueSnapshotsSize();
             }
         });
+        rowCacheHitOutOfRange = Metrics.newCounter(factory.createMetricName("RowCacheHitOutOfRange"));
+        rowCacheHit = Metrics.newCounter(factory.createMetricName("RowCacheHit"));
+        rowCacheMiss = Metrics.newCounter(factory.createMetricName("RowCacheMiss"));
     }
 
     public void updateSSTableIterated(int count)
@@ -351,7 +382,7 @@ public class ColumnFamilyMetrics
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("EstimatedRowSizeHistogram"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("EstimatedColumnCountHistogram"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("SSTablesPerReadHistogram"));
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName("PendingTasks"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("PendingFlushes"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("LiveSSTableCount"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("LiveDiskSpaceUsed"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("TotalDiskSpaceUsed"));
@@ -370,6 +401,9 @@ public class ColumnFamilyMetrics
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("CoordinatorReadLatency"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("CoordinatorScanLatency"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("SnapshotsSize"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHitOutOfRange"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHit"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHitMiss"));
     }
 
     class ColumnFamilyMetricNameFactory implements MetricNameFactory
@@ -400,4 +434,5 @@ public class ColumnFamilyMetrics
             return new MetricName(groupName, type, metricName, keyspaceName + "." + columnFamilyName, mbeanName.toString());
         }
     }
+
 }

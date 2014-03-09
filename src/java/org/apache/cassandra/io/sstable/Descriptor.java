@@ -78,6 +78,7 @@ public class Descriptor
         public final boolean hasPostCompressionAdlerChecksums;
         public final boolean hasSamplingLevel;
         public final boolean newStatsFile;
+        public final boolean hasRepairedAt;
 
         public Version(String version)
         {
@@ -92,6 +93,7 @@ public class Descriptor
             hasPostCompressionAdlerChecksums = version.compareTo("jb") >= 0;
             hasSamplingLevel = version.compareTo("ka") >= 0;
             newStatsFile = version.compareTo("ka") >= 0;
+            hasRepairedAt = version.compareTo("ka") >= 0;
         }
 
         /**
@@ -203,7 +205,18 @@ public class Descriptor
     public static Descriptor fromFilename(String filename)
     {
         File file = new File(filename);
-        return fromFilename(file.getParentFile(), file.getName()).left;
+        return fromFilename(file.getParentFile(), file.getName(), false).left;
+    }
+
+    public static Descriptor fromFilename(String filename, boolean skipComponent)
+    {
+        File file = new File(filename);
+        return fromFilename(file.getParentFile(), file.getName(), skipComponent).left;
+    }
+
+    public static Pair<Descriptor,String> fromFilename(File directory, String name)
+    {
+        return fromFilename(directory, name, false);
     }
 
     /**
@@ -211,11 +224,12 @@ public class Descriptor
      *
      * @param directory The directory of the SSTable files
      * @param name The name of the SSTable file
+     * @param skipComponent true if the name param should not be parsed for a component tag
      *
      * @return A Descriptor for the SSTable, and the Component remainder.
      */
     //见Component.fromFilename(File, String)中的注释
-    public static Pair<Descriptor,String> fromFilename(File directory, String name)
+    public static Pair<Descriptor,String> fromFilename(File directory, String name, boolean skipComponent)
     {
         // tokenize the filename
         StringTokenizer st = new StringTokenizer(name, String.valueOf(separator));
@@ -242,7 +256,9 @@ public class Descriptor
         int generation = Integer.parseInt(nexttok);
 
         // component suffix
-        String component = st.nextToken();
+        String component = null;
+        if (!skipComponent)
+            component = st.nextToken();
         directory = directory != null ? directory : new File(".");
         return Pair.create(new Descriptor(version, directory, ksname, cfname, generation, temporary), component);
     }

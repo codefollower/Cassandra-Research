@@ -44,12 +44,14 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.LexicalUUIDType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
+import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -100,15 +102,14 @@ public class ColumnFamilyStoreTest extends SchemaLoader
     }
 
     @Test
-    public void testGetColumnWithWrongBF() throws IOException, ExecutionException, InterruptedException
+    public void testGetColumnWithWrongBF()
     {
         Keyspace keyspace = Keyspace.open("Keyspace1");
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore("Standard1");
         cfs.truncateBlocking();
 
-        List<IMutation> rms = new LinkedList<IMutation>();
-        Mutation rm;
-        rm = new Mutation("Keyspace1", ByteBufferUtil.bytes("key1"));
+        List<Mutation> rms = new LinkedList<>();
+        Mutation rm = new Mutation("Keyspace1", ByteBufferUtil.bytes("key1"));
         rm.add("Standard1", cellname("Column1"), ByteBufferUtil.bytes("asdf"), 0);
         rm.add("Standard1", cellname("Column2"), ByteBufferUtil.bytes("asdf"), 0);
         rms.add(rm);
@@ -152,11 +153,11 @@ public class ColumnFamilyStoreTest extends SchemaLoader
     }
 
     @Test
-    public void testSkipStartKey() throws IOException, ExecutionException, InterruptedException
+    public void testSkipStartKey()
     {
         ColumnFamilyStore cfs = insertKey1Key2();
 
-        IPartitioner p = StorageService.getPartitioner();
+        IPartitioner<?> p = StorageService.getPartitioner();
         List<Row> result = cfs.getRangeSlice(Util.range(p, "key1", "key2"),
                                              null,
                                              Util.namesFilter(cfs, "asdf"),
@@ -678,7 +679,51 @@ public class ColumnFamilyStoreTest extends SchemaLoader
     }
 
     @Test
-    public void testInclusiveBounds() throws IOException, ExecutionException, InterruptedException
+    public void testCassandra6778() throws CharacterCodingException
+    {
+        String cfname = "StandardInteger1";
+        Keyspace keyspace = Keyspace.open("Keyspace1");
+        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
+
+        // insert two columns that represent the same integer but have different binary forms (the
+        // second one is padded with extra zeros)
+        Mutation rm = new Mutation("Keyspace1", ByteBufferUtil.bytes("k1"));
+        CellName column1 = cellname(ByteBuffer.wrap(new byte[]{1}));
+        rm.add(cfname, column1, ByteBufferUtil.bytes("data1"), 1);
+        rm.apply();
+        cfs.forceBlockingFlush();
+
+        rm = new Mutation("Keyspace1", ByteBufferUtil.bytes("k1"));
+        CellName column2 = cellname(ByteBuffer.wrap(new byte[]{0, 0, 1}));
+        rm.add(cfname, column2, ByteBufferUtil.bytes("data2"), 2);
+        rm.apply();
+        cfs.forceBlockingFlush();
+
+        // fetch by the first column name; we should get the second version of the column value
+        SliceByNamesReadCommand cmd = new SliceByNamesReadCommand(
+            "Keyspace1", ByteBufferUtil.bytes("k1"), cfname, System.currentTimeMillis(),
+            new NamesQueryFilter(FBUtilities.singleton(column1, cfs.getComparator())));
+
+        ColumnFamily cf = cmd.getRow(keyspace).cf;
+        assertEquals(1, cf.getColumnCount());
+        Cell cell = cf.getColumn(column1);
+        assertEquals("data2", ByteBufferUtil.string(cell.value()));
+        assertEquals(column2, cell.name());
+
+        // fetch by the second column name; we should get the second version of the column value
+        cmd = new SliceByNamesReadCommand(
+            "Keyspace1", ByteBufferUtil.bytes("k1"), cfname, System.currentTimeMillis(),
+            new NamesQueryFilter(FBUtilities.singleton(column2, cfs.getComparator())));
+
+        cf = cmd.getRow(keyspace).cf;
+        assertEquals(1, cf.getColumnCount());
+        cell = cf.getColumn(column2);
+        assertEquals("data2", ByteBufferUtil.string(cell.value()));
+        assertEquals(column2, cell.name());
+    }
+
+    @Test
+    public void testInclusiveBounds()
     {
         ColumnFamilyStore cfs = insertKey1Key2();
 
@@ -774,7 +819,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
     private static void putColsSuper(ColumnFamilyStore cfs, DecoratedKey key, ByteBuffer scfName, Cell... cols) throws Throwable
     {
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfs.keyspace.getName(), cfs.name);
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(cfs.keyspace.getName(), cfs.name);
         for (Cell col : cols)
             cf.addColumn(col.withUpdatedName(CellNames.compositeDense(scfName, col.name().toByteBuffer())));
         Mutation rm = new Mutation(cfs.keyspace.getName(), key.key, cf);
@@ -783,7 +828,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
     private static void putColsStandard(ColumnFamilyStore cfs, DecoratedKey key, Cell... cols) throws Throwable
     {
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfs.keyspace.getName(), cfs.name);
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(cfs.keyspace.getName(), cfs.name);
         for (Cell col : cols)
             cf.addColumn(col);
         Mutation rm = new Mutation(cfs.keyspace.getName(), key.key, cf);
@@ -847,10 +892,10 @@ public class ColumnFamilyStoreTest extends SchemaLoader
     }
 
 
-    private ColumnFamilyStore insertKey1Key2() throws IOException, ExecutionException, InterruptedException
+    private ColumnFamilyStore insertKey1Key2()
     {
         ColumnFamilyStore cfs = Keyspace.open("Keyspace2").getColumnFamilyStore("Standard1");
-        List<IMutation> rms = new LinkedList<IMutation>();
+        List<Mutation> rms = new LinkedList<>();
         Mutation rm;
         rm = new Mutation("Keyspace2", ByteBufferUtil.bytes("key1"));
         rm.add("Standard1", cellname("Column1"), ByteBufferUtil.bytes("asdf"), 0);
@@ -870,7 +915,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
         for (int version = 1; version <= 2; ++version)
         {
-            Descriptor existing = new Descriptor(cfs.directories.getDirectoryForNewSSTables(), "Keyspace2", "Standard1", version, false);
+            Descriptor existing = new Descriptor(cfs.directories.getDirectoryForCompactedSSTables(), "Keyspace2", "Standard1", version, false);
             Descriptor desc = new Descriptor(Directories.getBackupsDirectory(existing), "Keyspace2", "Standard1", version, false);
             for (Component c : new Component[]{ Component.DATA, Component.PRIMARY_INDEX, Component.FILTER, Component.STATS })
                 assertTrue("can not find backedup file:" + desc.filenameFor(c), new File(desc.filenameFor(c)).exists());
@@ -1576,7 +1621,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         ByteBuffer key = bytes("key");
 
         // 1st sstable
-        SSTableSimpleWriter writer = new SSTableSimpleWriter(dir.getDirectoryForNewSSTables(), cfmeta, StorageService.getPartitioner());
+        SSTableSimpleWriter writer = new SSTableSimpleWriter(dir.getDirectoryForCompactedSSTables(), cfmeta, StorageService.getPartitioner());
         writer.newRow(key);
         writer.addColumn(bytes("col"), bytes("val"), 1);
         writer.close();
@@ -1588,7 +1633,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         final SSTableReader sstable1 = SSTableReader.open(sstableToOpen.getKey());
 
         // simulate incomplete compaction
-        writer = new SSTableSimpleWriter(dir.getDirectoryForNewSSTables(),
+        writer = new SSTableSimpleWriter(dir.getDirectoryForCompactedSSTables(),
                                          cfmeta, StorageService.getPartitioner())
         {
             protected SSTableWriter getWriter()
@@ -1597,6 +1642,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
                 collector.addAncestor(sstable1.descriptor.generation); // add ancestor from previously written sstable
                 return new SSTableWriter(makeFilename(directory, metadata.ksName, metadata.cfName),
                                          0,
+                                         ActiveRepairService.UNREPAIRED_SSTABLE,
                                          metadata,
                                          StorageService.getPartitioner(),
                                          collector);
@@ -1642,7 +1688,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
         // Write SSTable generation 3 that has ancestors 1 and 2
         final Set<Integer> ancestors = Sets.newHashSet(1, 2);
-        SSTableSimpleWriter writer = new SSTableSimpleWriter(dir.getDirectoryForNewSSTables(),
+        SSTableSimpleWriter writer = new SSTableSimpleWriter(dir.getDirectoryForCompactedSSTables(),
                                                 cfmeta, StorageService.getPartitioner())
         {
             protected SSTableWriter getWriter()
@@ -1653,6 +1699,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
                 String file = new Descriptor(directory, ks, cf, 3, true).filenameFor(Component.DATA);
                 return new SSTableWriter(file,
                                          0,
+                                         ActiveRepairService.UNREPAIRED_SSTABLE,
                                          metadata,
                                          StorageService.getPartitioner(),
                                          collector);
@@ -1716,8 +1763,6 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
     private void testMultiRangeSlicesBehavior(ColumnFamilyStore cfs)
     {
-        CellNameType type = cfs.getComparator();
-
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] startMiddleAndEndRanges = new ColumnSlice[] {

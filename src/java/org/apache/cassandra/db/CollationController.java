@@ -30,7 +30,6 @@ import org.apache.cassandra.db.marshal.CounterColumnType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.HeapAllocator;
 
 //校对控制器
 public class CollationController
@@ -64,15 +63,9 @@ public class CollationController
     private ColumnFamily collectTimeOrderedData()
     {
         final ColumnFamily container = ArrayBackedSortedColumns.factory.create(cfs.metadata, filter.filter.isReversed());
-        List<OnDiskAtomIterator> iterators = new ArrayList<OnDiskAtomIterator>();
+        List<OnDiskAtomIterator> iterators = new ArrayList<>();
         Tracing.trace("Acquiring sstable references");
         ColumnFamilyStore.ViewFragment view = cfs.markReferenced(filter.key);
-
-        // We use a temporary CF object per memtable or sstable source so we can accomodate this.factory being ABSC,
-        // which requires addAtom to happen in sorted order.  Then we use addAll to merge into the final collection,
-        // which allows a (sorted) set of columns to be merged even if they are not uniformly sorted after the existing
-        // ones.
-        ColumnFamily temp = ArrayBackedSortedColumns.factory.create(cfs.metadata, filter.filter.isReversed());
 
         try
         {
@@ -83,13 +76,10 @@ public class CollationController
                 if (iter != null)
                 {
                     iterators.add(iter);
-                    temp.delete(iter.getColumnFamily());
+                    filter.delete(container.deletionInfo(), iter.getColumnFamily());
                     while (iter.hasNext())
-                        temp.addAtom(iter.next());
+                        container.addAtom(iter.next());
                 }
-
-                container.addAll(temp, HeapAllocator.instance);
-                temp.clear();
             }
 
             // avoid changing the filter columns of the original filter
@@ -124,14 +114,11 @@ public class CollationController
                     ColumnFamily cf = iter.getColumnFamily();
                     if (cf.isMarkedForDelete())
                         mostRecentRowTombstone = cf.deletionInfo().getTopLevelDeletion().markedForDeleteAt;
-                    temp.delete(cf);
+                    container.delete(cf);
                     sstablesIterated++;
                     while (iter.hasNext())
-                        temp.addAtom(iter.next());
+                        container.addAtom(iter.next());
                 }
-
-                container.addAll(temp, HeapAllocator.instance);
-                temp.clear();
             }
 
             // we need to distinguish between "there is no data at all for this row" (BF will let us rebuild that efficiently)
@@ -191,9 +178,9 @@ public class CollationController
     {
         Tracing.trace("Acquiring sstable references");
         ColumnFamilyStore.ViewFragment view = cfs.markReferenced(filter.key);
-        List<OnDiskAtomIterator> iterators = new ArrayList<OnDiskAtomIterator>(Iterables.size(view.memtables) + view.sstables.size());
+        List<OnDiskAtomIterator> iterators = new ArrayList<>(Iterables.size(view.memtables) + view.sstables.size());
         ColumnFamily returnCF = ArrayBackedSortedColumns.factory.create(cfs.metadata, filter.filter.isReversed());
-
+        DeletionInfo returnDeletionInfo = returnCF.deletionInfo();
         try
         {
             Tracing.trace("Merging memtable tombstones");
@@ -202,7 +189,7 @@ public class CollationController
                 OnDiskAtomIterator iter = filter.getMemtableColumnIterator(memtable);
                 if (iter != null)
                 {
-                    returnCF.delete(iter.getColumnFamily());
+                    filter.delete(returnDeletionInfo, iter.getColumnFamily());
                     iterators.add(iter);
                 }
             }
@@ -240,7 +227,7 @@ public class CollationController
                     if (sstable.getSSTableMetadata().maxLocalDeletionTime != Integer.MAX_VALUE)
                     {
                         if (skippedSSTables == null)
-                            skippedSSTables = new ArrayList<SSTableReader>();
+                            skippedSSTables = new ArrayList<>();
                         skippedSSTables.add(sstable);
                     }
                     continue;

@@ -13,6 +13,15 @@ restore snapshots created with the previous major version using the
 'sstableloader' tool. You can upgrade the file format of your snapshots
 using the provided 'sstableupgrade' tool.
 
+3.0
+===
+
+Upgrading
+---------
+   - CQL2 has been removed entirely in this release (previously deprecated
+     in 2.0.0). Please switch to CQL3 if you haven't already done so.
+
+
 2.1
 ===
 
@@ -25,10 +34,15 @@ New features
      Note that existing directories are used as is, so only newly created
      directories after upgrade have new directory name format.
    - Saved key cache files also have ColumnFamily ID in their file name.
+   - It is now possible to do incremental repairs, sstables that have been
+     repaired are marked with a timestamp and not included in the next
+     repair session. Use nodetool repair -par -inc to use this feature.
+     A tool to manually mark/unmark sstables as repaired is available in
+     tools/bin/sstablerepairedset.
 
 Upgrading
 ---------
-   - Rolling upgrades from anything pre-2.0 is not supported.
+   - Rolling upgrades from anything pre-2.0.6 is not supported.
    - For leveled compaction users, 2.0 must be atleast started before
      upgrading to 2.1 due to the fact that the old JSON leveled
      manifest is migrated into the sstable metadata files on startup
@@ -38,14 +52,45 @@ Upgrading
      cold_reads_to_omit compaction option; 0.0 omits nothing (the old
      behavior) and 1.0 omits everything.
    - Multithreaded compaction has been removed.
+   - Counters implementation has been changed, replaced by a safer one with
+     less caveats, but different performance characteristics. You might have
+     to change your data model to accomodate the new implementation.
+     (See https://issues.apache.org/jira/browse/CASSANDRA-6504 and the dev
+     blog post at http://www.datastax.com/dev/blog/<PLACEHOLDER> for details).
+    - (per-table) index_interval parameter has been replaced with
+     min_index_interval and max_index_interval paratemeters. index_interval
+     has been deprecated.
+
+
+2.0.6
+=====
+
+New features
+------------
+    - CQL now support static columns, allows to batch multiple conditional updates
+      and has a new syntax for slicing over multiple clustering columns
+      (http://goo.gl/B6qz4j).
+    - Repair can be restricted to a set of nodes using the -hosts option in nodetool.
+    - A new 'nodetool taketoken' command relocate tokens with vnodes.
+    - Hinted handoff can be enabled only for some data-centers (see
+      hinted_handoff_enabled in cassandra.yaml)
+
+Upgrading
+---------
+    - Nothing specific to this release, but please see 2.0.6 if you are upgrading
+      from a previous version.
+
 
 2.0.5
 =====
 
 New features
---------
+------------
     - Batchlog replay can be, and is throttled by default now.
       See batchlog_replay_throttle_in_kb setting in cassandra.yaml.
+    - Scrub can now optionally skip corrupt counter partitions. Please note
+      that this will lead to the loss of all the counter updates in the skipped
+      partition. See the --skip-corrupted option.
 
 Upgrading
 ---------

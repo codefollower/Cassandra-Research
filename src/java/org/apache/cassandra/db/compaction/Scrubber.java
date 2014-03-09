@@ -27,6 +27,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
+import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.OutputHandler;
 
@@ -35,6 +36,7 @@ public class Scrubber implements Closeable
     public final ColumnFamilyStore cfs;
     public final SSTableReader sstable;
     public final File destination;
+    public final boolean skipCorrupted;
 
     private final CompactionController controller;
     private final boolean isCommutative;
@@ -63,19 +65,20 @@ public class Scrubber implements Closeable
     };
     private final SortedSet<Row> outOfOrderRows = new TreeSet<>(rowComparator);
 
-    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable) throws IOException
+    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, boolean skipCorrupted) throws IOException
     {
-        this(cfs, sstable, new OutputHandler.LogOutput(), false);
+        this(cfs, sstable, skipCorrupted, new OutputHandler.LogOutput(), false);
     }
 
-    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, OutputHandler outputHandler, boolean isOffline) throws IOException
+    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, boolean skipCorrupted, OutputHandler outputHandler, boolean isOffline) throws IOException
     {
         this.cfs = cfs;
         this.sstable = sstable;
         this.outputHandler = outputHandler;
+        this.skipCorrupted = skipCorrupted;
 
         // Calculate the expected compacted filesize
-        this.destination = cfs.directories.getDirectoryForNewSSTables();
+        this.destination = cfs.directories.getDirectoryForCompactedSSTables();
         if (destination == null)
             throw new IOException("disk full");
 
@@ -85,7 +88,7 @@ public class Scrubber implements Closeable
                         ? new ScrubController(cfs)
                         : new CompactionController(cfs, Collections.singleton(sstable), CompactionManager.getDefaultGcBefore(cfs));
         this.isCommutative = cfs.metadata.isCounter();
-        this.expectedBloomFilterSize = Math.max(cfs.metadata.getIndexInterval(), (int)(SSTableReader.getApproximateKeyCount(toScrub)));
+        this.expectedBloomFilterSize = Math.max(cfs.metadata.getMinIndexInterval(), (int)(SSTableReader.getApproximateKeyCount(toScrub)));
 
         // loop through each row, deserializing to check for damage.
         // we'll also loop through the index at the same time, using the position from the index to recover if the
@@ -111,7 +114,7 @@ public class Scrubber implements Closeable
             }
 
             // TODO errors when creating the writer may leave empty temp files.
-            writer = CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, sstable);
+            writer = CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, sstable.getSSTableMetadata().repairedAt, sstable);
 
             DecoratedKey prevKey = null;
 
@@ -166,7 +169,9 @@ public class Scrubber implements Closeable
                 if (!sstable.descriptor.version.hasRowSizeAndColumnCount)
                 {
                     dataSize = dataSizeFromIndex;
-                    outputHandler.debug(String.format("row %s is %s bytes", ByteBufferUtil.bytesToHex(key.key), dataSize));
+                    // avoid an NPE if key is null
+                    String keyName = key == null ? "(unreadable key)" : ByteBufferUtil.bytesToHex(key.key);
+                    outputHandler.debug(String.format("row %s is %s bytes", keyName, dataSize));
                 }
                 else
                 {
@@ -203,7 +208,7 @@ public class Scrubber implements Closeable
                 catch (Throwable th)
                 {
                     throwIfFatal(th);
-                    outputHandler.warn("Non-fatal error reading row (stacktrace follows)", th);
+                    outputHandler.warn("Error reading row (stacktrace follows):", th);
                     writer.resetAndTruncate();
 
                     if (currentIndexKey != null
@@ -231,9 +236,7 @@ public class Scrubber implements Closeable
                         catch (Throwable th2)
                         {
                             throwIfFatal(th2);
-                            // Skipping rows is dangerous for counters (see CASSANDRA-2759)
-                            if (isCommutative)
-                                throw new IOError(th2);
+                            throwIfCommutative(key, th2);
 
                             outputHandler.warn("Retry failed too. Skipping to next row (retry's stacktrace follows)", th2);
                             writer.resetAndTruncate();
@@ -243,11 +246,9 @@ public class Scrubber implements Closeable
                     }
                     else
                     {
-                        // Skipping rows is dangerous for counters (see CASSANDRA-2759)
-                        if (isCommutative)
-                            throw new IOError(th);
+                        throwIfCommutative(key, th);
 
-                        outputHandler.warn("Row at " + dataStart + " is unreadable; skipping to next");
+                        outputHandler.warn("Row starting at position " + dataStart + " is unreadable; skipping to next");
                         if (currentIndexKey != null)
                             dataFile.seek(nextRowPositionFromIndex);
                         badRows++;
@@ -256,7 +257,10 @@ public class Scrubber implements Closeable
             }
 
             if (writer.getFilePointer() > 0)
-                newSstable = writer.closeAndOpenReader(sstable.maxDataAge);
+            {
+                long repairedAt = badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : sstable.getSSTableMetadata().repairedAt;
+                newSstable = writer.closeAndOpenReader(sstable.maxDataAge, repairedAt);
+            }
         }
         catch (Throwable t)
         {
@@ -271,7 +275,9 @@ public class Scrubber implements Closeable
 
         if (!outOfOrderRows.isEmpty())
         {
-            SSTableWriter inOrderWriter = CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, sstable);
+            // out of order rows, but no bad rows found - we can keep our repairedAt time
+            long repairedAt = badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : sstable.getSSTableMetadata().repairedAt;
+            SSTableWriter inOrderWriter = CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, repairedAt, sstable);
             for (Row row : outOfOrderRows)
                 inOrderWriter.append(row.key, row.cf);
             newInOrderSstable = inOrderWriter.closeAndOpenReader(sstable.maxDataAge);
@@ -299,7 +305,7 @@ public class Scrubber implements Closeable
         outputHandler.warn(String.format("Out of order row detected (%s found after %s)", key, prevKey));
         // adding atoms in sorted order is worst-case for TMBSC, but we shouldn't need to do this very often
         // and there's no sense in failing on mis-sorted cells when a TreeMap could safe us
-        ColumnFamily cf = atoms.getColumnFamily().cloneMeShallow(TreeMapBackedSortedColumns.factory, false);
+        ColumnFamily cf = atoms.getColumnFamily().cloneMeShallow(ArrayBackedSortedColumns.factory, false);
         while (atoms.hasNext())
         {
             OnDiskAtom atom = atoms.next();
@@ -322,6 +328,19 @@ public class Scrubber implements Closeable
     {
         if (th instanceof Error && !(th instanceof AssertionError || th instanceof IOError))
             throw (Error) th;
+    }
+
+    private void throwIfCommutative(DecoratedKey key, Throwable th)
+    {
+        if (isCommutative && !skipCorrupted)
+        {
+            outputHandler.warn(String.format("An error occurred while scrubbing the row with key '%s'.  Skipping corrupt " +
+                                             "rows in counter tables will result in undercounts for the affected " +
+                                             "counters (see CASSANDRA-2759 for more details), so by default the scrub will " +
+                                             "stop at this point.  If you would like to skip the row anyway and continue " +
+                                             "scrubbing, re-run the scrub with the --skip-corrupted option.", key));
+            throw new IOError(th);
+        }
     }
 
     public void close()

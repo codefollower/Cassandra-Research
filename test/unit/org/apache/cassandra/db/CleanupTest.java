@@ -31,18 +31,15 @@ import java.util.concurrent.TimeUnit;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
-import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.dht.BytesToken;
-import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.CounterId;
 import org.junit.Test;
 
 public class CleanupTest extends SchemaLoader
@@ -60,9 +57,9 @@ public class CleanupTest extends SchemaLoader
     }
 
     @Test
-    public void testCleanup() throws IOException, ExecutionException, InterruptedException, ConfigurationException
+    public void testCleanup() throws ExecutionException, InterruptedException
     {
-        StorageService.instance.initServer(0);
+        StorageService.instance.getTokenMetadata().clearUnsafe();
 
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF2);
@@ -79,7 +76,7 @@ public class CleanupTest extends SchemaLoader
         assertEquals(LOOPS, rows.size());
 
         // with one token in the ring, owned by the local node, cleanup should be a no-op
-        CompactionManager.instance.performCleanup(cfs, new CounterId.OneShotRenewer());
+        CompactionManager.instance.performCleanup(cfs);
 
         // ensure max timestamp of the sstables are retained post-cleanup
         assert expectedMaxTimestamps.equals(getMaxTimestampList(cfs));
@@ -111,7 +108,6 @@ public class CleanupTest extends SchemaLoader
         IndexExpression expr = new IndexExpression(COLUMN, IndexExpression.Operator.EQ, VALUE);
         List<IndexExpression> clause = Arrays.asList(expr);
         IDiskAtomFilter filter = new IdentityQueryFilter();
-        IPartitioner p = StorageService.getPartitioner();
         Range<RowPosition> range = Util.range("", "");
         rows = keyspace.getColumnFamilyStore(CF1).search(range, clause, filter, Integer.MAX_VALUE);
         assertEquals(LOOPS, rows.size());
@@ -125,7 +121,7 @@ public class CleanupTest extends SchemaLoader
         tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
         tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
 
-        CompactionManager.instance.performCleanup(cfs, new CounterId.OneShotRenewer());
+        CompactionManager.instance.performCleanup(cfs);
 
         // row data should be gone
         rows = Util.getRangeSlice(cfs);
@@ -139,7 +135,7 @@ public class CleanupTest extends SchemaLoader
         assertEquals(0, rows.size());
     }
 
-    protected void fillCF(ColumnFamilyStore cfs, int rowsPerSSTable) throws ExecutionException, InterruptedException, IOException
+    protected void fillCF(ColumnFamilyStore cfs, int rowsPerSSTable)
     {
         CompactionManager.instance.disableAutoCompaction();
 

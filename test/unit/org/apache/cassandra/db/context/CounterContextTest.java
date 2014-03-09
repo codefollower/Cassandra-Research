@@ -26,9 +26,15 @@ import java.nio.ByteBuffer;
 
 import org.junit.Test;
 
-import org.apache.cassandra.db.context.IContext.ContextRelationship;
+import org.apache.cassandra.db.ClockAndCount;
+import org.apache.cassandra.db.context.CounterContext.Relationship;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.utils.*;
+import org.apache.cassandra.utils.concurrent.OpOrder;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
+import org.apache.cassandra.utils.memory.HeapAllocator;
+import org.apache.cassandra.utils.memory.HeapPool;
+import org.apache.cassandra.utils.memory.Pool;
 
 import static org.apache.cassandra.db.context.CounterContext.ContextState;
 
@@ -43,10 +49,12 @@ public class CounterContextTest
     private static final int countLength = 8;
     private static final int stepLength = idLength + clockLength + countLength;
 
+    private static final Pool POOL = new HeapPool(Integer.MAX_VALUE, 1f, null);
+
     /** Allocates 1 byte from a new SlabAllocator and returns it. */
-    private Allocator bumpedSlab()
+    private AbstractAllocator bumpedSlab()
     {
-        SlabAllocator allocator = new SlabAllocator();
+        AbstractAllocator allocator = POOL.newAllocator(new OpOrder());
         allocator.allocate(1);
         return allocator;
     }
@@ -58,7 +66,7 @@ public class CounterContextTest
         runAllocate(bumpedSlab());
     }
 
-    private void runAllocate(Allocator allocator)
+    private void runAllocate(AbstractAllocator allocator)
     {
         ContextState allGlobal = ContextState.allocate(3, 0, 0, allocator);
         assertEquals(headerSizeLength + 3 * headerEltLength + 3 * stepLength, allGlobal.context.remaining());
@@ -80,7 +88,7 @@ public class CounterContextTest
         runDiff(bumpedSlab());
     }
 
-    private void runDiff(Allocator allocator)
+    private void runDiff(AbstractAllocator allocator)
     {
         ContextState left;
         ContextState right;
@@ -92,7 +100,7 @@ public class CounterContextTest
         left.writeRemote(CounterId.fromInt(9), 1L, 0L);
         right = ContextState.wrap(ByteBufferUtil.clone(left.context));
 
-        assertEquals(ContextRelationship.EQUAL, cc.diff(left.context, right.context));
+        assertEquals(Relationship.EQUAL, cc.diff(left.context, right.context));
 
         // greater than: left has superset of nodes (counts equal)
         left = ContextState.allocate(0, 0, 4, allocator);
@@ -106,7 +114,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 2L, 0L);
         right.writeRemote(CounterId.fromInt(9), 1L, 0L);
 
-        assertEquals(ContextRelationship.GREATER_THAN, cc.diff(left.context, right.context));
+        assertEquals(Relationship.GREATER_THAN, cc.diff(left.context, right.context));
 
         // less than: left has subset of nodes (counts equal)
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -120,7 +128,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(9),  1L, 0L);
         right.writeRemote(CounterId.fromInt(12), 0L, 0L);
 
-        assertEquals(ContextRelationship.LESS_THAN, cc.diff(left.context, right.context));
+        assertEquals(Relationship.LESS_THAN, cc.diff(left.context, right.context));
 
         // greater than: equal nodes, but left has higher counts
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -133,7 +141,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 2L, 0L);
         right.writeRemote(CounterId.fromInt(9), 1L, 0L);
 
-        assertEquals(ContextRelationship.GREATER_THAN, cc.diff(left.context, right.context));
+        assertEquals(Relationship.GREATER_THAN, cc.diff(left.context, right.context));
 
         // less than: equal nodes, but right has higher counts
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -146,7 +154,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 9L, 0L);
         right.writeRemote(CounterId.fromInt(9), 3L, 0L);
 
-        assertEquals(ContextRelationship.LESS_THAN, cc.diff(left.context, right.context));
+        assertEquals(Relationship.LESS_THAN, cc.diff(left.context, right.context));
 
         // disjoint: right and left have disjoint node sets
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -159,7 +167,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 1L, 0L);
         right.writeRemote(CounterId.fromInt(9), 1L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         left = ContextState.allocate(0, 0, 3, allocator);
         left.writeRemote(CounterId.fromInt(3), 1L, 0L);
@@ -171,7 +179,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6),  1L, 0L);
         right.writeRemote(CounterId.fromInt(12), 1L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         // disjoint: equal nodes, but right and left have higher counts in differing nodes
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -184,7 +192,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 1L, 0L);
         right.writeRemote(CounterId.fromInt(9), 5L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         left = ContextState.allocate(0, 0, 3, allocator);
         left.writeRemote(CounterId.fromInt(3), 2L, 0L);
@@ -196,7 +204,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 9L, 0L);
         right.writeRemote(CounterId.fromInt(9), 5L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         // disjoint: left has more nodes, but lower counts
         left = ContextState.allocate(0, 0, 4, allocator);
@@ -210,7 +218,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 9L, 0L);
         right.writeRemote(CounterId.fromInt(9), 5L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         // disjoint: left has less nodes, but higher counts
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -224,7 +232,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(9),  2L, 0L);
         right.writeRemote(CounterId.fromInt(12), 1L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         // disjoint: mixed nodes and counts
         left = ContextState.allocate(0, 0, 3, allocator);
@@ -238,7 +246,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(9),  2L, 0L);
         right.writeRemote(CounterId.fromInt(12), 1L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
 
         left = ContextState.allocate(0, 0, 4, allocator);
         left.writeRemote(CounterId.fromInt(3), 5L, 0L);
@@ -251,7 +259,7 @@ public class CounterContextTest
         right.writeRemote(CounterId.fromInt(6), 3L, 0L);
         right.writeRemote(CounterId.fromInt(9), 2L, 0L);
 
-        assertEquals(ContextRelationship.DISJOINT, cc.diff(left.context, right.context));
+        assertEquals(Relationship.DISJOINT, cc.diff(left.context, right.context));
     }
 
     @Test
@@ -261,7 +269,7 @@ public class CounterContextTest
         runMerge(bumpedSlab());
     }
 
-    private void runMerge(Allocator allocator)
+    private void runMerge(AbstractAllocator allocator)
     {
         // note: local counts aggregated; remote counts are reconciled (i.e. take max)
         ContextState left = ContextState.allocate(0, 1, 3, allocator);
@@ -388,7 +396,7 @@ public class CounterContextTest
         runTotal(bumpedSlab());
     }
 
-    private void runTotal(Allocator allocator)
+    private void runTotal(AbstractAllocator allocator)
     {
         ContextState mixed = ContextState.allocate(0, 1, 4, allocator);
         mixed.writeRemote(CounterId.fromInt(1), 1L, 1L);
@@ -411,7 +419,7 @@ public class CounterContextTest
         ContextState state;
         ByteBuffer marked;
         ByteBuffer cleared;
-        Allocator allocator = HeapAllocator.instance;
+        AbstractAllocator allocator = HeapAllocator.instance;
 
         // mark/clear for remote-only contexts is a no-op
         state = ContextState.allocate(0, 0, 1, allocator);
@@ -498,5 +506,68 @@ public class CounterContextTest
 
         cleared = cc.clearAllLocal(marked);
         assertSame(cleared, marked);
+    }
+
+    @Test
+    public void testFindPositionOf()
+    {
+        ContextState state = ContextState.allocate(3, 3, 3, HeapAllocator.instance);
+
+        state.writeGlobal(CounterId.fromInt(1), 1L, 1L);
+        state.writeRemote(CounterId.fromInt(2), 2L, 2L);
+        state.writeLocal( CounterId.fromInt(3), 3L, 3L);
+        state.writeGlobal(CounterId.fromInt(4), 4L, 4L);
+        state.writeRemote(CounterId.fromInt(5), 5L, 5L);
+        state.writeLocal( CounterId.fromInt(6), 6L, 6L);
+        state.writeGlobal(CounterId.fromInt(7), 7L, 7L);
+        state.writeRemote(CounterId.fromInt(8), 8L, 8L);
+        state.writeLocal(CounterId.fromInt(9), 9L, 9L);
+
+        int headerLength = headerSizeLength + 6 * headerEltLength;
+        assertEquals(headerLength, cc.findPositionOf(state.context, CounterId.fromInt(1)));
+        assertEquals(headerLength + stepLength, cc.findPositionOf(state.context, CounterId.fromInt(2)));
+        assertEquals(headerLength + 2 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(3)));
+        assertEquals(headerLength + 3 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(4)));
+        assertEquals(headerLength + 4 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(5)));
+        assertEquals(headerLength + 5 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(6)));
+        assertEquals(headerLength + 6 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(7)));
+        assertEquals(headerLength + 7 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(8)));
+        assertEquals(headerLength + 8 * stepLength, cc.findPositionOf(state.context, CounterId.fromInt(9)));
+
+        assertEquals(-1, cc.findPositionOf(state.context, CounterId.fromInt(0)));
+        assertEquals(-1, cc.findPositionOf(state.context, CounterId.fromInt(10)));
+        assertEquals(-1, cc.findPositionOf(state.context, CounterId.fromInt(15)));
+        assertEquals(-1, cc.findPositionOf(state.context, CounterId.fromInt(20)));
+    }
+
+    @Test
+    public void testGetGlockAndCountOf()
+    {
+        ContextState state = ContextState.allocate(3, 3, 3, HeapAllocator.instance);
+
+        state.writeGlobal(CounterId.fromInt(1), 1L, 1L);
+        state.writeRemote(CounterId.fromInt(2), 2L, 2L);
+        state.writeLocal( CounterId.fromInt(3), 3L, 3L);
+        state.writeGlobal(CounterId.fromInt(4), 4L, 4L);
+        state.writeRemote(CounterId.fromInt(5), 5L, 5L);
+        state.writeLocal( CounterId.fromInt(6), 6L, 6L);
+        state.writeGlobal(CounterId.fromInt(7), 7L, 7L);
+        state.writeRemote(CounterId.fromInt(8), 8L, 8L);
+        state.writeLocal(CounterId.fromInt(9), 9L, 9L);
+
+        assertEquals(ClockAndCount.create(1L, 1L), cc.getClockAndCountOf(state.context, CounterId.fromInt(1)));
+        assertEquals(ClockAndCount.create(2L, 2L), cc.getClockAndCountOf(state.context, CounterId.fromInt(2)));
+        assertEquals(ClockAndCount.create(3L, 3L), cc.getClockAndCountOf(state.context, CounterId.fromInt(3)));
+        assertEquals(ClockAndCount.create(4L, 4L), cc.getClockAndCountOf(state.context, CounterId.fromInt(4)));
+        assertEquals(ClockAndCount.create(5L, 5L), cc.getClockAndCountOf(state.context, CounterId.fromInt(5)));
+        assertEquals(ClockAndCount.create(6L, 6L), cc.getClockAndCountOf(state.context, CounterId.fromInt(6)));
+        assertEquals(ClockAndCount.create(7L, 7L), cc.getClockAndCountOf(state.context, CounterId.fromInt(7)));
+        assertEquals(ClockAndCount.create(8L, 8L), cc.getClockAndCountOf(state.context, CounterId.fromInt(8)));
+        assertEquals(ClockAndCount.create(9L, 9L), cc.getClockAndCountOf(state.context, CounterId.fromInt(9)));
+
+        assertEquals(ClockAndCount.create(0L, 0L), cc.getClockAndCountOf(state.context, CounterId.fromInt(0)));
+        assertEquals(ClockAndCount.create(0L, 0L), cc.getClockAndCountOf(state.context, CounterId.fromInt(10)));
+        assertEquals(ClockAndCount.create(0L, 0L), cc.getClockAndCountOf(state.context, CounterId.fromInt(15)));
+        assertEquals(ClockAndCount.create(0L, 0L), cc.getClockAndCountOf(state.context, CounterId.fromInt(20)));
     }
 }

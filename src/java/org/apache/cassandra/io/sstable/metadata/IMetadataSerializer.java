@@ -19,7 +19,6 @@ package org.apache.cassandra.io.sstable.metadata;
 
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Map;
 
@@ -65,4 +64,9 @@ public interface IMetadataSerializer
      * @throws IOException
      */
     void mutateLevel(Descriptor descriptor, int newLevel) throws IOException;
+
+    /**
+     * Mutate repairedAt time
+     */
+    void mutateRepairedAt(Descriptor descriptor, long newRepairedAt) throws IOException;
 }

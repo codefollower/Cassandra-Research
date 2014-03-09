@@ -29,14 +29,16 @@ import com.google.common.collect.AbstractIterator;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
+import org.apache.cassandra.db.composites.CellNames;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.serializers.MarshalException;
-import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.ObjectSizes;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.HeapAllocator;
+import org.apache.cassandra.utils.memory.HeapAllocator;
 
 /**
  * Cell is immutable, which prevents all kinds of confusion in a multithreaded environment.
@@ -44,6 +46,8 @@ import org.apache.cassandra.utils.HeapAllocator;
 public class Cell implements OnDiskAtom
 {
     public static final int MAX_NAME_LENGTH = FBUtilities.MAX_UNSIGNED_SHORT;
+
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new Cell(CellNames.simpleDense(ByteBuffer.allocate(1))));
 
     /**
      * For 2.0-formatted sstables (where column count is not stored), @param count should be Integer.MAX_VALUE,
@@ -158,7 +162,14 @@ public class Cell implements OnDiskAtom
 
     public int dataSize()
     {
-        return name().dataSize() + value.remaining() + TypeSizes.NATIVE.sizeof(timestamp);
+        return name.dataSize() + value.remaining() + TypeSizes.NATIVE.sizeof(timestamp);
+    }
+
+    // returns the size of the Cell and all references on the heap, excluding any costs associated with byte arrays
+    // that would be allocated by a localCopy, as these will be accounted for by the allocator
+    public long excessHeapSizeExcludingData()
+    {
+        return EMPTY_SIZE + name.excessHeapSizeExcludingData() + ObjectSizes.sizeOnHeapExcludingData(value);
     }
 
     public int serializedSize(CellNameType type, TypeSizes typeSizes)
@@ -219,7 +230,7 @@ public class Cell implements OnDiskAtom
         return reconcile(cell, HeapAllocator.instance);
     }
 
-    public Cell reconcile(Cell cell, Allocator allocator)
+    public Cell reconcile(Cell cell, AbstractAllocator allocator)
     {
         // tombstones take precedence.  (if both are tombstones, then it doesn't matter which one we use.)
         if (isMarkedForDelete(System.currentTimeMillis()))
@@ -238,17 +249,13 @@ public class Cell implements OnDiskAtom
     {
         if (this == o)
             return true;
+
         if (o == null || getClass() != o.getClass())
             return false;
 
         Cell cell = (Cell)o;
 
-        if (timestamp != cell.timestamp)
-            return false;
-        if (!name.equals(cell.name))
-            return false;
-
-        return value.equals(cell.value);
+        return timestamp == cell.timestamp && name.equals(cell.name) && value.equals(cell.value);
     }
 
     @Override
@@ -260,12 +267,7 @@ public class Cell implements OnDiskAtom
         return result;
     }
 
-    public Cell localCopy(ColumnFamilyStore cfs)
-    {
-        return localCopy(cfs, HeapAllocator.instance);
-    }
-
-    public Cell localCopy(ColumnFamilyStore cfs, Allocator allocator)
+    public Cell localCopy(ColumnFamilyStore cfs, AbstractAllocator allocator)
     {
         return new Cell(name.copy(allocator), allocator.clone(value), timestamp);
     }

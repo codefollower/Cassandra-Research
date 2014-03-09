@@ -36,6 +36,9 @@ public class Relation
     private final List<Term.Raw> inValues;
     public final boolean onToken;
 
+    // Will be null unless for tuple notations (#4851)
+    public final ColumnIdentifier previousInTuple;
+
     public static enum Type
     {
         //CONTAINS, CONTAINS_KEY是CASSANDRA-4511新加的，见:https://issues.apache.org/jira/browse/CASSANDRA-4511
@@ -71,13 +74,14 @@ public class Relation
         at org.apache.cassandra.cql3.QueryProcessor.processStatement(QueryProcessor.java:189) ~[main/:na]
         at org.apache.cassandra.cql3.QueryProcessor.process(QueryProcessor.java:222) ~[main/:na]
      */
-    private Relation(ColumnIdentifier entity, Type type, Term.Raw value, List<Term.Raw> inValues, boolean onToken)
+    private Relation(ColumnIdentifier entity, Type type, Term.Raw value, List<Term.Raw> inValues, boolean onToken, ColumnIdentifier previousInTuple)
     {
         this.entity = entity;
         this.relationType = type;
         this.value = value;
         this.inValues = inValues;
         this.onToken = onToken; //比如WHERE token(user_id) > 10时onToken为true
+        this.previousInTuple = previousInTuple;
     }
 
     /**
@@ -89,17 +93,22 @@ public class Relation
      */
     public Relation(ColumnIdentifier entity, Type type, Term.Raw value)
     {
-        this(entity, type, value, null, false);
+        this(entity, type, value, null, false, null);
     }
 
     public Relation(ColumnIdentifier entity, Type type, Term.Raw value, boolean onToken)
     {
-        this(entity, type, value, null, onToken);
+        this(entity, type, value, null, onToken, null);
+    }
+
+    public Relation(ColumnIdentifier entity, Type type, Term.Raw value, ColumnIdentifier previousInTuple)
+    {
+        this(entity, type, value, null, false, previousInTuple);
     }
 
     public static Relation createInRelation(ColumnIdentifier entity)
     {
-        return new Relation(entity, Type.IN, null, new ArrayList<Term.Raw>(), false);
+        return new Relation(entity, Type.IN, null, new ArrayList<Term.Raw>(), false, null);
     }
 
     public Type operator()

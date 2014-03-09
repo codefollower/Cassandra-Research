@@ -65,7 +65,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow
         super(rows.get(0).getKey());
         this.rows = rows;
         this.controller = controller;
-        indexer = controller.cfs.indexManager.updaterFor(key);
+        indexer = controller.cfs.indexManager.gcUpdaterFor(key);
 
         // Combine top-level tombstones, keeping the one with the highest markedForDeleteAt timestamp.  This may be
         // purged (depending on gcBefore), but we need to remember it to properly delete columns during the merge
@@ -81,7 +81,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow
         // containing `key` outside of the set of sstables involved in this compaction.
         maxPurgeableTimestamp = controller.maxPurgeableTimestamp(key);
 
-        emptyColumnFamily = EmptyColumns.factory.create(controller.cfs.metadata);
+        emptyColumnFamily = ArrayBackedSortedColumns.factory.create(controller.cfs.metadata);
         emptyColumnFamily.delete(maxRowTombstone);
         if (maxRowTombstone.markedForDeleteAt < maxPurgeableTimestamp)
             emptyColumnFamily.purgeTombstones(controller.gcBefore);
@@ -96,7 +96,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow
         // are shadowed by a row or range tombstone; removeDeletedColumnsOnly(cf, Integer.MIN_VALUE) will accomplish this
         // without purging tombstones.
         int overriddenGCBefore = shouldPurge ? controller.gcBefore : Integer.MIN_VALUE;
-        ColumnFamilyStore.removeDeletedColumnsOnly(cf, overriddenGCBefore, controller.cfs.indexManager.updaterFor(key));
+        ColumnFamilyStore.removeDeletedColumnsOnly(cf, overriddenGCBefore, controller.cfs.indexManager.gcUpdaterFor(key));
     }
 
     public RowIndexEntry write(long currentPosition, DataOutput out) throws IOException
@@ -261,6 +261,17 @@ public class LazilyCompactedRow extends AbstractCompactedRow
                     container.clear();
                     return null;
                 }
+
+                int localDeletionTime = container.deletionInfo().getTopLevelDeletion().localDeletionTime;
+                if (localDeletionTime < Integer.MAX_VALUE)
+                    tombstones.update(localDeletionTime);
+                Iterator<RangeTombstone> rangeTombstoneIterator = container.deletionInfo().rangeIterator();
+                while (rangeTombstoneIterator.hasNext())
+                {
+                    RangeTombstone rangeTombstone = rangeTombstoneIterator.next();
+                    tombstones.update(rangeTombstone.getLocalDeletionTime());
+                }
+
                 Cell reduced = iter.next();
                 container.clear();
 

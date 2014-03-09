@@ -20,11 +20,13 @@ package org.apache.cassandra.db.composites;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 import org.apache.cassandra.utils.ObjectSizes;
 
 public class SimpleDenseCellName extends SimpleComposite implements CellName
 {
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleDenseCellName(ByteBuffer.allocate(1)));
+
     // Not meant to be used directly, you should use the CellNameType method instead
     SimpleDenseCellName(ByteBuffer element)
     {
@@ -51,23 +53,30 @@ public class SimpleDenseCellName extends SimpleComposite implements CellName
         return false;
     }
 
-    public boolean isSameCQL3RowAs(CellName other)
+    public boolean isSameCQL3RowAs(CellNameType type, CellName other)
     {
         // Dense cell imply one cell by CQL row so no other cell will be the same row.
-        return equals(other);
+        return type.compare(this, other) == 0;
     }
 
     @Override
-    public long memorySize()
+    public long unsharedHeapSize()
     {
-        return ObjectSizes.getSuperClassFieldSize(super.memorySize());
+        return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(element);
+    }
+
+    @Override
+    public long excessHeapSizeExcludingData()
+    {
+        return EMPTY_SIZE + ObjectSizes.sizeOnHeapExcludingData(element);
     }
 
     // If cellnames were sharing some prefix components, this will break it, so
     // we might want to try to do better.
     @Override
-    public CellName copy(Allocator allocator)
+    public CellName copy(AbstractAllocator allocator)
     {
         return new SimpleDenseCellName(allocator.clone(element));
     }
+
 }

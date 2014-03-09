@@ -28,7 +28,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.apache.cassandra.io.sstable.Downsampling.BASE_SAMPLING_LEVEL;
-import static org.apache.cassandra.io.sstable.Downsampling.MIN_SAMPLING_LEVEL;
 
 public class IndexSummaryBuilder
 {
@@ -36,7 +35,7 @@ public class IndexSummaryBuilder
 
     private final ArrayList<Long> positions;
     private final ArrayList<byte[]> keys;
-    private final int indexInterval;
+    private final int minIndexInterval;
     private final int samplingLevel;
     private final int[] startPoints;
     private long keysWritten = 0;
@@ -45,36 +44,37 @@ public class IndexSummaryBuilder
 
     //indexInterval默认是128个，见org.apache.cassandra.config.CFMetaData.indexInterval
     //samplingLevel默认也是128个，见org.apache.cassandra.io.sstable.Downsampling.BASE_SAMPLING_LEVEL
-    public IndexSummaryBuilder(long expectedKeys, int indexInterval, int samplingLevel)
+    public IndexSummaryBuilder(long expectedKeys, int minIndexInterval, int samplingLevel)
     {
-        this.indexInterval = indexInterval;
         this.samplingLevel = samplingLevel;
         this.startPoints = Downsampling.getStartPoints(BASE_SAMPLING_LEVEL, samplingLevel);
 
-        long expectedEntries = expectedKeys / indexInterval;
-        if (expectedEntries > Integer.MAX_VALUE)
+        long maxExpectedEntries = expectedKeys / minIndexInterval;
+        if (maxExpectedEntries > Integer.MAX_VALUE)
         {
-            // that's a _lot_ of keys, and a very low interval
-            int effectiveInterval = (int) Math.ceil((double) Integer.MAX_VALUE / expectedKeys);
-            expectedEntries = expectedKeys / effectiveInterval;
-            assert expectedEntries <= Integer.MAX_VALUE : expectedEntries;
-            logger.warn("Index interval of {} is too low for {} expected keys; using interval of {} instead",
-                        indexInterval, expectedKeys, effectiveInterval);
+            // that's a _lot_ of keys, and a very low min index interval
+            int effectiveMinInterval = (int) Math.ceil((double) Integer.MAX_VALUE / expectedKeys);
+            maxExpectedEntries = expectedKeys / effectiveMinInterval;
+            assert maxExpectedEntries <= Integer.MAX_VALUE : maxExpectedEntries;
+            logger.warn("min_index_interval of {} is too low for {} expected keys; using interval of {} instead",
+                        minIndexInterval, expectedKeys, effectiveMinInterval);
+            this.minIndexInterval = effectiveMinInterval;
+        }
+        else
+        {
+            this.minIndexInterval = minIndexInterval;
         }
 
-        // adjust our estimates based on the sampling level
-        expectedEntries = (expectedEntries * samplingLevel) / BASE_SAMPLING_LEVEL;
-
-        positions = new ArrayList<>((int)expectedEntries);
-        keys = new ArrayList<>((int)expectedEntries);
+        // for initializing data structures, adjust our estimates based on the sampling level
+        maxExpectedEntries = (maxExpectedEntries * samplingLevel) / BASE_SAMPLING_LEVEL;
+        positions = new ArrayList<>((int)maxExpectedEntries);
+        keys = new ArrayList<>((int)maxExpectedEntries);
     }
 
     public IndexSummaryBuilder maybeAddEntry(DecoratedKey decoratedKey, long indexPosition)
     {
-        if (keysWritten % indexInterval == 0)
+        if (keysWritten % minIndexInterval == 0)
         {
-            indexIntervalMatches++;
-
             // see if we should skip this key based on our sampling level
             boolean shouldSkip = false;
             for (int start : startPoints)
@@ -94,6 +94,8 @@ public class IndexSummaryBuilder
                 positions.add(indexPosition);
                 offheapSize += TypeSizes.NATIVE.sizeof(indexPosition);
             }
+
+            indexIntervalMatches++;
         }
         keysWritten++;
 
@@ -127,17 +129,22 @@ public class IndexSummaryBuilder
             memory.setLong(keyPosition, actualIndexPosition);
             keyPosition += TypeSizes.NATIVE.sizeof(actualIndexPosition);
         }
-        int sizeAtFullSampling = (int) Math.ceil(keysWritten / (double) indexInterval);
-        return new IndexSummary(partitioner, memory, keys.size(), sizeAtFullSampling, indexInterval, samplingLevel);
+        int sizeAtFullSampling = (int) Math.ceil(keysWritten / (double) minIndexInterval);
+        return new IndexSummary(partitioner, memory, keys.size(), sizeAtFullSampling, minIndexInterval, samplingLevel);
     }
 
     public static int entriesAtSamplingLevel(int samplingLevel, int maxSummarySize)
     {
-        return (samplingLevel * maxSummarySize) / BASE_SAMPLING_LEVEL;
+        return (int) Math.ceil((samplingLevel * maxSummarySize) / (double) BASE_SAMPLING_LEVEL);
     }
 
-    public static int calculateSamplingLevel(int currentSamplingLevel, int currentNumEntries, long targetNumEntries)
+    public static int calculateSamplingLevel(int currentSamplingLevel, int currentNumEntries, long targetNumEntries, int minIndexInterval, int maxIndexInterval)
     {
+        // effective index interval == (BASE_SAMPLING_LEVEL / samplingLevel) * minIndexInterval
+        // so we can just solve for minSamplingLevel here:
+        // maxIndexInterval == (BASE_SAMPLING_LEVEL / minSamplingLevel) * minIndexInterval
+        int effectiveMinSamplingLevel = Math.max(1, (int) Math.ceil((BASE_SAMPLING_LEVEL * minIndexInterval) / (double) maxIndexInterval));
+
         // Algebraic explanation for calculating the new sampling level (solve for newSamplingLevel):
         // originalNumEntries = (baseSamplingLevel / currentSamplingLevel) * currentNumEntries
         // newSpaceUsed = (newSamplingLevel / baseSamplingLevel) * originalNumEntries
@@ -145,7 +152,7 @@ public class IndexSummaryBuilder
         // newSpaceUsed = (newSamplingLevel / currentSamplingLevel) * currentNumEntries
         // (newSpaceUsed * currentSamplingLevel) / currentNumEntries = newSamplingLevel
         int newSamplingLevel = (int) (targetNumEntries * currentSamplingLevel) / currentNumEntries;
-        return Math.min(BASE_SAMPLING_LEVEL, Math.max(MIN_SAMPLING_LEVEL, newSamplingLevel));
+        return Math.min(BASE_SAMPLING_LEVEL, Math.max(effectiveMinSamplingLevel, newSamplingLevel));
     }
 
     /**
@@ -156,7 +163,7 @@ public class IndexSummaryBuilder
      * @param partitioner the partitioner used for the index summary
      * @return a new IndexSummary
      */
-    public static IndexSummary downsample(IndexSummary existing, int newSamplingLevel, IPartitioner partitioner)
+    public static IndexSummary downsample(IndexSummary existing, int newSamplingLevel, int minIndexInterval, IPartitioner partitioner)
     {
         // To downsample the old index summary, we'll go through (potentially) several rounds of downsampling.
         // Conceptually, each round starts at position X and then removes every Nth item.  The value of X follows
@@ -165,6 +172,7 @@ public class IndexSummaryBuilder
 
         int currentSamplingLevel = existing.getSamplingLevel();
         assert currentSamplingLevel > newSamplingLevel;
+        assert minIndexInterval == existing.getMinIndexInterval();
 
         // calculate starting indexes for downsampling rounds
         int[] startPoints = Downsampling.getStartPoints(currentSamplingLevel, newSamplingLevel);
@@ -210,6 +218,7 @@ public class IndexSummaryBuilder
             memory.setBytes(keyPosition, entry, 0, entry.length);
             keyPosition += entry.length;
         }
-        return new IndexSummary(partitioner, memory, newKeyCount, existing.getMaxNumberOfEntries(), existing.getIndexInterval(), newSamplingLevel);
+        return new IndexSummary(partitioner, memory, newKeyCount, existing.getMaxNumberOfEntries(),
+                                minIndexInterval, newSamplingLevel);
     }
 }

@@ -26,7 +26,7 @@ import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
-import org.apache.cassandra.utils.HeapAllocator;
+import org.apache.cassandra.utils.memory.HeapAllocator;
 import org.apache.cassandra.utils.MergeIterator;
 
 public class QueryFilter
@@ -236,5 +236,14 @@ public class QueryFilter
     public boolean shouldInclude(SSTableReader sstable)
     {
         return filter.shouldInclude(sstable);
+    }
+
+    public void delete(DeletionInfo target, ColumnFamily source)
+    {
+        target.add(source.deletionInfo().getTopLevelDeletion());
+        // source is the CF currently in the memtable, and it can be large compared to what the filter selects,
+        // so only consider those range tombstones that the filter do select.
+        for (Iterator<RangeTombstone> iter = filter.getRangeTombstoneIterator(source); iter.hasNext(); )
+            target.add(iter.next(), source.getComparator());
     }
 }

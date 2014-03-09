@@ -38,9 +38,9 @@ public class UpdateStatement extends ModificationStatement
 {
     private static final Constants.Value EMPTY = new Constants.Value(ByteBufferUtil.EMPTY_BYTE_BUFFER);
 
-    private UpdateStatement(int boundTerms, CFMetaData cfm, Attributes attrs)
+    private UpdateStatement(StatementType type, int boundTerms, CFMetaData cfm, Attributes attrs)
     {
-        super(boundTerms, cfm, attrs);
+        super(type, boundTerms, cfm, attrs);
     }
 
     public boolean requireFullClusteringKey()
@@ -52,18 +52,21 @@ public class UpdateStatement extends ModificationStatement
     throws InvalidRequestException
     {
         // Inserting the CQL row marker (see #4361)
-        // We always need to insert a marker, because of the following situation:
+        // We always need to insert a marker for INSERT, because of the following situation:
         //   CREATE TABLE t ( k int PRIMARY KEY, c text );
         //   INSERT INTO t(k, c) VALUES (1, 1)
         //   DELETE c FROM t WHERE k = 1;
         //   SELECT * FROM t;
-        // The last query should return one row (but with c == null). Adding
-        // the marker with the insert make sure the semantic is correct (while making sure a
-        // 'DELETE FROM t WHERE k = 1' does remove the row entirely)
+        // The last query should return one row (but with c == null). Adding the marker with the insert make sure
+        // the semantic is correct (while making sure a 'DELETE FROM t WHERE k = 1' does remove the row entirely)
+        //
+        // We do not insert the marker for UPDATE however, as this amount to updating the columns in the WHERE
+        // clause which is inintuitive (#6782)
         //
         // We never insert markers for Super CF as this would confuse the thrift side.
         //插入一个列名和列值都为空的空列
-        if (cfm.isCQL3Table()) //只有CompoundSparseCellNameType和CompoundSparseCellNameType.WithCollection满足
+        //只有CompoundSparseCellNameType和CompoundSparseCellNameType.WithCollection满足
+        if (type == StatementType.INSERT && cfm.isCQL3Table() && !prefix.isStatic())
             cf.addColumn(params.makeColumn(cfm.comparator.rowMarker(prefix), ByteBufferUtil.EMPTY_BYTE_BUFFER));
 
         List<Operation> updates = getOperations();
@@ -71,7 +74,7 @@ public class UpdateStatement extends ModificationStatement
         if (cfm.comparator.isDense())
         {
             if (prefix.isEmpty())
-                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s", cfm.clusteringColumns().iterator().next()));
+                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s", cfm.clusteringColumns().get(0)));
 
             // An empty name for the compact value is what we use to recognize the case where there is not column
             // outside the PK, see CreateStatement.
@@ -102,14 +105,6 @@ public class UpdateStatement extends ModificationStatement
         }
     }
 
-    public ColumnFamily updateForKey(ByteBuffer key, Composite prefix, UpdateParameters params)
-    throws InvalidRequestException
-    {
-        ColumnFamily cf = UnsortedColumns.factory.create(cfm);
-        addUpdateForKey(cf, key, prefix, params);
-        return cf;
-    }
-
     public static class ParsedInsert extends ModificationStatement.Parsed
     {
         private final List<ColumnIdentifier> columnNames;
@@ -135,7 +130,7 @@ public class UpdateStatement extends ModificationStatement
 
         protected ModificationStatement prepareInternal(CFMetaData cfm, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException
         {
-            UpdateStatement stmt = new UpdateStatement(boundNames.size(), cfm, attrs);
+            UpdateStatement stmt = new UpdateStatement(ModificationStatement.StatementType.INSERT,boundNames.size(), cfm, attrs);
 
             // Created from an INSERT
             if (stmt.isCounter())
@@ -163,10 +158,9 @@ public class UpdateStatement extends ModificationStatement
                     case CLUSTERING_COLUMN:
                         Term t = value.prepare(keyspace(), def);
                         t.collectMarkerSpecification(boundNames);
-                        stmt.addKeyValue(def.name, t);
+                        stmt.addKeyValue(def, t);
                         break;
-                    case COMPACT_VALUE:
-                    case REGULAR:
+                    default:
                         Operation operation = new Operation.SetValue(value).prepare(keyspace(), def);
                         operation.collectMarkerSpecification(boundNames);
                         stmt.addOperation(operation);
@@ -196,7 +190,7 @@ public class UpdateStatement extends ModificationStatement
                             Attributes.Raw attrs,
                             List<Pair<ColumnIdentifier, Operation.RawUpdate>> updates,
                             List<Relation> whereClause,
-                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions)
+                            List<Pair<ColumnIdentifier, ColumnCondition.Raw>> conditions)
         {
             super(name, attrs, conditions, false);
             this.updates = updates;
@@ -205,7 +199,7 @@ public class UpdateStatement extends ModificationStatement
 
         protected ModificationStatement prepareInternal(CFMetaData cfm, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException
         {
-            UpdateStatement stmt = new UpdateStatement(boundNames.size(), cfm, attrs);
+            UpdateStatement stmt = new UpdateStatement(ModificationStatement.StatementType.UPDATE, boundNames.size(), cfm, attrs);
 
             for (Pair<ColumnIdentifier, Operation.RawUpdate> entry : updates)
             {
@@ -221,8 +215,7 @@ public class UpdateStatement extends ModificationStatement
                     case PARTITION_KEY:
                     case CLUSTERING_COLUMN:
                         throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", entry.left));
-                    case COMPACT_VALUE:
-                    case REGULAR:
+                    default:
                         stmt.addOperation(operation);
                         break;
                 }

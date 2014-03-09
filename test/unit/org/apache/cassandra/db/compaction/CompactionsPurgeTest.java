@@ -18,7 +18,6 @@
 */
 package org.apache.cassandra.db.compaction;
 
-import java.io.IOException;
 import java.util.Collection;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -37,6 +36,8 @@ import static org.junit.Assert.assertEquals;
 import static org.apache.cassandra.db.KeyspaceTest.assertColumns;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 import static org.apache.cassandra.cql3.QueryProcessor.processInternal;
 
@@ -50,7 +51,7 @@ public class CompactionsPurgeTest extends SchemaLoader
     public static final String KEYSPACE2 = "Keyspace2";
 
     @Test
-    public void testMajorCompactionPurge() throws IOException, ExecutionException, InterruptedException
+    public void testMajorCompactionPurge() throws ExecutionException, InterruptedException
     {
         CompactionManager.instance.disableAutoCompaction();
 
@@ -90,11 +91,11 @@ public class CompactionsPurgeTest extends SchemaLoader
         cfs.invalidateCachedRow(key);
         ColumnFamily cf = cfs.getColumnFamily(QueryFilter.getIdentityFilter(key, cfName, System.currentTimeMillis()));
         assertColumns(cf, "5");
-        assert cf.getColumn(cellname(String.valueOf(5))) != null;
+        assertNotNull(cf.getColumn(cellname(String.valueOf(5))));
     }
 
     @Test
-    public void testMinorCompactionPurge() throws IOException, ExecutionException, InterruptedException
+    public void testMinorCompactionPurge()
     {
         CompactionManager.instance.disableAutoCompaction();
 
@@ -141,7 +142,7 @@ public class CompactionsPurgeTest extends SchemaLoader
         // verify that minor compaction does GC when key is provably not
         // present in a non-compacted sstable
         ColumnFamily cf = cfs.getColumnFamily(QueryFilter.getIdentityFilter(key2, cfName, System.currentTimeMillis()));
-        assert cf == null;
+        assertNull(cf);
 
         // verify that minor compaction still GC when key is present
         // in a non-compacted sstable but the timestamp ensures we won't miss anything
@@ -153,7 +154,7 @@ public class CompactionsPurgeTest extends SchemaLoader
      * verify that we don't drop tombstones during a minor compaction that might still be relevant
      */
     @Test
-    public void testMinTimestampPurge() throws IOException, ExecutionException, InterruptedException
+    public void testMinTimestampPurge()
     {
         CompactionManager.instance.disableAutoCompaction();
 
@@ -193,7 +194,7 @@ public class CompactionsPurgeTest extends SchemaLoader
     }
 
     @Test
-    public void testCompactionPurgeOneFile() throws IOException, ExecutionException, InterruptedException
+    public void testCompactionPurgeOneFile() throws ExecutionException, InterruptedException
     {
         CompactionManager.instance.disableAutoCompaction();
 
@@ -220,17 +221,17 @@ public class CompactionsPurgeTest extends SchemaLoader
             rm.apply();
         }
         cfs.forceBlockingFlush();
-        assert cfs.getSSTables().size() == 1 : cfs.getSSTables(); // inserts & deletes were in the same memtable -> only deletes in sstable
+        assertEquals(String.valueOf(cfs.getSSTables()), 1, cfs.getSSTables().size()); // inserts & deletes were in the same memtable -> only deletes in sstable
 
         // compact and test that the row is completely gone
         Util.compactAll(cfs, Integer.MAX_VALUE).get();
-        assert cfs.getSSTables().isEmpty();
+        assertTrue(cfs.getSSTables().isEmpty());
         ColumnFamily cf = keyspace.getColumnFamilyStore(cfName).getColumnFamily(QueryFilter.getIdentityFilter(key, cfName, System.currentTimeMillis()));
-        assert cf == null : cf;
+        assertNull(String.valueOf(cf), cf);
     }
 
     @Test
-    public void testCompactionPurgeCachedRow() throws IOException, ExecutionException, InterruptedException
+    public void testCompactionPurgeCachedRow() throws ExecutionException, InterruptedException
     {
         CompactionManager.instance.disableAutoCompaction();
 
@@ -274,11 +275,11 @@ public class CompactionsPurgeTest extends SchemaLoader
         ColumnFamily cf = cfs.getColumnFamily(QueryFilter.getIdentityFilter(key, cfName, System.currentTimeMillis()));
         assertEquals(10, cf.getColumnCount());
         for (Cell c : cf)
-            assert !c.isMarkedForDelete(System.currentTimeMillis());
+            assertFalse(c.isMarkedForDelete(System.currentTimeMillis()));
     }
 
     @Test
-    public void testCompactionPurgeTombstonedRow() throws IOException, ExecutionException, InterruptedException
+    public void testCompactionPurgeTombstonedRow() throws ExecutionException, InterruptedException
     {
         CompactionManager.instance.disableAutoCompaction();
 
@@ -318,11 +319,11 @@ public class CompactionsPurgeTest extends SchemaLoader
         cf = cfs.getColumnFamily(filter);
         assertEquals(10, cf.getColumnCount());
         for (Cell c : cf)
-            assert !c.isMarkedForDelete(System.currentTimeMillis());
+            assertFalse(c.isMarkedForDelete(System.currentTimeMillis()));
     }
 
     @Test
-    public void testRowTombstoneObservedBeforePurging() throws InterruptedException, ExecutionException, IOException
+    public void testRowTombstoneObservedBeforePurging() throws InterruptedException, ExecutionException
     {
         String keyspace = "cql_keyspace";
         String table = "table1";
@@ -347,7 +348,7 @@ public class CompactionsPurgeTest extends SchemaLoader
         assertEquals(0, result.size());
 
         // compact the two sstables with a gcBefore that does *not* allow the row tombstone to be purged
-        Future future = CompactionManager.instance.submitMaximal(cfs, (int) (System.currentTimeMillis() / 1000) - 10000);
+        Future<?> future = CompactionManager.instance.submitMaximal(cfs, (int) (System.currentTimeMillis() / 1000) - 10000);
         future.get();
 
         // the data should be gone, but the tombstone should still exist

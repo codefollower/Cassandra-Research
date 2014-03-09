@@ -43,21 +43,27 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public abstract class Selection
 {
     private final List<ColumnDefinition> columnsList;
-    private final List<ColumnSpecification> metadata;
+    private final ResultSet.Metadata metadata;
     private final boolean collectTimestamps;
     private final boolean collectTTLs;
 
     protected Selection(List<ColumnDefinition> columnsList, List<ColumnSpecification> metadata, boolean collectTimestamps, boolean collectTTLs)
     {
         this.columnsList = columnsList;
-        this.metadata = metadata;
+        this.metadata = new ResultSet.Metadata(metadata);
         this.collectTimestamps = collectTimestamps;
         this.collectTTLs = collectTTLs;
     }
 
+    // Overriden by SimpleSelection when appropriate.
+    public boolean isWildcard()
+    {
+        return false;
+    }
+
     public ResultSet.Metadata getResultMetadata()
     {
-        return new ResultSet.Metadata(metadata);
+        return metadata;
     }
 
     public static Selection wildcard(CFMetaData cfm)
@@ -65,12 +71,19 @@ public abstract class Selection
         List<ColumnDefinition> all = new ArrayList<ColumnDefinition>(cfm.allColumns().size());
         //all一开始是空的，把cfm.allColumnsInSelectOrder()中的东西加到all中
         Iterators.addAll(all, cfm.allColumnsInSelectOrder());
-        return new SimpleSelection(all);
+        return new SimpleSelection(all, true);
     }
 
     public static Selection forColumns(List<ColumnDefinition> columnsList)
     {
-        return new SimpleSelection(columnsList);
+        return new SimpleSelection(columnsList, false);
+    }
+
+    public int addColumnForOrdering(ColumnDefinition c)
+    {
+        columnsList.add(c);
+        metadata.addNonSerializedColumn(c);
+        return columnsList.size() - 1;
     }
 
     private static boolean isUsingFunction(List<RawSelector> rawSelectors)
@@ -111,7 +124,7 @@ public abstract class Selection
             ColumnDefinition def = cfm.getColumnDefinition(tot.id);
             if (def == null)
                 throw new InvalidRequestException(String.format("Undefined name %s in selection clause", tot.id));
-            if (def.kind != ColumnDefinition.Kind.REGULAR && def.kind != ColumnDefinition.Kind.COMPACT_VALUE)
+            if (def.isPrimaryKeyColumn())
                 throw new InvalidRequestException(String.format("Cannot use selection function %s on PRIMARY KEY part %s", tot.isWritetime ? "writeTime" : "ttl", def.name));
             if (def.type.isCollection())
                 throw new InvalidRequestException(String.format("Cannot use selection function %s on collections", tot.isWritetime ? "writeTime" : "ttl"));
@@ -230,7 +243,7 @@ public abstract class Selection
                 //有别名就以别名为准
                 metadata.add(rawSelector.alias == null ? def : makeAliasSpec(cfm, def.type, rawSelector.alias));
             }
-            return new SimpleSelection(defs, metadata);
+            return new SimpleSelection(defs, metadata, false);
         }
     }
 
@@ -275,7 +288,7 @@ public abstract class Selection
 
         private ResultSetBuilder(long now)
         {
-            this.resultSet = new ResultSet(metadata);
+            this.resultSet = new ResultSet(getResultMetadata(), new ArrayList<List<ByteBuffer>>());
             this.timestamps = collectTimestamps ? new long[columnsList.size()] : null;
             this.ttls = collectTTLs ? new int[columnsList.size()] : null;
             this.now = now;
@@ -328,12 +341,14 @@ public abstract class Selection
     // Special cased selection for when no function is used (this save some allocations).
     private static class SimpleSelection extends Selection
     {
-        public SimpleSelection(List<ColumnDefinition> columnsList)
+        private final boolean isWildcard;
+
+        public SimpleSelection(List<ColumnDefinition> columnsList, boolean isWildcard)
         {
-            this(columnsList, new ArrayList<ColumnSpecification>(columnsList));
+            this(columnsList, new ArrayList<ColumnSpecification>(columnsList), isWildcard);
         }
 
-        public SimpleSelection(List<ColumnDefinition> columnsList, List<ColumnSpecification> metadata)
+        public SimpleSelection(List<ColumnDefinition> columnsList, List<ColumnSpecification> metadata, boolean isWildcard)
         {
             /*
              * In theory, even a simple selection could have multiple time the same column, so we
@@ -341,11 +356,18 @@ public abstract class Selection
              * get much duplicate in practice, it's more efficient not to bother.
              */
             super(columnsList, metadata, false, false);
+            this.isWildcard = isWildcard;
         }
 
         protected List<ByteBuffer> handleRow(ResultSetBuilder rs)
         {
             return rs.current;
+        }
+
+        @Override
+        public boolean isWildcard()
+        {
+            return isWildcard;
         }
     }
 

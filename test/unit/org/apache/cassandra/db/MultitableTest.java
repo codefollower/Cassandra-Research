@@ -20,10 +20,6 @@ package org.apache.cassandra.db;
  *
  */
 
-
-import java.io.IOException;
-import java.util.concurrent.ExecutionException;
-
 import org.apache.cassandra.Util;
 import org.junit.Test;
 
@@ -34,7 +30,7 @@ import static org.apache.cassandra.Util.column;
 public class MultitableTest extends SchemaLoader
 {
     @Test
-    public void testSameCFs() throws IOException, ExecutionException, InterruptedException
+    public void testSameCFs()
     {
         Keyspace keyspace1 = Keyspace.open("Keyspace1");
         Keyspace keyspace2 = Keyspace.open("Keyspace2");
@@ -43,12 +39,12 @@ public class MultitableTest extends SchemaLoader
         DecoratedKey dk = Util.dk("keymulti");
         ColumnFamily cf;
 
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
         cf.addColumn(column("col1", "val1", 1L));
         rm = new Mutation("Keyspace1", dk.key, cf);
         rm.apply();
 
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace2", "Standard1");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace2", "Standard1");
         cf.addColumn(column("col2", "val2", 1L));
         rm = new Mutation("Keyspace2", dk.key, cf);
         rm.apply();

@@ -19,6 +19,7 @@ package org.apache.cassandra.config;
 
 import java.io.File;
 import java.io.FileFilter;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
@@ -49,9 +50,9 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.scheduler.IRequestScheduler;
 import org.apache.cassandra.scheduler.NoScheduler;
 import org.apache.cassandra.service.CacheService;
-import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.memory.Pool;
 
 //重点关注applyConfig、loadSchemas两个方法
 public class DatabaseDescriptor
@@ -68,6 +69,7 @@ public class DatabaseDescriptor
     private static InetAddress listenAddress; // leave null so we can fall through to getLocalHost
     private static InetAddress broadcastAddress;
     private static InetAddress rpcAddress;
+    private static InetAddress broadcastRpcAddress;
     private static SeedProvider seedProvider;
 
     //实现类只有org.apache.cassandra.auth.AllowAllInternodeAuthenticator，什么都不做
@@ -89,6 +91,7 @@ public class DatabaseDescriptor
     private static RequestSchedulerOptions requestSchedulerOptions; //未见使用
 
     private static long keyCacheSizeInMB;
+    private static long counterCacheSizeInMB;
     //实现类有:
     //org.apache.cassandra.io.util.NativeAllocator
     //org.apache.cassandra.io.util.JEMallocAllocator
@@ -100,7 +103,7 @@ public class DatabaseDescriptor
     private static String localDC;
     private static Comparator<InetAddress> localComparator;
 
-    private static Class<? extends Allocator> memtableAllocator;
+    private static Class<? extends Pool> memtablePool;
 
     static
     {
@@ -182,13 +185,13 @@ public class DatabaseDescriptor
         }
 
         if (conf.commitlog_total_space_in_mb == null)
-            conf.commitlog_total_space_in_mb = System.getProperty("os.arch").contains("64") ? 1024 : 32;
+            conf.commitlog_total_space_in_mb = hasLargeAddressSpace() ? 1024 : 32;
 
         /* evaluate the DiskAccessMode Config directive, which also affects indexAccessMode selection */
         //自动侦测，64位系统使用mmap
         if (conf.disk_access_mode == Config.DiskAccessMode.auto)
         {
-            conf.disk_access_mode = System.getProperty("os.arch").contains("64") ? Config.DiskAccessMode.mmap : Config.DiskAccessMode.standard;
+            conf.disk_access_mode = hasLargeAddressSpace() ? Config.DiskAccessMode.mmap : Config.DiskAccessMode.standard;
             indexAccessMode = conf.disk_access_mode;
             logger.info("DiskAccessMode 'auto' determined to be {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
         }
@@ -261,10 +264,11 @@ public class DatabaseDescriptor
             throw new ConfigurationException("concurrent_writes must be at least 2");
         }
 
-        if (conf.concurrent_replicates != null && conf.concurrent_replicates < 2)
-        {
-            throw new ConfigurationException("concurrent_replicates must be at least 2");
-        }
+        if (conf.concurrent_counter_writes != null && conf.concurrent_counter_writes < 2)
+            throw new ConfigurationException("concurrent_counter_writes must be at least 2");
+
+        if (conf.concurrent_replicates != null)
+            logger.warn("concurrent_replicates has been deprecated and should be removed from cassandra.yaml");
 
         if (conf.file_cache_size_in_mb == null) //取512和(最大内存的1/4，1048576=1024*1024=1M)中的最小者
             conf.file_cache_size_in_mb = Math.min(512, (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576)));
@@ -272,18 +276,18 @@ public class DatabaseDescriptor
         if (conf.memtable_total_space_in_mb == null)
             conf.memtable_total_space_in_mb = (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576));
         if (conf.memtable_total_space_in_mb <= 0)
-            throw new ConfigurationException("memtable_total_space_in_mb must be positive");
-        logger.info("Global memtable threshold is enabled at {}MB", conf.memtable_total_space_in_mb);
+            throw new ConfigurationException("memtable_heap_space_in_mb must be positive");
+        logger.info("Global memtable heap threshold is enabled at {}MB", conf.memtable_total_space_in_mb);
 
-        /* Memtable flush writer threads */
-        if (conf.memtable_flush_writers != null && conf.memtable_flush_writers < 1)
-        {
+        if (conf.memtable_cleanup_threshold < 0.01f)
+            throw new ConfigurationException("memtable_cleanup_threshold must be >= 0.01");
+        if (conf.memtable_cleanup_threshold > 0.99f)
+            throw new ConfigurationException("memtable_cleanup_threshold must be <= 0.99");
+        if (conf.memtable_cleanup_threshold < 0.1f)
+            logger.warn("memtable_cleanup_threshold is set very low, which may cause performance degradation");
+
+        if (conf.memtable_flush_writers < 1)
             throw new ConfigurationException("memtable_flush_writers must be at least 1");
-        }
-        else if (conf.memtable_flush_writers == null)
-        {
-            conf.memtable_flush_writers = conf.data_file_directories.length;
-        }
 
         /* Local IP or hostname to bind services to */
         if (conf.listen_address != null)
@@ -333,6 +337,39 @@ public class DatabaseDescriptor
         else
         {
             rpcAddress = FBUtilities.getLocalAddress();
+        }
+
+        /* RPC address to broadcast */
+        if (conf.broadcast_rpc_address != null)
+        {
+            if (conf.broadcast_rpc_address.equals("0.0.0.0"))
+                throw new ConfigurationException("broadcast_rpc_address cannot be 0.0.0.0");
+
+            try
+            {
+                broadcastRpcAddress = InetAddress.getByName(conf.broadcast_rpc_address);
+            }
+            catch (UnknownHostException e)
+            {
+                throw new ConfigurationException("Unkown broadcast_rpc_address '" + conf.broadcast_rpc_address + "'");
+            }
+        }
+        else
+        {
+            InetAddress bindAll;
+            try
+            {
+                bindAll = InetAddress.getByAddress(new byte[4]);
+            }
+            catch (UnknownHostException e)
+            {
+                throw new RuntimeException("Host 0.0.0.0 is somehow unknown");
+            }
+
+            if (rpcAddress.equals(bindAll))
+                throw new ConfigurationException("If rpc_address is set to 0.0.0.0, you must set broadcast_rpc_address " +
+                                                 "to a value other than 0.0.0.0");
+            broadcastRpcAddress = rpcAddress;
         }
 
         if (conf.thrift_framed_transport_size_in_mb <= 0)
@@ -416,6 +453,9 @@ public class DatabaseDescriptor
         //这三个参数不能指向同一目录
         if (conf.commitlog_directory != null && conf.data_file_directories != null && conf.saved_caches_directory != null)
         {
+            if (conf.flush_directory == null)
+                conf.flush_directory = conf.data_file_directories[0];
+
             for (String datadir : conf.data_file_directories)
             {
                 if (datadir.equals(conf.commitlog_directory))
@@ -460,6 +500,22 @@ public class DatabaseDescriptor
                     + conf.key_cache_size_in_mb + "', supported values are <integer> >= 0.");
         }
 
+        try
+        {
+            // if counter_cache_size_in_mb option was set to "auto" then size of the cache should be "min(2.5% of Heap (in MB), 50MB)
+            counterCacheSizeInMB = (conf.counter_cache_size_in_mb == null)
+                    ? Math.min(Math.max(1, (int) (Runtime.getRuntime().totalMemory() * 0.025 / 1024 / 1024)), 50)
+                    : conf.counter_cache_size_in_mb;
+
+            if (counterCacheSizeInMB < 0)
+                throw new NumberFormatException(); // to escape duplicating error message
+        }
+        catch (NumberFormatException e)
+        {
+            throw new ConfigurationException("counter_cache_size_in_mb option was set incorrectly to '"
+                    + conf.counter_cache_size_in_mb + "', supported values are <integer> >= 0.");
+        }
+
         // if set to empty/"auto" then use 5% of Heap size
         indexSummaryCapacityInMB = (conf.index_summary_capacity_in_mb == null)
             ? Math.max(1, (int) (Runtime.getRuntime().totalMemory() * 0.05 / 1024 / 1024))
@@ -478,10 +534,10 @@ public class DatabaseDescriptor
             conf.server_encryption_options = conf.encryption_options;
         }
 
-        String allocatorClass = conf.memtable_allocator;
-        if (!allocatorClass.contains("."))
-            allocatorClass = "org.apache.cassandra.utils." + allocatorClass;
-        memtableAllocator = FBUtilities.classForName(allocatorClass, "allocator");
+        String allocatorPoolClass = conf.memtable_allocator;
+        if (!allocatorPoolClass.contains("."))
+            allocatorPoolClass = "org.apache.cassandra.utils.memory." + allocatorPoolClass;
+        memtablePool = FBUtilities.classForName(allocatorPoolClass, "allocator pool");
 
         // Hardcoded system keyspaces
         //指system中的列族，不包含system_auth和system_traces
@@ -619,6 +675,8 @@ public class DatabaseDescriptor
                 throw new ConfigurationException("saved_caches_directory must be specified");
 
             FileUtils.createDirectory(conf.saved_caches_directory);
+
+            FileUtils.createDirectory(conf.flush_directory);
         }
         catch (ConfigurationException e)
         {
@@ -804,6 +862,16 @@ public class DatabaseDescriptor
         conf.write_request_timeout_in_ms = timeOutInMillis;
     }
 
+    public static long getCounterWriteRpcTimeout()
+    {
+        return conf.counter_write_request_timeout_in_ms;
+    }
+
+    public static void setCounterWriteRpcTimeout(Long timeOutInMillis)
+    {
+        conf.counter_write_request_timeout_in_ms = timeOutInMillis;
+    }
+
     public static long getCasContentionTimeout()
     {
         return conf.cas_contention_timeout_in_ms;
@@ -842,8 +910,9 @@ public class DatabaseDescriptor
                 return getTruncateRpcTimeout();
             case READ_REPAIR:
             case MUTATION:
-            case COUNTER_MUTATION:
                 return getWriteRpcTimeout();
+            case COUNTER_MUTATION:
+                return getCounterWriteRpcTimeout();
             default:
                 return getRpcTimeout();
         }
@@ -854,7 +923,12 @@ public class DatabaseDescriptor
      */
     public static long getMinRpcTimeout()
     {
-        return Longs.min(getRpcTimeout(), getReadRpcTimeout(), getRangeRpcTimeout(), getWriteRpcTimeout(), getTruncateRpcTimeout());
+        return Longs.min(getRpcTimeout(),
+                         getReadRpcTimeout(),
+                         getRangeRpcTimeout(),
+                         getWriteRpcTimeout(),
+                         getCounterWriteRpcTimeout(),
+                         getTruncateRpcTimeout());
     }
 
     public static double getPhiConvictThreshold()
@@ -877,9 +951,9 @@ public class DatabaseDescriptor
         return conf.concurrent_writes;
     }
 
-    public static int getConcurrentReplicators()
+    public static int getConcurrentCounterWriters()
     {
-        return conf.concurrent_replicates;
+        return conf.concurrent_counter_writes;
     }
 
     public static int getFlushWriters()
@@ -920,6 +994,16 @@ public class DatabaseDescriptor
     public static void setStreamThroughputOutboundMegabitsPerSec(int value)
     {
         conf.stream_throughput_outbound_megabits_per_sec = value;
+    }
+
+    public static int getInterDCStreamThroughputOutboundMegabitsPerSec()
+    {
+        return conf.inter_dc_stream_throughput_outbound_megabits_per_sec;
+    }
+
+    public static void setInterDCStreamThroughputOutboundMegabitsPerSec(int value)
+    {
+        conf.inter_dc_stream_throughput_outbound_megabits_per_sec = value;
     }
 
     public static String[] getAllDataFileLocations()
@@ -1000,6 +1084,16 @@ public class DatabaseDescriptor
         return rpcAddress;
     }
 
+    public static void setBroadcastRpcAddress(InetAddress broadcastRPCAddr)
+    {
+        broadcastRpcAddress = broadcastRPCAddr;
+    }
+
+    public static InetAddress getBroadcastRpcAddress()
+    {
+        return broadcastRpcAddress;
+    }
+
     public static String getRpcServerType()
     {
         return conf.rpc_server_type;
@@ -1043,11 +1137,6 @@ public class DatabaseDescriptor
     public static boolean startNativeTransport()
     {
         return conf.start_native_transport;
-    }
-
-    public static InetAddress getNativeTransportAddress()
-    {
-        return getRpcAddress();
     }
 
     public static int getNativeTransportPort()
@@ -1121,12 +1210,47 @@ public class DatabaseDescriptor
 
     public static void setHintedHandoffEnabled(boolean hintedHandoffEnabled)
     {
-        conf.hinted_handoff_enabled = hintedHandoffEnabled;
+        conf.hinted_handoff_enabled_global = hintedHandoffEnabled;
+        conf.hinted_handoff_enabled_by_dc.clear();
+    }
+
+    public static void setHintedHandoffEnabled(final String dcNames)
+    {
+        List<String> dcNameList;
+        try
+        {
+            dcNameList = Config.parseHintedHandoffEnabledDCs(dcNames);
+        }
+        catch (IOException e)
+        {
+            throw new IllegalArgumentException("Could not read csv of dcs for hinted handoff enable. " + dcNames, e);
+        }
+
+        if (dcNameList.isEmpty())
+            throw new IllegalArgumentException("Empty list of Dcs for hinted handoff enable");
+
+        conf.hinted_handoff_enabled_by_dc.clear();
+        conf.hinted_handoff_enabled_by_dc.addAll(dcNameList);
     }
 
     public static boolean hintedHandoffEnabled()
     {
-        return conf.hinted_handoff_enabled;
+        return conf.hinted_handoff_enabled_global;
+    }
+
+    public static Set<String> hintedHandoffEnabledByDC()
+    {
+        return Collections.unmodifiableSet(conf.hinted_handoff_enabled_by_dc);
+    }
+
+    public static boolean shouldHintByDC()
+    {
+        return !conf.hinted_handoff_enabled_by_dc.isEmpty();
+    }
+
+    public static boolean hintedHandoffEnabled(final String dcName)
+    {
+        return conf.hinted_handoff_enabled_by_dc.contains(dcName);
     }
 
     public static void setMaxHintWindow(int ms)
@@ -1225,21 +1349,9 @@ public class DatabaseDescriptor
         conf.incremental_backups = value;
     }
 
-    public static int getFlushQueueSize()
-    {
-        return conf.memtable_flush_queue_size;
-    }
-
     public static int getFileCacheSizeInMB()
     {
         return conf.file_cache_size_in_mb;
-    }
-
-    public static int getTotalMemtableSpaceInMB()
-    {
-        // should only be called if estimatesRealMemtableSize() is true
-        assert conf.memtable_total_space_in_mb > 0;
-        return conf.memtable_total_space_in_mb;
     }
 
     public static long getTotalCommitlogSpaceInMB()
@@ -1307,6 +1419,31 @@ public class DatabaseDescriptor
         return conf.row_cache_keys_to_save;
     }
 
+    public static long getCounterCacheSizeInMB()
+    {
+        return counterCacheSizeInMB;
+    }
+
+    public static int getCounterCacheSavePeriod()
+    {
+        return conf.counter_cache_save_period;
+    }
+
+    public static void setCounterCacheSavePeriod(int counterCacheSavePeriod)
+    {
+        conf.counter_cache_save_period = counterCacheSavePeriod;
+    }
+
+    public static int getCounterCacheKeysToSave()
+    {
+        return conf.counter_cache_keys_to_save;
+    }
+
+    public static void setCounterCacheKeysToSave(int counterCacheKeysToSave)
+    {
+        conf.counter_cache_keys_to_save = counterCacheKeysToSave;
+    }
+
     public static IAllocator getoffHeapMemoryAllocator()
     {
         return memoryAllocator;
@@ -1347,20 +1484,43 @@ public class DatabaseDescriptor
         return conf.preheat_kernel_page_cache;
     }
 
-    public static Allocator getMemtableAllocator()
+    public static Pool getMemtableAllocatorPool()
     {
         try
         {
-            return memtableAllocator.newInstance();
+            return memtablePool
+                   .getConstructor(long.class, float.class, Runnable.class)
+                   .newInstance(((long) conf.memtable_total_space_in_mb) << 20, conf.memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
         }
-        catch (InstantiationException | IllegalAccessException e)
+        catch (Exception e)
         {
-            throw new RuntimeException(e);
+            throw new AssertionError(e);
         }
     }
 
     public static int getIndexSummaryResizeIntervalInMinutes()
     {
         return conf.index_summary_resize_interval_in_minutes;
+    }
+
+    public static boolean hasLargeAddressSpace()
+    {
+        // currently we just check if it's a 64bit arch, but any we only really care if the address space is large
+        String datamodel = System.getProperty("sun.arch.data.model");
+        if (datamodel != null)
+        {
+            switch (datamodel)
+            {
+                case "64": return true;
+                case "32": return false;
+            }
+        }
+        String arch = System.getProperty("os.arch");
+        return arch.contains("64") || arch.contains("sparcv9");
+    }
+
+    public static String getFlushLocation()
+    {
+        return conf.flush_directory;
     }
 }

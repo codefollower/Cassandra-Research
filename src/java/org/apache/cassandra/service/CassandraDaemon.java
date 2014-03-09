@@ -20,6 +20,7 @@ package org.apache.cassandra.service;
 import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryPoolMXBean;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
@@ -45,7 +46,6 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.MeteredFlusher;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -56,6 +56,7 @@ import org.apache.cassandra.metrics.StorageMetrics;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.CLibrary;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Mx4jTool;
 import org.apache.cassandra.utils.Pair;
 
@@ -105,7 +106,7 @@ public class CassandraDaemon
         }
         //前面这一段代码说明Cassandra推荐用64位的Oracle HotSpot JVM，不推荐OpenJDK
         // log warnings for different kinds of sub-optimal JVMs.  tldr use 64-bit Oracle >= 1.6u32
-        if (!System.getProperty("os.arch").contains("64"))
+        if (!DatabaseDescriptor.hasLargeAddressSpace())
             logger.info("32bit JVM detected.  It is recommended to run Cassandra on a 64bit JVM for better performance.");
         String javaVersion = System.getProperty("java.version");
         String javaVmName = System.getProperty("java.vm.name");
@@ -139,6 +140,8 @@ public class CassandraDaemon
         }
      */
         logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
+        for(MemoryPoolMXBean pool: ManagementFactory.getMemoryPoolMXBeans())
+            logger.info("{} {}: {}", pool.getName(), pool.getType(), pool.getPeakUsage());
         logger.info("Classpath: {}", System.getProperty("java.class.path"));
 
         // Fail-fast if JNA is not available or failing to initialize properly
@@ -241,6 +244,10 @@ public class CassandraDaemon
         // clean up debris in the rest of the keyspaces
         for (String keyspaceName : Schema.instance.getKeyspaces())
         {
+            // Skip system as we've already cleaned it
+            if (keyspaceName.equals(Keyspace.SYSTEM_KS))
+                continue;
+
             for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(keyspaceName).values())
                 ColumnFamilyStore.scrubDataDirectories(cfm);
         }
@@ -274,11 +281,6 @@ public class CassandraDaemon
         {
             logger.warn("Unable to start GCInspector (currently only supported on the Sun JVM)");
         }
-
-        // MeteredFlusher can block if flush queue fills up, so don't put on scheduledTasks
-        // Start it before commit log, so memtables can flush during commit log replay
-        //每隔1秒检查一下哪些ColumnFamilyStore需要被强制flush
-        StorageService.optionalTasks.scheduleWithFixedDelay(new MeteredFlusher(), 1000, 1000, TimeUnit.MILLISECONDS);
 
         // replay the log if necessary
         try
@@ -349,7 +351,8 @@ public class CassandraDaemon
             }
         }
 
-        waitForGossipToSettle();
+        if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
+            waitForGossipToSettle();
 
         // Thift
         InetAddress rpcAddr = DatabaseDescriptor.getRpcAddress();
@@ -359,7 +362,7 @@ public class CassandraDaemon
 
         // Native transport
         //用于支持CQL
-        InetAddress nativeAddr = DatabaseDescriptor.getNativeTransportAddress(); //同DatabaseDescriptor.getRpcAddress()
+        InetAddress nativeAddr = DatabaseDescriptor.getRpcAddress();
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
         nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
     }
@@ -479,7 +482,6 @@ public class CassandraDaemon
         destroy();
     }
 
-
     private void waitForGossipToSettle()
     {
         int forceAfter = Integer.getInteger("cassandra.skip_wait_for_gossip_to_settle", -1);
@@ -491,7 +493,7 @@ public class CassandraDaemon
         final int GOSSIP_SETTLE_POLL_INTERVAL_MS = 1000;
         final int GOSSIP_SETTLE_POLL_SUCCESSES_REQUIRED = 3;
 
-        logger.info("waiting for gossip to settle before accepting client requests...");
+        logger.info("Waiting for gossip to settle before accepting client requests...");
         Uninterruptibles.sleepUninterruptibly(GOSSIP_SETTLE_MIN_WAIT_MS, TimeUnit.MILLISECONDS);
         int totalPolls = 0;
         int numOkay = 0;
@@ -505,12 +507,12 @@ public class CassandraDaemon
             totalPolls++;
             if (active == 0 && pending == 0)
             {
-                logger.debug("gossip looks settled. CompletedTasks: {}", completed);
+                logger.debug("Gossip looks settled. CompletedTasks: {}", completed);
                 numOkay++;
             }
             else
             {
-                logger.info("gossip not settled after {} polls. Gossip Stage active/pending/completed: {}/{}/{}", totalPolls, active, pending, completed);
+                logger.info("Gossip not settled after {} polls. Gossip Stage active/pending/completed: {}/{}/{}", totalPolls, active, pending, completed);
                 numOkay = 0;
             }
             if (forceAfter > 0 && totalPolls > forceAfter)
@@ -520,7 +522,10 @@ public class CassandraDaemon
                 break;
             }
         }
-        logger.info("gossip settled after {} extra polls; proceeding", totalPolls - GOSSIP_SETTLE_POLL_SUCCESSES_REQUIRED);
+        if (totalPolls > GOSSIP_SETTLE_POLL_SUCCESSES_REQUIRED)
+            logger.info("Gossip settled after {} extra polls; proceeding", totalPolls - GOSSIP_SETTLE_POLL_SUCCESSES_REQUIRED);
+        else
+            logger.info("No gossip backlog; proceeding");
     }
 
     public static void stop(String[] args)

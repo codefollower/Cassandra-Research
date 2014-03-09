@@ -34,7 +34,8 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
+import org.apache.cassandra.utils.memory.PoolAllocator;
 
 //代表列名区间
 public class ColumnSlice
@@ -140,55 +141,55 @@ public class ColumnSlice
         }
     }
 
-    public static class NavigableMapIterator extends AbstractIterator<Cell>
-    {
-        private final NavigableMap<CellName, Cell> map;
-        private final ColumnSlice[] slices;
-
-        private int idx = 0;
-        private Iterator<Cell> currentSlice;
-
-        //按ColumnSlice[] slices来遍历有序map中的列
-        public NavigableMapIterator(NavigableMap<CellName, Cell> map, ColumnSlice[] slices)
-        {
-            this.map = map;
-            this.slices = slices;
-        }
-
-        protected Cell computeNext()
-        {
-            if (currentSlice == null)
-            {
-                if (idx >= slices.length)
-                    return endOfData();
-
-                ColumnSlice slice = slices[idx++];
-                // Note: we specialize the case of start == "" and finish = "" because it is slightly more efficient, but also they have a specific
-                // meaning (namely, they always extend to the beginning/end of the range).
-                if (slice.start.isEmpty())
-                {
-                    if (slice.finish.isEmpty())
-                        currentSlice = map.values().iterator(); //start和finish都是空，则用整个map
-                    else //start空，finish不空，则用finish(包含它)之前的map
-                        currentSlice = map.headMap(new FakeCellName(slice.finish), true).values().iterator();
-                }
-                else if (slice.finish.isEmpty()) //start不空，finish空，则用start开始(包含它)之后的map
-                {
-                    currentSlice = map.tailMap(new FakeCellName(slice.start), true).values().iterator();
-                }
-                else
-                {   //start和finish都不空，则用start开始(包含它)到finish(包含它)之间的map
-                    currentSlice = map.subMap(new FakeCellName(slice.start), true, new FakeCellName(slice.finish), true).values().iterator();
-                }
-            }
-
-            if (currentSlice.hasNext())
-                return currentSlice.next();
-
-            currentSlice = null;
-            return computeNext();
-        }
-    }
+//    public static class NavigableMapIterator extends AbstractIterator<Cell>
+//    {
+//        private final NavigableMap<CellName, Cell> map;
+//        private final ColumnSlice[] slices;
+//
+//        private int idx = 0;
+//        private Iterator<Cell> currentSlice;
+//
+//        //按ColumnSlice[] slices来遍历有序map中的列
+//        public NavigableMapIterator(NavigableMap<CellName, Cell> map, ColumnSlice[] slices)
+//        {
+//            this.map = map;
+//            this.slices = slices;
+//        }
+//
+//        protected Cell computeNext()
+//        {
+//            if (currentSlice == null)
+//            {
+//                if (idx >= slices.length)
+//                    return endOfData();
+//
+//                ColumnSlice slice = slices[idx++];
+//                // Note: we specialize the case of start == "" and finish = "" because it is slightly more efficient, but also they have a specific
+//                // meaning (namely, they always extend to the beginning/end of the range).
+//                if (slice.start.isEmpty())
+//                {
+//                    if (slice.finish.isEmpty())
+//                        currentSlice = map.values().iterator(); //start和finish都是空，则用整个map
+//                    else //start空，finish不空，则用finish(包含它)之前的map
+//                        currentSlice = map.headMap(new FakeCellName(slice.finish), true).values().iterator();
+//                }
+//                else if (slice.finish.isEmpty()) //start不空，finish空，则用start开始(包含它)之后的map
+//                {
+//                    currentSlice = map.tailMap(new FakeCellName(slice.start), true).values().iterator();
+//                }
+//                else
+//                {   //start和finish都不空，则用start开始(包含它)到finish(包含它)之间的map
+//                    currentSlice = map.subMap(new FakeCellName(slice.start), true, new FakeCellName(slice.finish), true).values().iterator();
+//                }
+//            }
+//
+//            if (currentSlice.hasNext())
+//                return currentSlice.next();
+//
+//            currentSlice = null;
+//            return computeNext();
+//        }
+//    }
 
     public static class NavigableSetIterator extends AbstractIterator<Cell>
     {
@@ -267,6 +268,11 @@ public class ColumnSlice
             return prefix.size();
         }
 
+        public boolean isStatic()
+        {
+            return prefix.isStatic();
+        }
+
         public ByteBuffer get(int i)
         {
             return prefix.get(i);
@@ -297,17 +303,29 @@ public class ColumnSlice
             throw new UnsupportedOperationException();
         }
 
-        public boolean isSameCQL3RowAs(CellName other)
+        public boolean isSameCQL3RowAs(CellNameType type, CellName other)
         {
             throw new UnsupportedOperationException();
         }
 
-        public CellName copy(Allocator allocator)
+        public CellName copy(AbstractAllocator allocator)
         {
             throw new UnsupportedOperationException();
         }
 
-        public long memorySize()
+        @Override
+        public long excessHeapSizeExcludingData()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void free(PoolAllocator<?> allocator)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public long unsharedHeapSize()
         {
             throw new UnsupportedOperationException();
         }

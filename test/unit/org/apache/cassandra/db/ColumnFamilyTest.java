@@ -25,20 +25,17 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.collect.Iterables;
-
-import org.apache.cassandra.SchemaLoader;
 import org.junit.Test;
 
+import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.io.sstable.ColumnStats;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.utils.ByteBufferUtil;
+
 import static org.apache.cassandra.Util.column;
 import static org.apache.cassandra.Util.cellname;
 import static org.junit.Assert.assertEquals;
-
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.HeapAllocator;
-
 
 public class ColumnFamilyTest extends SchemaLoader
 {
@@ -51,7 +48,7 @@ public class ColumnFamilyTest extends SchemaLoader
     {
         ColumnFamily cf;
 
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
         cf.addColumn(column("C", "v", 1));
         DataOutputBuffer bufOut = new DataOutputBuffer();
         ColumnFamily.serializer.serialize(cf, bufOut, version);
@@ -68,14 +65,14 @@ public class ColumnFamilyTest extends SchemaLoader
     {
         ColumnFamily cf;
 
-        TreeMap<String, String> map = new TreeMap<String, String>();
+        TreeMap<String, String> map = new TreeMap<>();
         for (int i = 100; i < 1000; ++i)
         {
             map.put(Integer.toString(i), "Avinash Lakshman is a good man: " + i);
         }
 
         // write
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
         DataOutputBuffer bufOut = new DataOutputBuffer();
         for (String cName : map.navigableKeySet())
         {
@@ -97,7 +94,7 @@ public class ColumnFamilyTest extends SchemaLoader
     @Test
     public void testGetColumnCount()
     {
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
 
         cf.addColumn(column("col1", "", 1));
         cf.addColumn(column("col2", "", 2));
@@ -110,7 +107,7 @@ public class ColumnFamilyTest extends SchemaLoader
     @Test
     public void testTimestamp()
     {
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
 
         cf.addColumn(column("col1", "val1", 2));
         cf.addColumn(column("col1", "val2", 2)); // same timestamp, new value
@@ -122,9 +119,9 @@ public class ColumnFamilyTest extends SchemaLoader
     @Test
     public void testMergeAndAdd()
     {
-        ColumnFamily cf_new = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
-        ColumnFamily cf_old = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
-        ColumnFamily cf_result = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        ColumnFamily cf_new = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        ColumnFamily cf_old = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        ColumnFamily cf_result = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
         ByteBuffer val = ByteBufferUtil.bytes("sample value");
         ByteBuffer val2 = ByteBufferUtil.bytes("x value ");
 
@@ -134,8 +131,8 @@ public class ColumnFamilyTest extends SchemaLoader
         cf_old.addColumn(cellname("col2"), val2, 1);
         cf_old.addColumn(cellname("col3"), val2, 2);
 
-        cf_result.addAll(cf_new, HeapAllocator.instance);
-        cf_result.addAll(cf_old, HeapAllocator.instance);
+        cf_result.addAll(cf_new);
+        cf_result.addAll(cf_old);
 
         assert 3 == cf_result.getColumnCount() : "Count is " + cf_new.getColumnCount();
         //addcolumns will only add if timestamp >= old timestamp
@@ -155,12 +152,12 @@ public class ColumnFamilyTest extends SchemaLoader
     }
 
     @Test
-    public void testColumnStatsRecordsRowDeletesCorrectly() throws IOException
+    public void testColumnStatsRecordsRowDeletesCorrectly()
     {
         long timestamp = System.currentTimeMillis();
         int localDeletionTime = (int) (System.currentTimeMillis() / 1000);
 
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
         cf.delete(new DeletionInfo(timestamp, localDeletionTime));
         ColumnStats stats = cf.getColumnStats();
         assertEquals(timestamp, stats.maxTimestamp);

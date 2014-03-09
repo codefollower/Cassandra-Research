@@ -18,7 +18,10 @@
 package org.apache.cassandra.db.index;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.Future;
 
+import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
@@ -27,6 +30,7 @@ import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
  * Implements a secondary index for a column family using a second column family
@@ -85,28 +89,27 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
                              baseCfs.metadata.getColumnDefinition(expr.column).type.getString(expr.value));
     }
 
-    public void delete(ByteBuffer rowKey, Cell cell)
+    public void delete(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
     {
         if (cell.isMarkedForDelete(System.currentTimeMillis()))
             return;
 
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
         int localDeletionTime = (int) (System.currentTimeMillis() / 1000);
-        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
+        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata, false, 1);
         cfi.addTombstone(makeIndexColumnName(rowKey, cell), localDeletionTime, cell.timestamp());
-        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater);
+        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater, opGroup, null);
         if (logger.isDebugEnabled())
             logger.debug("removed index entry for cleaned-up value {}:{}", valueKey, cfi);
     }
 
-    public void insert(ByteBuffer rowKey, Cell cell)
+    public void insert(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
     {
         //valueKey是索引字段值
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
-        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
-
         //对于CompositesIndexOnRegular类型，makeIndexColumnName返回的只有rowKey
         //对于KeysIndex，name其实就是rowKey
+        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata, false, 1);
         CellName name = makeIndexColumnName(rowKey, cell);
         if (cell instanceof ExpiringCell)
         {
@@ -122,12 +125,16 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
         //从上面的valueKey和name对应rowKey作为一个Column放到ColumnFamily看出来
         //这里会保存valueKey和name，所以当按索引字段查找时，就能从valueKey中找到对应的name(就是rowKey)
-        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater); //传递nullUpdater时不会再进一步触发索引相关操作'
+        //传递nullUpdater时不会再进一步触发索引相关操作'
+        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater, opGroup, null);
     }
 
-    public void update(ByteBuffer rowKey, Cell col)
-    {
-        insert(rowKey, col);
+    public void update(ByteBuffer rowKey, Cell oldCol, Cell col, OpOrder.Group opGroup)
+    {        
+        // insert the new value before removing the old one, so we never have a period
+        // where the row is invisible to both queries (the opposite seems preferable); see CASSANDRA-5540                    
+        insert(rowKey, col, opGroup);
+        delete(rowKey, oldCol, opGroup);
     }
 
     public void removeIndex(ByteBuffer columnName)
@@ -137,7 +144,13 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
     public void forceBlockingFlush()
     {
-        indexCfs.forceBlockingFlush();
+        Future<?> wait;
+        // we synchronise on the baseCfs to make sure we are ordered correctly with other flushes to the base CFS
+        synchronized (baseCfs.getDataTracker())
+        {
+            wait = indexCfs.forceFlush();
+        }
+        FBUtilities.waitOnFuture(wait);
     }
 
     public void invalidate()
@@ -160,9 +173,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         return indexCfs.name;
     }
 
-    public long getLiveSize()
+    public AbstractAllocator getOnHeapAllocator()
     {
-        return indexCfs.getMemtableDataSize();
+        return indexCfs.getDataTracker().getView().getCurrentMemtable().getAllocator();
     }
 
     public void reload()

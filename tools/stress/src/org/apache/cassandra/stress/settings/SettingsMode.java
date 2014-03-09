@@ -1,4 +1,25 @@
 package org.apache.cassandra.stress.settings;
+/*
+ * 
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ * 
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ * 
+ */
+
 
 import java.io.Serializable;
 import java.util.Arrays;
@@ -30,14 +51,6 @@ public class SettingsMode implements Serializable
             cqlVersion = CqlVersion.CQL3;
             Cql3SimpleNativeOptions opts = (Cql3SimpleNativeOptions) options;
             api = ConnectionAPI.SIMPLE_NATIVE;
-            style = opts.usePrepared.setByUser() ? ConnectionStyle.CQL_PREPARED : ConnectionStyle.CQL;
-            compression = ProtocolOptions.Compression.NONE.name();
-        }
-        else if (options instanceof Cql2Options)
-        {
-            cqlVersion = CqlVersion.CQL2;
-            api = ConnectionAPI.THRIFT;
-            Cql2Options opts = (Cql2Options) options;
             style = opts.usePrepared.setByUser() ? ConnectionStyle.CQL_PREPARED : ConnectionStyle.CQL;
             compression = ProtocolOptions.Compression.NONE.name();
         }
@@ -89,18 +102,6 @@ public class SettingsMode implements Serializable
         }
     }
 
-    private static final class Cql2Options extends GroupedOptions
-    {
-        final OptionSimple api = new OptionSimple("cql2", "", null, "", true);
-        final OptionSimple usePrepared = new OptionSimple("prepared", "", null, "", false);
-
-        @Override
-        public List<? extends Option> options()
-        {
-            return Arrays.asList(usePrepared, api);
-        }
-    }
-
     private static final class ThriftOptions extends GroupedOptions
     {
         final OptionSimple api = new OptionSimple("thrift", "", null, "", true);
@@ -125,7 +126,7 @@ public class SettingsMode implements Serializable
             return new SettingsMode(opts);
         }
 
-        GroupedOptions options = GroupedOptions.select(params, new ThriftOptions(), new Cql2Options(), new Cql3Options(), new Cql3SimpleNativeOptions());
+        GroupedOptions options = GroupedOptions.select(params, new ThriftOptions(), new Cql3Options(), new Cql3SimpleNativeOptions());
         if (options == null)
         {
             printHelp();
@@ -137,7 +138,7 @@ public class SettingsMode implements Serializable
 
     public static void printHelp()
     {
-        GroupedOptions.printOptions(System.out, "-mode", new ThriftOptions(), new Cql2Options(), new Cql3Options(), new Cql3SimpleNativeOptions());
+        GroupedOptions.printOptions(System.out, "-mode", new ThriftOptions(), new Cql3Options(), new Cql3SimpleNativeOptions());
     }
 
     public static Runnable helpPrinter()

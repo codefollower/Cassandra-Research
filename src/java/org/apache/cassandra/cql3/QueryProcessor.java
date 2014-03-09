@@ -34,8 +34,7 @@ import org.apache.cassandra.cql3.hooks.*;
 import org.apache.cassandra.cql3.statements.*;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
@@ -46,12 +45,11 @@ import org.apache.cassandra.utils.SemanticVersion;
 
 public class QueryProcessor //全是static方法
 {
-    public static final SemanticVersion CQL_VERSION = new SemanticVersion("3.1.4");
+    public static final SemanticVersion CQL_VERSION = new SemanticVersion("3.1.5");
 
     private static final Logger logger = LoggerFactory.getLogger(QueryProcessor.class);
-    private static final MemoryMeter meter = new MemoryMeter();
+    private static final MemoryMeter meter = new MemoryMeter().withGuessing(MemoryMeter.Guess.FALLBACK_BEST);
     private static final long MAX_CACHE_PREPARED_MEMORY = Runtime.getRuntime().maxMemory() / 256;
-    private static final int MAX_CACHE_PREPARED_COUNT = 10000;
 
     private static EntryWeigher<MD5Digest, CQLStatement> cqlMemoryUsageWeigher = new EntryWeigher<MD5Digest, CQLStatement>()
     {
@@ -77,28 +75,15 @@ public class QueryProcessor //全是static方法
     static
     {
         //要加-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
-        if (MemoryMeter.isInitialized())
-        {
-            preparedStatements = new ConcurrentLinkedHashMap.Builder<MD5Digest, CQLStatement>()
-                                 .maximumWeightedCapacity(MAX_CACHE_PREPARED_MEMORY)
-                                 .weigher(cqlMemoryUsageWeigher)
-                                 .build();
-            thriftPreparedStatements = new ConcurrentLinkedHashMap.Builder<Integer, CQLStatement>()
-                                       .maximumWeightedCapacity(MAX_CACHE_PREPARED_MEMORY)
-                                       .weigher(thriftMemoryUsageWeigher)
-                                       .build();
-        }
-        else
-        {
-            logger.error("Unable to initialize MemoryMeter (jamm not specified as javaagent).  This means "
-                         + "Cassandra will be unable to measure object sizes accurately and may consequently OOM.");
-            preparedStatements = new ConcurrentLinkedHashMap.Builder<MD5Digest, CQLStatement>()
-                                 .maximumWeightedCapacity(MAX_CACHE_PREPARED_COUNT)
-                                 .build();
-            thriftPreparedStatements = new ConcurrentLinkedHashMap.Builder<Integer, CQLStatement>()
-                                       .maximumWeightedCapacity(MAX_CACHE_PREPARED_COUNT)
-                                       .build();
-        }
+
+        preparedStatements = new ConcurrentLinkedHashMap.Builder<MD5Digest, CQLStatement>()
+                             .maximumWeightedCapacity(MAX_CACHE_PREPARED_MEMORY)
+                             .weigher(cqlMemoryUsageWeigher)
+                             .build();
+        thriftPreparedStatements = new ConcurrentLinkedHashMap.Builder<Integer, CQLStatement>()
+                                   .maximumWeightedCapacity(MAX_CACHE_PREPARED_MEMORY)
+                                   .weigher(thriftMemoryUsageWeigher)
+                                   .build();
     }
 
     private static final List<PreExecutionHook> preExecutionHooks = new CopyOnWriteArrayList<>();
@@ -160,24 +145,25 @@ public class QueryProcessor //全是static方法
         }
     }
 
-    public static void validateCellNames(Iterable<CellName> cellNames) throws InvalidRequestException
+    public static void validateCellNames(Iterable<CellName> cellNames, CellNameType type) throws InvalidRequestException
     {
         for (CellName name : cellNames)
-            validateCellName(name);
+            validateCellName(name, type);
     }
 
-    public static void validateCellName(CellName name) throws InvalidRequestException
+    public static void validateCellName(CellName name, CellNameType type) throws InvalidRequestException
     {
-        validateComposite(name);
+        validateComposite(name, type);
         if (name.isEmpty())
             throw new InvalidRequestException("Invalid empty value for clustering column of COMPACT TABLE");
     }
 
-    public static void validateComposite(Composite name) throws InvalidRequestException
+    public static void validateComposite(Composite name, CType type) throws InvalidRequestException
     {
-        if (name.dataSize() > Cell.MAX_NAME_LENGTH)
+        long serializedSize = type.serializer().serializedSize(name, TypeSizes.NATIVE);
+        if (serializedSize > Cell.MAX_NAME_LENGTH)
             throw new InvalidRequestException(String.format("The sum of all clustering columns is too long (%s > %s)",
-                                                            name.dataSize(),
+                                                            serializedSize,
                                                             Cell.MAX_NAME_LENGTH));
     }
 
@@ -458,9 +444,6 @@ public class QueryProcessor //全是static方法
 
     private static long measure(Object key)
     {
-        if (!MemoryMeter.isInitialized())
-            return 1;
-
         return key instanceof MeasurableForPreparedCache
              ? ((MeasurableForPreparedCache)key).measureForPreparedCache(meter)
              : meter.measureDeep(key);

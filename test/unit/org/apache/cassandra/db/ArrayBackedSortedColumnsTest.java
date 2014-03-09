@@ -1,4 +1,3 @@
-package org.apache.cassandra.db;
 /*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -19,15 +18,12 @@ package org.apache.cassandra.db;
  * under the License.
  *
  */
-
+package org.apache.cassandra.db;
 
 import java.util.*;
-
 import org.junit.Test;
 
 import static org.junit.Assert.*;
-
-import com.google.common.base.Functions;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.CFMetaData;
@@ -36,7 +32,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.marshal.Int32Type;
-import org.apache.cassandra.utils.HeapAllocator;
 
 public class ArrayBackedSortedColumnsTest extends SchemaLoader
 {
@@ -59,12 +54,81 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values = new int[]{ 1, 2, 2, 3 };
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])), HeapAllocator.instance);
+            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         Iterator<Cell> iter = map.iterator();
         assertEquals("1st column", 1, iter.next().name().toByteBuffer().getInt(0));
         assertEquals("2nd column", 2, iter.next().name().toByteBuffer().getInt(0));
         assertEquals("3rd column", 3, iter.next().name().toByteBuffer().getInt(0));
+    }
+
+    @Test
+    public void testOutOfOrder()
+    {
+        testAddOutOfOrder(false);
+        testAddOutOfOrder(false);
+    }
+
+    private void testAddOutOfOrder(boolean reversed)
+    {
+        CellNameType type = new SimpleDenseCellNameType(Int32Type.instance);
+        ColumnFamily cells = ArrayBackedSortedColumns.factory.create(metadata(), reversed);
+
+        int[] values = new int[]{ 1, 2, 1, 3, 4, 4, 5, 5, 1, 2, 6, 6, 6, 1, 2, 3 };
+        for (int i = 0; i < values.length; ++i)
+            cells.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+
+        assertEquals(6, cells.getColumnCount());
+
+        Iterator<Cell> iter = cells.iterator();
+        assertEquals(1, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(2, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(3, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(4, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(5, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(6, iter.next().name().toByteBuffer().getInt(0));
+
+        // Add more values
+        values = new int[]{ 11, 15, 12, 12, 12, 16, 10, 8, 8, 7, 4, 4, 5 };
+        for (int i = 0; i < values.length; ++i)
+            cells.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+
+        assertEquals(13, cells.getColumnCount());
+
+        iter = cells.reverseIterator();
+        assertEquals(16, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(15, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(12, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(11, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(10, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(8,  iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(7, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(6, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(5, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(4, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(3, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(2, iter.next().name().toByteBuffer().getInt(0));
+        assertEquals(1, iter.next().name().toByteBuffer().getInt(0));
+    }
+
+    @Test
+    public void testGetColumn()
+    {
+        testGetColumnInternal(true);
+        testGetColumnInternal(false);
+    }
+
+    private void testGetColumnInternal(boolean reversed)
+    {
+        CellNameType type = new SimpleDenseCellNameType(Int32Type.instance);
+        ColumnFamily cells = ArrayBackedSortedColumns.factory.create(metadata(), reversed);
+
+        int[] values = new int[]{ -1, 20, 44, 55, 27, 27, 17, 1, 9, 89, 33, 44, 0, 9 };
+        for (int i = 0; i < values.length; ++i)
+            cells.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+
+        for (int i : values)
+            assertEquals(i, cells.getColumn(type.makeCellName(i)).name().toByteBuffer().getInt(0));
     }
 
     @Test
@@ -84,12 +148,12 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values2 = new int[]{ 2, 4, 5, 6 };
 
         for (int i = 0; i < values1.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values1[reversed ? values1.length - 1 - i : i])), HeapAllocator.instance);
+            map.addColumn(new Cell(type.makeCellName(values1[reversed ? values1.length - 1 - i : i])));
 
         for (int i = 0; i < values2.length; ++i)
-            map2.addColumn(new Cell(type.makeCellName(values2[reversed ? values2.length - 1 - i : i])), HeapAllocator.instance);
+            map2.addColumn(new Cell(type.makeCellName(values2[reversed ? values2.length - 1 - i : i])));
 
-        map2.addAll(map, HeapAllocator.instance, Functions.<Cell>identity());
+        map2.addAll(map);
 
         Iterator<Cell> iter = map2.iterator();
         assertEquals("1st column", 1, iter.next().name().toByteBuffer().getInt(0));
@@ -113,14 +177,14 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         ColumnFamily map = ArrayBackedSortedColumns.factory.create(metadata(), reversed);
         int[] values = new int[]{ 1, 2, 3, 5, 9 };
 
-        List<Cell> sorted = new ArrayList<Cell>();
+        List<Cell> sorted = new ArrayList<>();
         for (int v : values)
             sorted.add(new Cell(type.makeCellName(v)));
-        List<Cell> reverseSorted = new ArrayList<Cell>(sorted);
+        List<Cell> reverseSorted = new ArrayList<>(sorted);
         Collections.reverse(reverseSorted);
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])), HeapAllocator.instance);
+            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         assertSame(sorted, map.getSortedColumns());
         assertSame(reverseSorted, map.getReverseSortedColumns());
@@ -141,7 +205,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values = new int[]{ 1, 2, 3, 5, 9 };
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])), HeapAllocator.instance);
+            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(3), Composites.EMPTY) }));
         assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(4), Composites.EMPTY) }));
@@ -170,5 +234,35 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
             int value = ByteBufferUtil.toInt(iter.next().name().toByteBuffer());
             assert name == value : "Expected " + name + " but got " + value;
         }
+    }
+
+    @Test
+    public void testRemove()
+    {
+        testRemoveInternal(false);
+        testRemoveInternal(true);
+    }
+
+    private void testRemoveInternal(boolean reversed)
+    {
+        CellNameType type = new SimpleDenseCellNameType(Int32Type.instance);
+        ColumnFamily map = ArrayBackedSortedColumns.factory.create(metadata(), reversed);
+
+        int[] values = new int[]{ 1, 2, 2, 3 };
+
+        for (int i = 0; i < values.length; ++i)
+            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+
+        Iterator<Cell> iter = map.getReverseSortedColumns().iterator();
+        assertTrue(iter.hasNext());
+        iter.next();
+        iter.remove();
+        assertTrue(iter.hasNext());
+        iter.next();
+        iter.remove();
+        assertTrue(iter.hasNext());
+        iter.next();
+        iter.remove();
+        assertTrue(!iter.hasNext());
     }
 }

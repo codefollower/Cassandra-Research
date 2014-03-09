@@ -50,7 +50,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.WrappedRunnable;
 
-public class MigrationManager implements IEndpointStateChangeSubscriber
+public class MigrationManager
 {
     private static final Logger logger = LoggerFactory.getLogger(MigrationManager.class);
 
@@ -61,7 +61,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
     public static final int MIGRATION_DELAY_IN_MS = 60000;
 
     private final List<IMigrationListener> listeners = new CopyOnWriteArrayList<IMigrationListener>();
-
+    
     private MigrationManager() {}
 
     public void register(IMigrationListener listener)
@@ -74,36 +74,13 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
         listeners.remove(listener);
     }
 
-    public void onJoin(InetAddress endpoint, EndpointState epState)
-    {}
-    
-    public void beforeChange(InetAddress endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) 
-    {}
-
-    public void onChange(InetAddress endpoint, ApplicationState state, VersionedValue value)
-    {
-        if (state != ApplicationState.SCHEMA || endpoint.equals(FBUtilities.getBroadcastAddress()))
-            return;
-
-        maybeScheduleSchemaPull(UUID.fromString(value.value), endpoint);
-    }
-
-    public void onAlive(InetAddress endpoint, EndpointState state)
+    public void scheduleSchemaPull(InetAddress endpoint, EndpointState state)
     {
         VersionedValue value = state.getApplicationState(ApplicationState.SCHEMA);
 
-        if (value != null)
+        if (!endpoint.equals(FBUtilities.getBroadcastAddress()) && value != null)
             maybeScheduleSchemaPull(UUID.fromString(value.value), endpoint);
     }
-
-    public void onDead(InetAddress endpoint, EndpointState state)
-    {}
-
-    public void onRestart(InetAddress endpoint, EndpointState state)
-    {}
-
-    public void onRemove(InetAddress endpoint)
-    {}
 
     /**
      * If versions differ this node sends request with local migration list to the endpoint
@@ -155,11 +132,12 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
     private static boolean shouldPullSchemaFrom(InetAddress endpoint)
     {
         /*
-         * Don't request schema from nodes with a higher major (may have incompatible schema)
+         * Don't request schema from nodes with a differnt or unknonw major version (may have incompatible schema)
          * Don't request schema from fat clients
          */
-        return MessagingService.instance().getVersion(endpoint) <= MessagingService.current_version
-            && !Gossiper.instance.isFatClient(endpoint);
+        return MessagingService.instance().knowsVersion(endpoint)
+                && MessagingService.instance().getRawVersion(endpoint) == MessagingService.current_version
+                && !Gossiper.instance.isFatClient(endpoint);
     }
 
     public static boolean isReadyForBootstrap()
@@ -231,7 +209,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
             throw new AlreadyExistsException(cfm.ksName, cfm.cfName);
 
         logger.info(String.format("Create new ColumnFamily: %s", cfm));
-        announce(cfm.toSchema(FBUtilities.timestampMicros()));
+        announce(addSerializedKeyspace(cfm.toSchema(FBUtilities.timestampMicros()), cfm.ksName));
     }
 
     public static void announceNewType(UserType newType)
@@ -262,7 +240,7 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
         oldCfm.validateCompatility(cfm);
 
         logger.info(String.format("Update ColumnFamily '%s/%s' From %s To %s", cfm.ksName, cfm.cfName, oldCfm, cfm));
-        announce(oldCfm.toSchemaUpdate(cfm, FBUtilities.timestampMicros(), fromThrift));
+        announce(addSerializedKeyspace(oldCfm.toSchemaUpdate(cfm, FBUtilities.timestampMicros(), fromThrift), cfm.ksName));
     }
 
     public static void announceTypeUpdate(UserType updatedType)
@@ -287,7 +265,14 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
             throw new ConfigurationException(String.format("Cannot drop non existing column family '%s' in keyspace '%s'.", cfName, ksName));
 
         logger.info(String.format("Drop ColumnFamily '%s/%s'", oldCfm.ksName, oldCfm.cfName));
-        announce(oldCfm.dropFromSchema(FBUtilities.timestampMicros()));
+        announce(addSerializedKeyspace(oldCfm.dropFromSchema(FBUtilities.timestampMicros()), ksName));
+    }
+
+    // Include the serialized keyspace for when a target node missed the CREATE KEYSPACE migration (see #5631).
+    private static Mutation addSerializedKeyspace(Mutation migration, String ksName)
+    {
+        migration.add(SystemKeyspace.readSchemaRow(ksName).cf);
+        return migration;
     }
 
     public static void announceTypeDrop(UserType droppedType)
@@ -327,14 +312,11 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
         //并不需要等待其他节点更新完成
         for (InetAddress endpoint : Gossiper.instance.getLiveMembers())
         {
-            if (endpoint.equals(FBUtilities.getBroadcastAddress()))
-                continue; // we've dealt with localhost already
-
-            // don't send schema to the nodes with the versions older than current major
-            if (MessagingService.instance().getVersion(endpoint) < MessagingService.current_version)
-                continue;
-
-            pushSchemaMutation(endpoint, schema);
+            // only push schema to nodes with known and equal versions
+            if (!endpoint.equals(FBUtilities.getBroadcastAddress()) &&
+                    MessagingService.instance().knowsVersion(endpoint) &&
+                    MessagingService.instance().getRawVersion(endpoint) == MessagingService.current_version)
+                pushSchemaMutation(endpoint, schema);
         }
         //返回的是Future<?> f，所以FBUtilities.waitOnFuture只等待本地完成就返回
         return f;

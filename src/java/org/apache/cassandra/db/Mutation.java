@@ -26,6 +26,7 @@ import java.util.*;
 import org.apache.commons.lang3.StringUtils;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
@@ -134,7 +135,7 @@ public class Mutation implements IMutation
         ColumnFamily cf = modifications.get(cfm.cfId);
         if (cf == null)
         {
-            cf = TreeMapBackedSortedColumns.factory.create(cfm);
+            cf = ArrayBackedSortedColumns.factory.create(cfm);
             modifications.put(cfm.cfId, cf);
         }
         return cf;
@@ -193,7 +194,7 @@ public class Mutation implements IMutation
             // not in the case where it wasn't there indeed.
             ColumnFamily cf = modifications.put(entry.getKey(), entry.getValue());
             if (cf != null)
-                entry.getValue().resolve(cf);
+                entry.getValue().addAll(cf);
         }
     }
 
@@ -220,6 +221,11 @@ public class Mutation implements IMutation
     public MessageOut<Mutation> createMessage(MessagingService.Verb verb)
     {
         return new MessageOut<>(verb, this, serializer);
+    }
+
+    public long getTimeout()
+    {
+        return DatabaseDescriptor.getWriteRpcTimeout();
     }
 
     public String toString()
@@ -307,7 +313,7 @@ public class Mutation implements IMutation
 
         private ColumnFamily deserializeOneCf(DataInput in, int version, ColumnSerializer.Flag flag) throws IOException
         {
-            ColumnFamily cf = ColumnFamily.serializer.deserialize(in, UnsortedColumns.factory, flag, version);
+            ColumnFamily cf = ColumnFamily.serializer.deserialize(in, ArrayBackedSortedColumns.factory, flag, version);
             // We don't allow Mutation with null column family, so we should never get null back.
             assert cf != null;
             return cf;

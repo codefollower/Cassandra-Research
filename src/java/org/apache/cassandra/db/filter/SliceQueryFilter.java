@@ -23,6 +23,8 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.*;
 
+import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +33,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.columniterator.SSTableSliceIterator;
 import org.apache.cassandra.db.composites.CType;
+import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -342,6 +345,41 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return false;
     }
 
+    public boolean isHeadFilter()
+    {
+        return slices.length == 1 && slices[0].start.isEmpty() && !reversed;
+    }
+
+    public boolean countCQL3Rows(CellNameType comparator)
+    {
+        // If comparator is dense a cell == a CQL3 rows so we're always counting CQL3 rows
+        // in particular. Otherwise, we do so only if we group the cells into CQL rows.
+        return comparator.isDense() || compositesToGroup >= 0;
+    }
+
+    public boolean isFullyCoveredBy(ColumnFamily cf, long now)
+    {
+        // cf is the beginning of a partition. It covers this filter if:
+        //   1) either this filter requests the head of the partition and request less
+        //      than what cf has to offer (note: we do need to use getLiveCount() for that
+        //      as it knows if the filter count cells or CQL3 rows).
+        //   2) the start and finish bound of this filter are included in cf.
+        if (isHeadFilter() && count <= getLiveCount(cf, now))
+            return true;
+
+        if (start().isEmpty() || finish().isEmpty() || cf.getColumnCount() == 0)
+            return false;
+
+        Composite low = isReversed() ? finish() : start();
+        Composite high = isReversed() ? start() : finish();
+
+        CellName first = cf.iterator(ColumnSlice.ALL_COLUMNS_ARRAY).next().name();
+        CellName last = cf.reverseIterator(ColumnSlice.ALL_COLUMNS_ARRAY).next().name();
+
+        return cf.getComparator().compare(first, low) <= 0
+            && cf.getComparator().compare(high, last) <= 0;
+    }
+
     public static class Serializer implements IVersionedSerializer<SliceQueryFilter>
     {
         private CType type;
@@ -391,5 +429,44 @@ public class SliceQueryFilter implements IDiskAtomFilter
             size += sizes.sizeof(f.compositesToGroup);
             return size;
         }
+    }
+
+    public Iterator<RangeTombstone> getRangeTombstoneIterator(final ColumnFamily source)
+    {
+        final DeletionInfo delInfo = source.deletionInfo();
+        if (!delInfo.hasRanges() || slices.length == 0)
+            return Iterators.<RangeTombstone>emptyIterator();
+
+        return new AbstractIterator<RangeTombstone>()
+        {
+            private int sliceIdx = 0;
+            private Iterator<RangeTombstone> sliceIter = currentRangeIter();
+
+            protected RangeTombstone computeNext()
+            {
+                while (true)
+                {
+                    if (sliceIter.hasNext())
+                        return sliceIter.next();
+
+                    if (!nextSlice())
+                        return endOfData();
+
+                    sliceIter = currentRangeIter();
+                }
+            }
+
+            private Iterator<RangeTombstone> currentRangeIter()
+            {
+                ColumnSlice slice = slices[reversed ? (slices.length - 1 - sliceIdx) : sliceIdx];
+                return reversed ? delInfo.rangeIterator(slice.finish, slice.start)
+                                : delInfo.rangeIterator(slice.start, slice.finish);
+            }
+
+            private boolean nextSlice()
+            {
+                return ++sliceIdx < slices.length;
+            }
+        };
     }
 }

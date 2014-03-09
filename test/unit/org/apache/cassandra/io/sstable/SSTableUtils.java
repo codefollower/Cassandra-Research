@@ -25,6 +25,7 @@ import java.util.*;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 import org.apache.cassandra.Util;
@@ -38,7 +39,7 @@ public class SSTableUtils
 
     public static ColumnFamily createCF(long mfda, int ldt, Cell... cols)
     {
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(KEYSPACENAME, CFNAME);
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(KEYSPACENAME, CFNAME);
         cf.delete(new DeletionInfo(mfda, ldt));
         for (Cell col : cols)
             cf.addColumn(col);
@@ -66,7 +67,7 @@ public class SSTableUtils
         return datafile;
     }
 
-    public static void assertContentEquals(SSTableReader lhs, SSTableReader rhs) throws IOException
+    public static void assertContentEquals(SSTableReader lhs, SSTableReader rhs)
     {
         SSTableScanner slhs = lhs.getScanner();
         SSTableScanner srhs = rhs.getScanner();
@@ -80,7 +81,7 @@ public class SSTableUtils
         assert !srhs.hasNext() : "RHS contained more rows than LHS";
     }
 
-    public static void assertContentEquals(OnDiskAtomIterator lhs, OnDiskAtomIterator rhs) throws IOException
+    public static void assertContentEquals(OnDiskAtomIterator lhs, OnDiskAtomIterator rhs)
     {
         assertEquals(lhs.getKey(), rhs.getKey());
         // check metadata
@@ -162,7 +163,7 @@ public class SSTableUtils
             Map<String, ColumnFamily> map = new HashMap<String, ColumnFamily>();
             for (String key : keys)
             {
-                ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(ksname, cfname);
+                ColumnFamily cf = ArrayBackedSortedColumns.factory.create(ksname, cfname);
                 cf.addColumn(new Cell(Util.cellname(key), ByteBufferUtil.bytes(key), 0));
                 map.put(key, cf);
             }
@@ -198,7 +199,7 @@ public class SSTableUtils
         public SSTableReader write(int expectedSize, Appender appender) throws IOException
         {
             File datafile = (dest == null) ? tempSSTableFile(ksname, cfname, generation) : new File(dest.filenameFor(Component.DATA));
-            SSTableWriter writer = new SSTableWriter(datafile.getAbsolutePath(), expectedSize);
+            SSTableWriter writer = new SSTableWriter(datafile.getAbsolutePath(), expectedSize, ActiveRepairService.UNREPAIRED_SSTABLE);
             while (appender.append(writer)) { /* pass */ }
             SSTableReader reader = writer.closeAndOpenReader();
             // mark all components for removal

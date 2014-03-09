@@ -43,10 +43,6 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.filter.ColumnSlice;
-import org.apache.cassandra.db.filter.NamesQueryFilter;
-import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
 import org.apache.cassandra.db.marshal.UUIDType;
@@ -129,8 +125,8 @@ public class StorageProxy implements StorageProxyMBean
 
         /*
          * We execute counter writes in 2 places: either directly in the coordinator node if it is a replica, or
-         * in CounterMutationVerbHandler on a replica othewise. The write must be executed on the MUTATION stage
-         * but on the latter case, the verb handler already run on the MUTATION stage, so we must not execute the
+         * in CounterMutationVerbHandler on a replica othewise. The write must be executed on the COUNTER_MUTATION stage
+         * but on the latter case, the verb handler already run on the COUNTER_MUTATION stage, so we must not execute the
          * underlying on the stage otherwise we risk a deadlock. Hence two different performer.
          */
         counterWritePerformer = new WritePerformer()
@@ -153,14 +149,15 @@ public class StorageProxy implements StorageProxyMBean
                               String localDataCenter,
                               ConsistencyLevel consistencyLevel)
             {
-                StageManager.getStage(Stage.MUTATION).execute(counterWriteTask(mutation, targets, responseHandler, localDataCenter));
+                StageManager.getStage(Stage.COUNTER_MUTATION)
+                            .execute(counterWriteTask(mutation, targets, responseHandler, localDataCenter));
             }
         };
     }
 
     /**
      * Apply @param updates if and only if the current values in the row for @param key
-     * match the ones given by @param expected.  The algorithm is "raw" Paxos: that is, Paxos
+     * match the provided @param conditions.  The algorithm is "raw" Paxos: that is, Paxos
      * minus leader election -- any node in the cluster may propose changes for any row,
      * which (that is, the row) is the unit of values being proposed, not single columns.
      *
@@ -192,24 +189,19 @@ public class StorageProxy implements StorageProxyMBean
      * @param keyspaceName the keyspace for the CAS
      * @param cfName the column family for the CAS
      * @param key the row key for the row to CAS
-     * @param prefix a column name prefix that selects the CQL3 row to check if {@code expected} is null. If {@code expected}
-     * is not null, this is ignored. If {@code expected} is null and this is null, the full row existing is checked (by querying
-     * the first live column of the row).
-     * @param expected the expected column values. This can be null to check for existence (see {@code prefix}).
-     * @param updates the value to insert if {@code expected matches the current values}.
+     * @param conditions the conditions for the CAS to apply.
+     * @param updates the value to insert if {@code condtions} matches the current values.
      * @param consistencyForPaxos the consistency for the paxos prepare and propose round. This can only be either SERIAL or LOCAL_SERIAL.
      * @param consistencyForCommit the consistency for write done during the commit phase. This can be anything, except SERIAL or LOCAL_SERIAL.
      *
-     * @return null if the operation succeeds in updating the row, or the current values for the columns contained in
-     * expected (since, if the CAS doesn't succeed, it means the current value do not match the one in expected). If
-     * expected == null and the CAS is unsuccessfull, the first live column of the CF is returned.
+     * @return null if the operation succeeds in updating the row, or the current values corresponding to conditions.
+     * (since, if the CAS doesn't succeed, it means the current value do not match the conditions).
      */
     //用于条件化insert和update
     public static ColumnFamily cas(String keyspaceName,
                                    String cfName,
                                    ByteBuffer key,
-                                   Composite prefix,
-                                   ColumnFamily expected,
+                                   CASConditions conditions,
                                    ColumnFamily updates,
                                    ConsistencyLevel consistencyForPaxos,
                                    ConsistencyLevel consistencyForCommit)
@@ -231,29 +223,17 @@ public class StorageProxy implements StorageProxyMBean
 
             UUID ballot = beginAndRepairPaxos(start, key, metadata, liveEndpoints, requiredParticipants, consistencyForPaxos);
 
-            // read the current value and compare with expected
+            // read the current values and check they validate the conditions
             Tracing.trace("Reading existing values for CAS precondition");
             long timestamp = System.currentTimeMillis();
-            ReadCommand readCommand;
-            if (expected == null || expected.isEmpty())
-            {
-                SliceQueryFilter filter = prefix == null
-                                        ? new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, false, 1)
-                                        : new SliceQueryFilter(prefix.slice(), false, 1, prefix.size());
-                readCommand = new SliceFromReadCommand(keyspaceName, key, cfName, timestamp, filter);
-            }
-            else
-            {
-                assert !expected.isEmpty();
-                readCommand = new SliceByNamesReadCommand(keyspaceName, key, cfName, timestamp, new NamesQueryFilter(ImmutableSortedSet.copyOf(metadata.comparator, expected.getColumnNames())));
-            }
+            ReadCommand readCommand = ReadCommand.create(keyspaceName, key, cfName, timestamp, conditions.readFilter());
             List<Row> rows = read(Arrays.asList(readCommand), consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM);
             ColumnFamily current = rows.get(0).cf;
-            if (!casApplies(expected, current))
+            if (!conditions.appliesTo(current))
             {
-                Tracing.trace("CAS precondition {} does not match current values {}", expected, current);
+                Tracing.trace("CAS precondition {} does not match current values {}", conditions, current);
                 // We should not return null as this means success
-                return current == null ? EmptyColumns.factory.create(metadata) : current;
+                return current == null ? ArrayBackedSortedColumns.factory.create(metadata) : current;
             }
 
             // finish the paxos round w/ the desired updates
@@ -277,41 +257,6 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         throw new WriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, consistencyForPaxos.blockFor(Keyspace.open(keyspaceName)));
-    }
-
-    private static boolean hasLiveColumns(ColumnFamily cf, long now)
-    {
-        return cf != null && !cf.hasOnlyTombstones(now);
-    }
-
-    private static boolean casApplies(ColumnFamily expected, ColumnFamily current)
-    {
-        long now = System.currentTimeMillis();
-
-        if (!hasLiveColumns(expected, now))
-            return !hasLiveColumns(current, now);
-        else if (!hasLiveColumns(current, now))
-            return false;
-
-        // current has been built from expected, so we know that it can't have columns
-        // that excepted don't have. So we just check that for each columns in expected:
-        //   - if it is a tombstone, whether current has no column or a tombstone;
-        //   - otherwise, that current has a live column with the same value.
-        for (Cell e : expected)
-        {
-            Cell c = current.getColumn(e.name());
-            if (e.isLive(now))
-            {
-                if (!(c != null && c.isLive(now) && c.value().equals(e.value())))
-                    return false;
-            }
-            else
-            {
-                if (c != null && c.isLive(now))
-                    return false;
-            }
-        }
-        return true;
     }
 
     private static Predicate<InetAddress> sameDCPredicateFor(final String dc)
@@ -626,7 +571,7 @@ public class StorageProxy implements StorageProxyMBean
             syncWriteToBatchlog(mutations, batchlogEndpoints, batchUUID);
 
             // now actually perform the writes and wait for them to complete
-            syncWriteBatchedMutations(wrappers, localDataCenter, consistency_level);
+            syncWriteBatchedMutations(wrappers, localDataCenter);
 
             // remove the batchlog entries asynchronously
             asyncRemoveFromBatchlog(batchlogEndpoints, batchUUID);
@@ -666,7 +611,7 @@ public class StorageProxy implements StorageProxyMBean
 
     private static void asyncRemoveFromBatchlog(Collection<InetAddress> endpoints, UUID uuid)
     {
-        ColumnFamily cf = EmptyColumns.factory.create(Schema.instance.getCFMetaData(Keyspace.SYSTEM_KS, SystemKeyspace.BATCHLOG_CF));
+        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(Schema.instance.getCFMetaData(Keyspace.SYSTEM_KS, SystemKeyspace.BATCHLOG_CF));
         cf.delete(new DeletionInfo(FBUtilities.timestampMicros(), (int) (System.currentTimeMillis() / 1000)));
         AbstractWriteResponseHandler handler = new WriteResponseHandler(endpoints,
                                                                         Collections.<InetAddress>emptyList(),
@@ -693,8 +638,7 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     private static void syncWriteBatchedMutations(List<WriteResponseHandlerWrapper> wrappers,
-                                                  String localDataCenter,
-                                                  ConsistencyLevel consistencyLevel)
+                                                  String localDataCenter)
     throws WriteTimeoutException, OverloadedException
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
@@ -1003,7 +947,7 @@ public class StorageProxy implements StorageProxyMBean
                 IMutation processed = SinkManager.processWriteRequest(mutation);
                 if (processed != null)
                 {
-                    processed.apply();
+                    ((Mutation) processed).apply();
                     responseHandler.response(null);
                 }
             }
@@ -1112,34 +1056,22 @@ public class StorageProxy implements StorageProxyMBean
     {
         return new DroppableRunnable(MessagingService.Verb.COUNTER_MUTATION)
         {
-            public void runMayThrow()
+            public void runMayThrow() throws OverloadedException, WriteTimeoutException
             {
                 IMutation processed = SinkManager.processWriteRequest(mutation);
                 if (processed == null)
                     return;
 
                 assert processed instanceof CounterMutation;
-                final CounterMutation cm = (CounterMutation) processed;
+                CounterMutation cm = (CounterMutation) processed;
 
-                // apply mutation
-                cm.apply();
+                Mutation result = cm.apply();
                 responseHandler.response(null);
 
-                // then send to replicas, if any
-                final Set<InetAddress> remotes = Sets.difference(ImmutableSet.copyOf(targets), ImmutableSet.of(FBUtilities.getBroadcastAddress()));
-                if (!remotes.isEmpty() && cm.shouldReplicateOnWrite())
-                {
-                    // We do the replication on another stage because it involves a read (see CM.makeReplicationMutation)
-                    // and we want to avoid blocking too much the MUTATION stage
-                    StageManager.getStage(Stage.REPLICATE_ON_WRITE).execute(new DroppableRunnable(MessagingService.Verb.READ)
-                    {
-                        public void runMayThrow() throws OverloadedException
-                        {
-                            // send mutation to other replica
-                            sendToHintedEndpoints(cm.makeReplicationMutation(), remotes, responseHandler, localDataCenter);
-                        }
-                    });
-                }
+                Set<InetAddress> remotes = Sets.difference(ImmutableSet.copyOf(targets),
+                                                           ImmutableSet.of(FBUtilities.getBroadcastAddress()));
+                if (!remotes.isEmpty())
+                    sendToHintedEndpoints(result, remotes, responseHandler, localDataCenter);
             }
         };
     }
@@ -1923,9 +1855,19 @@ public class StorageProxy implements StorageProxyMBean
         return DatabaseDescriptor.hintedHandoffEnabled();
     }
 
+    public Set<String> getHintedHandoffEnabledByDC()
+    {
+        return DatabaseDescriptor.hintedHandoffEnabledByDC();
+    }
+
     public void setHintedHandoffEnabled(boolean b)
     {
         DatabaseDescriptor.setHintedHandoffEnabled(b);
+    }
+
+    public void setHintedHandoffEnabledByDCList(String dcNames)
+    {
+        DatabaseDescriptor.setHintedHandoffEnabled(dcNames);
     }
 
     public int getMaxHintWindow()
@@ -1940,7 +1882,17 @@ public class StorageProxy implements StorageProxyMBean
 
     public static boolean shouldHint(InetAddress ep)
     {
-        if (!DatabaseDescriptor.hintedHandoffEnabled())
+        if (DatabaseDescriptor.shouldHintByDC())
+        {
+            final String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(ep);
+            //Disable DC specific hints
+            if(!DatabaseDescriptor.hintedHandoffEnabled(dc))
+            {
+                HintedHandOffManager.instance.metrics.incrPastWindow(ep);
+                return false;
+            }
+        }
+        else if (!DatabaseDescriptor.hintedHandoffEnabled())
         {
             HintedHandOffManager.instance.metrics.incrPastWindow(ep);
             return false;
@@ -2157,6 +2109,9 @@ public class StorageProxy implements StorageProxyMBean
 
     public Long getWriteRpcTimeout() { return DatabaseDescriptor.getWriteRpcTimeout(); }
     public void setWriteRpcTimeout(Long timeoutInMillis) { DatabaseDescriptor.setWriteRpcTimeout(timeoutInMillis); }
+
+    public Long getCounterWriteRpcTimeout() { return DatabaseDescriptor.getCounterWriteRpcTimeout(); }
+    public void setCounterWriteRpcTimeout(Long timeoutInMillis) { DatabaseDescriptor.setCounterWriteRpcTimeout(timeoutInMillis); }
 
     public Long getCasContentionTimeout() { return DatabaseDescriptor.getCasContentionTimeout(); }
     public void setCasContentionTimeout(Long timeoutInMillis) { DatabaseDescriptor.setCasContentionTimeout(timeoutInMillis); }

@@ -68,7 +68,7 @@ public abstract class AbstractCompactionStrategy
      *
      * See CASSANDRA-3430
      */
-    protected boolean isActive = true;
+    protected boolean isActive = false;
 
     protected volatile boolean enabled = true;
 
@@ -122,6 +122,14 @@ public abstract class AbstractCompactionStrategy
     }
 
     /**
+     * Performs any extra initialization required
+     */
+    public void startup()
+    {
+        isActive = true;
+    }
+
+    /**
      * Releases any resources if this strategy is shutdown (when the CFS is reloaded after a schema change).
      */
     public void shutdown()
@@ -146,7 +154,7 @@ public abstract class AbstractCompactionStrategy
      *
      * Is responsible for marking its sstables as compaction-pending.
      */
-    public abstract AbstractCompactionTask getMaximalTask(final int gcBefore);
+    public abstract Collection<AbstractCompactionTask> getMaximalTask(final int gcBefore);
 
     /**
      * @param sstables SSTables to compact. Must be marked as compacting.

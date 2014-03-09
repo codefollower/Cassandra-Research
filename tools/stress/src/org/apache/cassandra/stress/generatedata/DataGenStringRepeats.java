@@ -1,4 +1,25 @@
 package org.apache.cassandra.stress.generatedata;
+/*
+ * 
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ * 
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ * 
+ */
+
 
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -25,32 +46,32 @@ public class DataGenStringRepeats extends DataGen
     }
 
     @Override
-    public void generate(ByteBuffer fill, long index)
+    public void generate(ByteBuffer fill, long index, ByteBuffer seed)
     {
-        fill(fill, index, 0);
+        fill(fill, index, 0, seed);
     }
 
     @Override
-    public void generate(List<ByteBuffer> fills, long index)
+    public void generate(List<ByteBuffer> fills, long index, ByteBuffer seed)
     {
         for (int i = 0 ; i < fills.size() ; i++)
         {
-            fill(fills.get(i), index, i);
+            fill(fills.get(i), index, i, seed);
         }
     }
 
-    private void fill(ByteBuffer fill, long index, int column)
+    private void fill(ByteBuffer fill, long index, int column, ByteBuffer seed)
     {
         fill.clear();
         byte[] trg = fill.array();
-        byte[] src = getData(index, column);
+        byte[] src = getData(index, column, seed);
         for (int j = 0 ; j < trg.length ; j += src.length)
             System.arraycopy(src, 0, trg, j, Math.min(src.length, trg.length - j));
     }
 
-    private byte[] getData(long index, int column)
+    private byte[] getData(long index, int column, ByteBuffer seed)
     {
-        final long key = (column * repeatFrequency) + (index % repeatFrequency);
+        final long key = ((long)column * repeatFrequency) + ((seed == null ? index : Math.abs(seed.hashCode())) % repeatFrequency);
         byte[] r = cache.get(key);
         if (r != null)
             return r;

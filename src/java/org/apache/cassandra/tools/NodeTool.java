@@ -17,9 +17,7 @@
  */
 package org.apache.cassandra.tools;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.lang.management.MemoryUsage;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -60,8 +58,7 @@ import static com.google.common.collect.Lists.newArrayList;
 import static java.lang.Integer.parseInt;
 import static java.lang.String.format;
 import static org.apache.commons.lang3.ArrayUtils.EMPTY_STRING_ARRAY;
-import static org.apache.commons.lang3.StringUtils.EMPTY;
-import static org.apache.commons.lang3.StringUtils.join;
+import static org.apache.commons.lang3.StringUtils.*;
 
 public class NodeTool
 {
@@ -102,6 +99,7 @@ public class NodeTool
                 GossipInfo.class,
                 InvalidateKeyCache.class,
                 InvalidateRowCache.class,
+                InvalidateCounterCache.class,
                 Join.class,
                 Move.class,
                 PauseHandoff.class,
@@ -137,7 +135,8 @@ public class NodeTool
                 DisableHandoff.class,
                 Drain.class,
                 TruncateHints.class,
-                TpStats.class
+                TpStats.class,
+                TakeToken.class
         );
 
         Cli<Runnable> parser = Cli.<Runnable>builder("nodetool")
@@ -221,9 +220,20 @@ public class NodeTool
         @Option(type = OptionType.GLOBAL, name = {"-pw", "--password"}, description = "Remote jmx agent password")
         private String password = EMPTY;
 
+        @Option(type = OptionType.GLOBAL, name = {"-pwf", "--password-file"}, description = "Path to the JMX password file")
+        private String passwordFilePath = EMPTY;
+
         @Override
         public void run()
         {
+            if (isNotEmpty(username)) {
+                if (isNotEmpty(passwordFilePath))
+                    password = readUserPasswordFromFile(username, passwordFilePath);
+
+                if (isEmpty(password))
+                    password = promptAndReadPassword();
+            }
+
             try (NodeProbe probe = connect())
             {
                 execute(probe);
@@ -232,6 +242,44 @@ public class NodeTool
                 throw new RuntimeException("Error while closing JMX connection", e);
             }
 
+        }
+
+        private String readUserPasswordFromFile(String username, String passwordFilePath) {
+            String password = EMPTY;
+
+            File passwordFile = new File(passwordFilePath);
+            try (Scanner scanner = new Scanner(passwordFile).useDelimiter("\\s+"))
+            {
+                while (scanner.hasNextLine())
+                {
+                    if (scanner.hasNext())
+                    {
+                        String jmxRole = scanner.next();
+                        if (jmxRole.equals(username) && scanner.hasNext())
+                        {
+                            password = scanner.next();
+                            break;
+                        }
+                    }
+                    scanner.nextLine();
+                }
+            } catch (FileNotFoundException e)
+            {
+                throw new RuntimeException(e);
+            }
+
+            return password;
+        }
+
+        private String promptAndReadPassword()
+        {
+            String password = EMPTY;
+
+            Console console = System.console();
+            if (console != null)
+                password = String.valueOf(console.readPassword("Password:"));
+
+            return password;
         }
 
         protected abstract void execute(NodeProbe probe);
@@ -341,6 +389,17 @@ public class NodeTool
                     probe.getCacheMetric("RowCache", "Requests"),
                     probe.getCacheMetric("RowCache", "HitRate"),
                     cacheService.getRowCacheSavePeriodInSeconds());
+
+            // Counter Cache: Hits, Requests, RecentHitRate, SavePeriodInSeconds
+            System.out.printf("%-17s: entries %d, size %d (bytes), capacity %d (bytes), %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
+                    "Counter Cache",
+                    probe.getCacheMetric("CounterCache", "Entries"),
+                    probe.getCacheMetric("CounterCache", "Size"),
+                    probe.getCacheMetric("CounterCache", "Capacity"),
+                    probe.getCacheMetric("CounterCache", "Hits"),
+                    probe.getCacheMetric("CounterCache", "Requests"),
+                    probe.getCacheMetric("CounterCache", "HitRate"),
+                    cacheService.getCounterCacheSavePeriodInSeconds());
 
             // Tokens
             List<String> tokens = probe.getTokens();
@@ -597,7 +656,7 @@ public class NodeTool
                 List<ColumnFamilyStoreMBean> columnFamilies = entry.getValue();
                 long keyspaceReadCount = 0;
                 long keyspaceWriteCount = 0;
-                int keyspacePendingTasks = 0;
+                int keyspacePendingFlushes = 0;
                 double keyspaceTotalReadTime = 0.0f;
                 double keyspaceTotalWriteTime = 0.0f;
 
@@ -618,7 +677,7 @@ public class NodeTool
                         keyspaceWriteCount += writeCount;
                         keyspaceTotalWriteTime += (long) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteTotalLatency");
                     }
-                    keyspacePendingTasks += (int) probe.getColumnFamilyMetric(keyspaceName, cfName, "PendingTasks");
+                    keyspacePendingFlushes += (long) probe.getColumnFamilyMetric(keyspaceName, cfName, "PendingFlushes");
                 }
 
                 double keyspaceReadLatency = keyspaceReadCount > 0
@@ -632,7 +691,7 @@ public class NodeTool
                 System.out.println("\tRead Latency: " + format("%s", keyspaceReadLatency) + " ms.");
                 System.out.println("\tWrite Count: " + keyspaceWriteCount);
                 System.out.println("\tWrite Latency: " + format("%s", keyspaceWriteLatency) + " ms.");
-                System.out.println("\tPending Tasks: " + keyspacePendingTasks);
+                System.out.println("\tPending Flushes: " + keyspacePendingFlushes);
 
                 // print out column family statistics for this keyspace
                 for (ColumnFamilyStoreMBean cfstore : columnFamilies)
@@ -671,7 +730,7 @@ public class NodeTool
                     System.out.println("\t\tSpace used by snapshots (total), bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "SnapshotsSize"));
                     System.out.println("\t\tSSTable Compression Ratio: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "CompressionRatio"));
                     System.out.println("\t\tMemtable cell count: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableColumnsCount"));
-                    System.out.println("\t\tMemtable data size, bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableDataSize"));
+                    System.out.println("\t\tMemtable data size, bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableLiveDataSize"));
                     System.out.println("\t\tMemtable switch count: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableSwitchCount"));
                     System.out.println("\t\tLocal read count: " + ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getCount());
                     double localReadLatency = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getMean() / 1000;
@@ -681,7 +740,7 @@ public class NodeTool
                     double localWriteLatency = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getMean() / 1000;
                     double localWLatency = localWriteLatency > 0 ? localWriteLatency : Double.NaN;
                     System.out.printf("\t\tLocal write latency: %01.3f ms%n", localWLatency);
-                    System.out.println("\t\tPending tasks: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "PendingTasks"));
+                    System.out.println("\t\tPending flushes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "PendingFlushes"));
                     System.out.println("\t\tBloom filter false positives: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "BloomFilterFalsePositives"));
                     System.out.println("\t\tBloom filter false ratio: " + format("%01.5f", probe.getColumnFamilyMetric(keyspaceName, cfName, "RecentBloomFilterFalseRatio")));
                     System.out.println("\t\tBloom filter space used, bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "BloomFilterDiskSpaceUsed"));
@@ -959,8 +1018,15 @@ public class NodeTool
         @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
         private List<String> args = new ArrayList<>();
 
-        @Option(title = "disable_snapshot", name = {"-ns", "--no-snapshot"}, description = "Scrubbed CFs will be snapshotted first, if disableSnapshot is false. (default false)")
+        @Option(title = "disable_snapshot",
+                name = {"-ns", "--no-snapshot"},
+                description = "Scrubbed CFs will be snapshotted first, if disableSnapshot is false. (default false)")
         private boolean disableSnapshot = false;
+
+        @Option(title = "skip_corrupted",
+                name = {"-s", "--skip-corrupted"},
+                description = "Skip corrupted partitions even when scrubbing counter tables. (default false)")
+        private boolean skipCorrupted = false;
 
         @Override
         public void execute(NodeProbe probe)
@@ -972,7 +1038,7 @@ public class NodeTool
             {
                 try
                 {
-                    probe.scrub(disableSnapshot, keyspace, cfnames);
+                    probe.scrub(disableSnapshot, skipCorrupted, keyspace, cfnames);
                 } catch (Exception e)
                 {
                     throw new RuntimeException("Error occurred during flushing", e);
@@ -1200,10 +1266,17 @@ public class NodeTool
     @Command(name = "enablehandoff", description = "Reenable the future hints storing on the current node")
     public static class EnableHandoff extends NodeToolCmd
     {
+        @Arguments(usage = "<dc-name>,<dc-name>", description = "Enable hinted handoff only for these DCs")
+        private List<String> args = new ArrayList<>();
+
         @Override
         public void execute(NodeProbe probe)
         {
-            probe.enableHintedHandoff();
+            checkArgument(args.size() <= 1, "enablehandoff does not accept two args");
+            if(args.size() == 1)
+                probe.enableHintedHandoff(args.get(0));
+            else
+                probe.enableHintedHandoff();
         }
     }
 
@@ -1331,6 +1404,36 @@ public class NodeTool
         }
     }
 
+    @Command(name = "invalidatecountercache", description = "Invalidate the counter cache")
+    public static class InvalidateCounterCache extends NodeToolCmd
+    {
+        @Override
+        public void execute(NodeProbe probe)
+        {
+            probe.invalidateCounterCache();
+        }
+    }
+
+    @Command(name = "taketoken", description = "Move the token(s) from the existing owner(s) to this node.  For vnodes only.  Use \\\\ to escape negative tokens.")
+    public static class TakeToken extends NodeToolCmd
+    {
+        @Arguments(usage = "<token, ...>", description = "Token(s) to take", required = true)
+        private List<String> tokens = new ArrayList<String>();
+
+        @Override
+        public void execute(NodeProbe probe)
+        {
+            try
+            {
+                probe.takeTokens(tokens);
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException("Error taking tokens", e);
+            }
+        }
+    }
+
     @Command(name = "join", description = "Join the ring")
     public static class Join extends NodeToolCmd
     {
@@ -1367,6 +1470,8 @@ public class NodeTool
             }
         }
     }
+
+
 
     @Command(name = "pausehandoff", description = "Pause hints delivery process")
     public static class PauseHandoff extends NodeToolCmd
@@ -1495,6 +1600,9 @@ public class NodeTool
         @Option(title = "specific_dc", name = {"-dc", "--in-dc"}, description = "Use -dc to repair specific datacenters")
         private List<String> specificDataCenters = new ArrayList<>();
 
+        @Option(title = "specific_host", name = {"-hosts", "--in-hosts"}, description = "Use -hosts to repair specific hosts")
+        private List<String> specificHosts = new ArrayList<>();
+
         @Option(title = "start_token", name = {"-st", "--start-token"}, description = "Use -st to specify a token at which the repair range starts")
         private String startToken = EMPTY;
 
@@ -1503,6 +1611,9 @@ public class NodeTool
 
         @Option(title = "primary_range", name = {"-pr", "--partitioner-range"}, description = "Use -pr to repair only the first range returned by the partitioner")
         private boolean primaryRange = false;
+
+        @Option(title = "incremental_repair", name = {"-inc", "--incremental"}, description = "Use -inc to use the new incremental repair")
+        private boolean incrementalRepair = false;
 
         @Override
         public void execute(NodeProbe probe)
@@ -1515,15 +1626,17 @@ public class NodeTool
                 try
                 {
                     Collection<String> dataCenters = null;
+                    Collection<String> hosts = null;
                     if (!specificDataCenters.isEmpty())
                         dataCenters = newArrayList(specificDataCenters);
                     else if (localDC)
                         dataCenters = newArrayList(probe.getDataCenter());
-
+                    else if(!specificHosts.isEmpty())
+                        hosts = newArrayList(specificHosts);
                     if (!startToken.isEmpty() || !endToken.isEmpty())
-                        probe.forceRepairRangeAsync(System.out, keyspace, !parallel, dataCenters, startToken, endToken);
+                        probe.forceRepairRangeAsync(System.out, keyspace, !parallel, dataCenters,hosts, startToken, endToken, !incrementalRepair);
                     else
-                        probe.forceRepairAsync(System.out, keyspace, !parallel, dataCenters, primaryRange, cfnames);
+                        probe.forceRepairAsync(System.out, keyspace, !parallel, dataCenters, hosts, primaryRange, !incrementalRepair, cfnames);
                 } catch (Exception e)
                 {
                     throw new RuntimeException("Error occurred during repair", e);
@@ -1532,17 +1645,20 @@ public class NodeTool
         }
     }
 
-    @Command(name = "setcachecapacity", description = "Set global key and row cache capacities (in MB units)")
+    @Command(name = "setcachecapacity", description = "Set global key, row, and counter cache capacities (in MB units)")
     public static class SetCacheCapacity extends NodeToolCmd
     {
-        @Arguments(title = "<key-cache-capacity> <row-cache-capacity>", usage = "<key-cache-capacity> <row-cache-capacity>", description = "Key cache and row cache (in MB)", required = true)
+        @Arguments(title = "<key-cache-capacity> <row-cache-capacity> <counter-cache-capacity>",
+                   usage = "<key-cache-capacity> <row-cache-capacity> <counter-cache-capacity>",
+                   description = "Key cache, row cache, and counter cache (in MB)",
+                   required = true)
         private List<Integer> args = new ArrayList<>();
 
         @Override
         public void execute(NodeProbe probe)
         {
-            checkArgument(args.size() == 2, "setcachecapacity requires key-cache-capacity, and row-cache-capacity args.");
-            probe.setCacheCapacities(args.get(0), args.get(1));
+            checkArgument(args.size() == 3, "setcachecapacity requires key-cache-capacity, row-cache-capacity, and counter-cache-capacity args.");
+            probe.setCacheCapacities(args.get(0), args.get(1), args.get(2));
         }
     }
 
@@ -2083,14 +2199,17 @@ public class NodeTool
     @Command(name = "setcachekeystosave", description = "Set number of keys saved by each cache for faster post-restart warmup. 0 to disable")
     public static class SetCacheKeysToSave extends NodeToolCmd
     {
-        @Arguments(title = "<key-cache-keys-to-save> <row-cache-keys-to-save>", usage = "<key-cache-keys-to-save> <row-cache-keys-to-save>", description = "The number of keys saved by each cache. 0 to disable", required = true)
+        @Arguments(title = "<key-cache-keys-to-save> <row-cache-keys-to-save> <counter-cache-keys-to-save>",
+                   usage = "<key-cache-keys-to-save> <row-cache-keys-to-save> <counter-cache-keys-to-save>",
+                   description = "The number of keys saved by each cache. 0 to disable",
+                   required = true)
         private List<Integer> args = new ArrayList<>();
 
         @Override
         public void execute(NodeProbe probe)
         {
-            checkArgument(args.size() == 2, "setcachekeystosave requires key-cache-keys-to-save, and row-cache-keys-to-save args.");
-            probe.setCacheKeysToSave(args.get(0), args.get(1));
+            checkArgument(args.size() == 3, "setcachekeystosave requires key-cache-keys-to-save, row-cache-keys-to-save, and counter-cache-keys-to-save args.");
+            probe.setCacheKeysToSave(args.get(0), args.get(1), args.get(2));
         }
     }
 
@@ -2169,10 +2288,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "truncatehints", description = "Truncate all hints on the local node, or truncate hints for the endpoint specified.")
+    @Command(name = "truncatehints", description = "Truncate all hints on the local node, or truncate hints for the endpoint(s) specified.")
     public static class TruncateHints extends NodeToolCmd
     {
-        @Arguments(usage = "[endpoint]", description = "Endpoint address to delete hints for, either ip address (\"127.0.0.1\") or hostname")
+        @Arguments(usage = "[endpoint ... ]", description = "Endpoint address(es) to delete hints for, either ip address (\"127.0.0.1\") or hostname")
         private String endpoint = EMPTY;
 
         @Override

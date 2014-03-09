@@ -25,16 +25,20 @@ import java.util.*;
 import com.google.common.base.Objects;
 import com.google.common.collect.Iterators;
 
+import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.utils.ObjectSizes;
 
 /**
  * A combination of a top-level (or row) tombstone and range tombstones describing the deletions
  * within a {@link ColumnFamily} (or row).
  */
-public class DeletionInfo
+public class DeletionInfo implements IMeasurableMemory
 {
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new DeletionInfo(0, 0));
+
     /**
      * This represents a deletion of the entire row.  We can't represent this within the RangeTombstoneList, so it's
      * kept separately.  This also slightly optimizes the common case of a full row deletion.
@@ -248,7 +252,17 @@ public class DeletionInfo
         return ranges == null ? Iterators.<RangeTombstone>emptyIterator() : ranges.iterator();
     }
 
-    public DeletionTime rangeCovering(Composite name)
+    public Iterator<RangeTombstone> rangeIterator(Composite start, Composite finish)
+    {
+        return ranges == null ? Iterators.<RangeTombstone>emptyIterator() : ranges.iterator(start, finish);
+    }
+
+    public DeletionTime deletionTimeFor(Composite name)
+    {
+        return ranges == null ? null : ranges.searchDeletionTime(name);
+    }
+
+    public RangeTombstone rangeCovering(Composite name)
     {
         return ranges == null ? null : ranges.search(name);
     }
@@ -262,6 +276,19 @@ public class DeletionInfo
     public boolean hasRanges()
     {
         return ranges != null && !ranges.isEmpty();
+    }
+
+    public int rangeCount()
+    {
+        return hasRanges() ? ranges.size() : 0;
+    }
+
+    /**
+     * Whether this deletion info may modify the provided one if added to it.
+     */
+    public boolean mayModify(DeletionInfo delInfo)
+    {
+        return topLevel.compareTo(delInfo.topLevel) > 0 || hasRanges();
     }
 
     @Override
@@ -315,6 +342,12 @@ public class DeletionInfo
     public final int hashCode()
     {
         return Objects.hashCode(topLevel, ranges);
+    }
+
+    @Override
+    public long unsharedHeapSize()
+    {
+        return EMPTY_SIZE + topLevel.unsharedHeapSize() + (ranges == null ? 0 : ranges.unsharedHeapSize());
     }
 
     public static class Serializer implements IVersionedSerializer<DeletionInfo>

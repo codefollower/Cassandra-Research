@@ -72,7 +72,7 @@ public class ColumnDefinition extends ColumnSpecification
      * column, whose name is not stored in the data contrarily to the column of
      * type REGULAR. Hence the COMPACT_VALUE type to distinguish it below.
      *
-     * Note that thrift/CQL2 only know about definitions of type REGULAR (and
+     * Note that thrift only knows about definitions of type REGULAR (and
      * the ones whose componentIndex == null).
      */
     public enum Kind
@@ -80,6 +80,7 @@ public class ColumnDefinition extends ColumnSpecification
         PARTITION_KEY,
         CLUSTERING_COLUMN,
         REGULAR,
+        STATIC,
         COMPACT_VALUE;
 
         public String serialize()
@@ -123,6 +124,11 @@ public class ColumnDefinition extends ColumnSpecification
     public static ColumnDefinition regularDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
     {
         return new ColumnDefinition(cfm, name, validator, componentIndex, Kind.REGULAR);
+    }
+
+    public static ColumnDefinition staticDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
+    {
+        return new ColumnDefinition(cfm, name, validator, componentIndex, Kind.STATIC);
     }
 
     public static ColumnDefinition compactValueDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator)
@@ -185,6 +191,11 @@ public class ColumnDefinition extends ColumnSpecification
         return componentIndex == null; //例如PARTITION_KEY中只包含一个字段时，或者COMPACT_VALUE的情况也是null
     }
 
+    public boolean isStatic()
+    {
+        return kind == Kind.STATIC;
+    }
+
     // The componentIndex. This never return null however for convenience sake:
     // if componentIndex == null, this return 0. So caller should first check
     // isOnAllComponents() to distinguish if that's a possibility.
@@ -237,6 +248,11 @@ public class ColumnDefinition extends ColumnSpecification
     public boolean isThriftCompatible()
     {
         return kind == ColumnDefinition.Kind.REGULAR && componentIndex == null;
+    }
+
+    public boolean isPrimaryKeyColumn()
+    {
+        return kind == Kind.PARTITION_KEY || kind == Kind.CLUSTERING_COLUMN;
     }
 
     public static List<ColumnDef> toThrift(Map<ByteBuffer, ColumnDefinition> columns)

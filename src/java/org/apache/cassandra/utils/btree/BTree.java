@@ -1,11 +1,30 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.apache.cassandra.utils.btree;
 
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Queue;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
+import org.apache.cassandra.utils.ObjectSizes;
 
 public class BTree
 {
@@ -73,7 +92,7 @@ public class BTree
      * @param <V>
      * @return
      */
-    public static <V> Object[] build(Collection<V> source, Comparator<V> comparator, boolean sorted)
+    public static <V> Object[] build(Collection<V> source, Comparator<V> comparator, boolean sorted, UpdateFunction<V> updateF)
     {
         int size = source.size();
 
@@ -84,13 +103,25 @@ public class BTree
             // inline sorting since we're already calling toArray
             if (!sorted)
                 Arrays.sort(values, 0, size, comparator);
+            if (updateF != null)
+            {
+                for (int i = 0 ; i < size ; i++)
+                    values[i] = updateF.apply(values[i]);
+                updateF.allocated(ObjectSizes.sizeOfArray(values));
+            }
             return values;
         }
 
         if (!sorted)
             source = sorted(source, comparator, size);
 
-        return modifier.get().build(source, size);
+        Queue<Builder> queue = modifier.get();
+        Builder builder = queue.poll();
+        if (builder == null)
+            builder = new Builder();
+        Object[] btree = builder.build(source, size);
+        queue.add(builder);
+        return btree;
     }
 
     /**
@@ -105,7 +136,7 @@ public class BTree
      */
     public static <V> Object[] update(Object[] btree, Comparator<V> comparator, Collection<V> updateWith, boolean updateWithIsSorted)
     {
-        return update(btree, comparator, updateWith, updateWithIsSorted, null, null);
+        return update(btree, comparator, updateWith, updateWithIsSorted, UpdateFunction.NoOp.<V>instance());
     }
 
     /**
@@ -115,9 +146,7 @@ public class BTree
      * @param comparator         the comparator that defines the ordering over the items in the tree
      * @param updateWith         the items to either insert / update
      * @param updateWithIsSorted if false, updateWith will be copied and sorted to facilitate construction
-     * @param replaceF           a function to apply to a pair we are swapping
-     * @param terminateEarly     a function that returns Boolean.TRUE if we should terminate before finishing our work.
-     *                           the argument to terminateEarly is ignored.
+     * @param updateF            the update function to apply to any pairs we are swapping, and maybe abort early
      * @param <V>
      * @return
      */
@@ -125,81 +154,21 @@ public class BTree
                                       Comparator<V> comparator,
                                       Collection<V> updateWith,
                                       boolean updateWithIsSorted,
-                                      ReplaceFunction<V> replaceF,
-                                      Function<?, Boolean> terminateEarly)
+                                      UpdateFunction<V> updateF)
     {
         if (btree.length == 0)
-        {
-            if (replaceF != null)
-                updateWith = Collections2.transform(updateWith, replaceF);
-            return build(updateWith, comparator, updateWithIsSorted);
-        }
+            return build(updateWith, comparator, updateWithIsSorted, updateF);
 
         if (!updateWithIsSorted)
             updateWith = sorted(updateWith, comparator, updateWith.size());
 
-        // if the b-tree is just a single root node, we can try a quick in-place merge
-        if (isLeaf(btree) && btree.length + updateWith.size() < QUICK_MERGE_LIMIT)
-        {
-            // since updateWith is sorted, we can skip elements from earlier iterations tracked by this offset
-            int btreeOffset = 0;
-            int keyEnd = getLeafKeyEnd(btree);
-            Object[] merged = new Object[QUICK_MERGE_LIMIT];
-            int mergedCount = 0;
-            for (V v : updateWith)
-            {
-                // find the index i where v would belong in the original btree
-                int i = find(comparator, v, btree, btreeOffset, keyEnd);
-                boolean found = i >= 0;
-                if (!found)
-                    i = -i - 1;
-
-                // copy original elements up to i into the merged array
-                int count = i - btreeOffset;
-                if (count > 0)
-                {
-                    System.arraycopy(btree, btreeOffset, merged, mergedCount, count);
-                    mergedCount += count;
-                    btreeOffset = i;
-                }
-
-                if (found)
-                {
-                    // apply replaceF if it matches an existing element
-                    btreeOffset++;
-                    if (replaceF != null)
-                        v = replaceF.apply((V) btree[i], v);
-                }
-                else if (replaceF != null)
-                {
-                    // new element but still need to apply replaceF to handle indexing and size-tracking
-                    v = replaceF.apply(v);
-                }
-
-                merged[mergedCount++] = v;
-            }
-
-            // copy any remaining original elements
-            if (btreeOffset < keyEnd)
-            {
-                int count = keyEnd - btreeOffset;
-                System.arraycopy(btree, btreeOffset, merged, mergedCount, count);
-                mergedCount += count;
-            }
-
-            if (mergedCount > FAN_FACTOR)
-            {
-                // TODO this code will never execute since QUICK_MERGE_LIMIT == FAN_FACTOR
-                int mid = (mergedCount >> 1) & ~1; // divide by two, rounding down to an even number
-                return new Object[] { merged[mid],
-                                      Arrays.copyOfRange(merged, 0, mid),
-                                      Arrays.copyOfRange(merged, 1 + mid, mergedCount + ((mergedCount + 1) & 1)), };
-            }
-
-            return Arrays.copyOfRange(merged, 0, mergedCount + (mergedCount & 1));
-        }
-
-        return modifier.get().update(btree, comparator, updateWith, replaceF, terminateEarly);
+        Queue<Builder> queue = modifier.get();
+        Builder builder = queue.poll();
+        if (builder == null)
+            builder = new Builder();
+        btree = builder.update(btree, comparator, updateWith, updateF);
+        queue.add(builder);
+        return btree;
     }
 
     /**
@@ -364,12 +333,12 @@ public class BTree
         }
     };
 
-    private static final ThreadLocal<Builder> modifier = new ThreadLocal<Builder>()
+    private static final ThreadLocal<Queue<Builder>> modifier = new ThreadLocal<Queue<Builder>>()
     {
         @Override
-        protected Builder initialValue()
+        protected Queue<Builder> initialValue()
         {
-            return new Builder();
+            return new ArrayDeque<>();
         }
     };
 

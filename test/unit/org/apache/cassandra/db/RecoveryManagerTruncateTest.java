@@ -23,7 +23,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import java.io.IOException;
-import java.util.concurrent.ExecutionException;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
@@ -37,7 +36,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class RecoveryManagerTruncateTest extends SchemaLoader
 {
 	@Test
-	public void testTruncate() throws IOException, ExecutionException, InterruptedException
+	public void testTruncate() throws IOException
 	{
 		Keyspace keyspace = Keyspace.open("Keyspace1");
 		ColumnFamilyStore cfs = keyspace.getColumnFamilyStore("Standard1");
@@ -46,7 +45,7 @@ public class RecoveryManagerTruncateTest extends SchemaLoader
 		ColumnFamily cf;
 
 		// add a single cell
-        cf = TreeMapBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+        cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
 		cf.addColumn(column("col1", "val1", 1L));
         rm = new Mutation("Keyspace1", ByteBufferUtil.bytes("keymulti"), cf);
 		rm.apply();

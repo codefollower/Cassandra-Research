@@ -40,8 +40,9 @@ public abstract class StreamMessage
         // message type
         buff.put(message.type.type);
         buff.flip();
-        out.write(buff);
-        message.type.serializer.serialize(message, out, version, session);
+        while (buff.hasRemaining())
+            out.write(buff);
+        message.type.outSerializer.serialize(message, out, version, session);
     }
 
     public static StreamMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
@@ -51,7 +52,7 @@ public abstract class StreamMessage
         {
             buff.flip();
             Type type = Type.get(buff.get());
-            return type.serializer.deserialize(in, version, session);
+            return type.inSerializer.deserialize(in, version, session);
         }
         else
         {
@@ -72,7 +73,7 @@ public abstract class StreamMessage
     public static enum Type
     {
         PREPARE(1, 5, PrepareMessage.serializer),
-        FILE(2, 0, FileMessage.serializer),
+        FILE(2, 0, IncomingFileMessage.serializer, OutgoingFileMessage.serializer),
         RECEIVED(3, 4, ReceivedMessage.serializer),
         RETRY(4, 4, RetryMessage.serializer),
         COMPLETE(5, 1, CompleteMessage.serializer),
@@ -90,14 +91,22 @@ public abstract class StreamMessage
 
         private final byte type;
         public final int priority;
-        public final Serializer<StreamMessage> serializer;
+        public final Serializer<StreamMessage> inSerializer;
+        public final Serializer<StreamMessage> outSerializer;
 
         @SuppressWarnings("unchecked")
         private Type(int type, int priority, Serializer serializer)
         {
+            this(type, priority, serializer, serializer);
+        }
+
+        @SuppressWarnings("unchecked")
+        private Type(int type, int priority, Serializer inSerializer, Serializer outSerializer)
+        {
             this.type = (byte) type;
             this.priority = priority;
-            this.serializer = serializer;
+            this.inSerializer = inSerializer;
+            this.outSerializer = outSerializer;
         }
     }
 

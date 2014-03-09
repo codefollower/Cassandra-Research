@@ -30,8 +30,6 @@ import org.apache.cassandra.config.EncryptionOptions;
 import org.apache.commons.cli.*;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TFramedTransport;
-import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.transport.TTransport;
 
 import org.apache.cassandra.auth.IAuthenticator;
@@ -80,7 +78,10 @@ public class BulkLoader
         StreamResultFuture future = null;
         try
         {
-            future = loader.stream(options.ignores);
+            if (options.noProgress)
+                future = loader.stream(options.ignores);
+            else
+                future = loader.stream(options.ignores, new ProgressIndicator());
         }
         catch (Exception e)
         {
@@ -93,7 +94,9 @@ public class BulkLoader
                 System.err.println("Run with --debug to get full stack trace or --help to get help.");
             System.exit(1);
         }
-        future.addEventListener(new ProgressIndicator());
+
+        handler.output(String.format("Streaming session ID: %s", future.planId));
+
         try
         {
             future.get();

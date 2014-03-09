@@ -33,6 +33,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.OutputHandler;
@@ -122,7 +123,7 @@ public class SSTableLoader implements StreamEventHandler
                         List<Pair<Long, Long>> sstableSections = sstable.getPositionsForRanges(tokenRanges);
                         long estimatedKeys = sstable.estimatedKeysForRanges(tokenRanges);
 
-                        StreamSession.SSTableStreamingSections details = new StreamSession.SSTableStreamingSections(sstable, sstableSections, estimatedKeys);
+                        StreamSession.SSTableStreamingSections details = new StreamSession.SSTableStreamingSections(sstable, sstableSections, estimatedKeys, ActiveRepairService.UNREPAIRED_SSTABLE);
                         streamingDetails.put(endpoint, details);
                     }
 
@@ -144,7 +145,7 @@ public class SSTableLoader implements StreamEventHandler
         return stream(Collections.<InetAddress>emptySet());
     }
 
-    public StreamResultFuture stream(Set<InetAddress> toIgnore)
+    public StreamResultFuture stream(Set<InetAddress> toIgnore, StreamEventHandler... listeners)
     {
         client.init(keyspace);
         outputHandler.output("Established connection to initial hosts");
@@ -175,9 +176,8 @@ public class SSTableLoader implements StreamEventHandler
 
             plan.transferFiles(remote, streamingDetails.get(remote));
         }
-        StreamResultFuture bulkResult = plan.execute();
-        bulkResult.addEventListener(this);
-        return bulkResult;
+        plan.listeners(this, listeners);
+        return plan.execute();
     }
 
     public void onSuccess(StreamState finalState) {}

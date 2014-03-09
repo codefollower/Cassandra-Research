@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.CQL3Row;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -64,11 +65,11 @@ public class SimpleSparseCellNameType extends AbstractSimpleCellNameType
         return false;
     }
 
-    public CellName create(Composite prefix, ColumnIdentifier columnName)
+    public CellName create(Composite prefix, ColumnDefinition column)
     {
         assert prefix.isEmpty();
-        CellName cn = internedNames.get(columnName.bytes);
-        return cn == null ? new SimpleSparseCellName(columnName) : cn;
+        CellName cn = internedNames.get(column.name.bytes);
+        return cn == null ? new SimpleSparseCellName(column.name) : cn;
     }
 
     @Override
@@ -83,7 +84,7 @@ public class SimpleSparseCellNameType extends AbstractSimpleCellNameType
 
     public void addCQL3Column(ColumnIdentifier id)
     {
-        internedNames.put(id.bytes, new SimpleSparseCellName(id));
+        internedNames.put(id.bytes, new SimpleSparseInternedCellName(id));
     }
 
     public void removeCQL3Column(ColumnIdentifier id)
@@ -93,6 +94,6 @@ public class SimpleSparseCellNameType extends AbstractSimpleCellNameType
 
     public CQL3Row.Builder CQL3RowBuilder(long now)
     {
-        return makeSparseCQL3RowBuilder(now);
+        return makeSparseCQL3RowBuilder(this, now);
     }
 }

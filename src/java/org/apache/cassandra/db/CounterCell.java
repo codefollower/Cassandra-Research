@@ -20,16 +20,15 @@ package org.apache.cassandra.db;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
+import org.apache.cassandra.serializers.MarshalException;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
+import org.apache.cassandra.utils.memory.HeapAllocator;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.context.CounterContext;
-import org.apache.cassandra.db.context.IContext.ContextRelationship;
 import org.apache.cassandra.io.util.DataOutputBuffer;
-import org.apache.cassandra.serializers.MarshalException;
-import org.apache.cassandra.utils.Allocator;
-import org.apache.cassandra.utils.*;
 
 /**
  * A column that represents a partitioned counter.
@@ -39,16 +38,6 @@ public class CounterCell extends Cell
     protected static final CounterContext contextManager = CounterContext.instance();
 
     private final long timestampOfLastDelete;
-
-    public CounterCell(CellName name, long value, long timestamp)
-    {
-        this(name, contextManager.createLocal(value, HeapAllocator.instance), timestamp);
-    }
-
-    public CounterCell(CellName name, long value, long timestamp, long timestampOfLastDelete)
-    {
-        this(name, contextManager.createLocal(value, HeapAllocator.instance), timestamp, timestampOfLastDelete);
-    }
 
     public CounterCell(CellName name, ByteBuffer value, long timestamp)
     {
@@ -66,6 +55,12 @@ public class CounterCell extends Cell
         if (flag == ColumnSerializer.Flag.FROM_REMOTE || (flag == ColumnSerializer.Flag.LOCAL && contextManager.shouldClearLocal(value)))
             value = contextManager.clearAllLocal(value);
         return new CounterCell(name, value, timestamp, timestampOfLastDelete);
+    }
+
+    // For use by tests of compatibility with pre-2.1 counter only.
+    public static CounterCell createLocal(CellName name, long value, long timestamp, long timestampOfLastDelete)
+    {
+        return new CounterCell(name, contextManager.createLocal(value, HeapAllocator.instance), timestamp, timestampOfLastDelete);
     }
 
     @Override
@@ -110,12 +105,12 @@ public class CounterCell extends Cell
         // merging a CounterCell with a tombstone never return a tombstone
         // unless that tombstone timestamp is greater that the CounterCell
         // one.
-        assert !(cell instanceof DeletedCell) : "Wrong class type: " + cell.getClass();
+        assert cell instanceof CounterCell : "Wrong class type: " + cell.getClass();
 
         if (timestampOfLastDelete() < ((CounterCell) cell).timestampOfLastDelete())
             return cell;
-        ContextRelationship rel = contextManager.diff(cell.value(), value());
-        if (ContextRelationship.GREATER_THAN == rel || ContextRelationship.DISJOINT == rel)
+        CounterContext.Relationship rel = contextManager.diff(cell.value(), value());
+        if (rel == CounterContext.Relationship.GREATER_THAN || rel == CounterContext.Relationship.DISJOINT)
             return cell;
         return null;
     }
@@ -147,7 +142,7 @@ public class CounterCell extends Cell
     }
 
     @Override
-    public Cell reconcile(Cell cell, Allocator allocator)
+    public Cell reconcile(Cell cell, AbstractAllocator allocator)
     {
         // live + tombstone: track last tombstone
         if (cell.isMarkedForDelete(Long.MIN_VALUE)) // cannot be an expired cell, so the current time is irrelevant
@@ -195,13 +190,7 @@ public class CounterCell extends Cell
     }
 
     @Override
-    public Cell localCopy(ColumnFamilyStore cfs)
-    {
-        return localCopy(cfs, HeapAllocator.instance);
-    }
-
-    @Override
-    public Cell localCopy(ColumnFamilyStore cfs, Allocator allocator)
+    public Cell localCopy(ColumnFamilyStore cfs, AbstractAllocator allocator)
     {
         return new CounterCell(name.copy(allocator), allocator.clone(value), timestamp, timestampOfLastDelete);
     }
@@ -229,14 +218,6 @@ public class CounterCell extends Cell
         // We cannot use the value validator as for other columns as the CounterColumnType validate a long,
         // which is not the internal representation of counters
         contextManager.validateContext(value());
-    }
-
-    /**
-     * Check if a given counterId is found in this CounterCell context.
-     */
-    public boolean hasCounterId(CounterId id)
-    {
-        return contextManager.hasCounterId(value(), id);
     }
 
     public Cell markLocalToBeCleared()

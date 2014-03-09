@@ -45,8 +45,15 @@ public class AlterTableStatement extends SchemaAlteringStatement
     public final ColumnIdentifier columnName;
     private final CFPropDefs cfProps;
     private final Map<ColumnIdentifier, ColumnIdentifier> renames;
+    private final boolean isStatic; // Only for ALTER ADD
 
-    public AlterTableStatement(CFName name, Type type, ColumnIdentifier columnName, CQL3Type.Raw validator, CFPropDefs cfProps, Map<ColumnIdentifier, ColumnIdentifier> renames)
+    public AlterTableStatement(CFName name,
+                               Type type,
+                               ColumnIdentifier columnName,
+                               CQL3Type.Raw validator,
+                               CFPropDefs cfProps,
+                               Map<ColumnIdentifier, ColumnIdentifier> renames,
+                               boolean isStatic)
     {
         super(name);
         this.oType = type;
@@ -54,6 +61,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         this.validator = validator; // used only for ADD/ALTER commands
         this.cfProps = cfProps;
         this.renames = renames;
+        this.isStatic = isStatic;
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -79,7 +87,9 @@ public class AlterTableStatement extends SchemaAlteringStatement
         {
             case ADD:
                 if (cfm.comparator.isDense())
-                    throw new InvalidRequestException("Cannot add new column to a compact CF");
+                    throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table");
+                if (isStatic && !cfm.comparator.isCompound())
+                    throw new InvalidRequestException("Static columns are not allowed in COMPACT STORAGE tables");
                 if (def != null)
                 {
                     switch (def.kind)
@@ -87,7 +97,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                         case PARTITION_KEY:
                         case CLUSTERING_COLUMN:
                             throw new InvalidRequestException(String.format("Invalid column name %s because it conflicts with a PRIMARY KEY part", columnName));
-                        case REGULAR:
+                        default:
                             throw new InvalidRequestException(String.format("Invalid column name %s because it conflicts with an existing column", columnName));
                     }
                 }
@@ -100,11 +110,13 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     if (cfm.isSuper())
                         throw new InvalidRequestException("Cannot use collection types with Super column family");
 
-                    cfm.comparator = cfm.comparator.addCollection(columnName, (CollectionType)type);
+                    cfm.comparator = cfm.comparator.addOrUpdateCollection(columnName, (CollectionType)type);
                 }
 
                 Integer componentIndex = cfm.comparator.isCompound() ? cfm.comparator.clusteringPrefixSize() : null;
-                cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, columnName.bytes, type, componentIndex));
+                cfm.addColumnDefinition(isStatic
+                                        ? ColumnDefinition.staticDef(cfm, columnName.bytes, type, componentIndex)
+                                        : ColumnDefinition.regularDef(cfm, columnName.bytes, type, componentIndex));
                 break;
 
             case ALTER:
@@ -163,6 +175,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                         cfm.defaultValidator(validator.getType());
                         break;
                     case REGULAR:
+                    case STATIC:
                         // Thrift allows to change a column validator so CFMetaData.validateCompatibility will let it slide
                         // if we change to an incompatible type (contrarily to the comparator case). But we don't want to
                         // allow it for CQL3 (see #5882) so validating it explicitly here. We only care about value compatibility
@@ -174,6 +187,13 @@ public class AlterTableStatement extends SchemaAlteringStatement
                                                                            def.type.asCQL3Type(),
                                                                            validator));
 
+                        // For collections, if we alter the type, we need to update the comparator too since it includes
+                        // the type too (note that isValueCompatibleWith above has validated that the need type don't really
+                        // change the underlying sorting order, but we still don't want to have a discrepancy between the type
+                        // in the comparator and the one in the ColumnDefinition as that would be dodgy).
+                        if (validator.getType() instanceof CollectionType)
+                            cfm.comparator = cfm.comparator.addOrUpdateCollection(def.name, (CollectionType)validator.getType());
+
                         break;
                 }
                 // In any case, we update the column definition
@@ -182,9 +202,9 @@ public class AlterTableStatement extends SchemaAlteringStatement
 
             case DROP:
                 if (!cfm.isCQL3Table())
-                    throw new InvalidRequestException("Cannot drop columns from a non-CQL3 CF");
+                    throw new InvalidRequestException("Cannot drop columns from a non-CQL3 table");
                 if (def == null)
-                    throw new InvalidRequestException(String.format("Cell %s was not found in table %s", columnName, columnFamily()));
+                    throw new InvalidRequestException(String.format("Column %s was not found in table %s", columnName, columnFamily()));
 
                 switch (def.kind)
                 {
@@ -192,8 +212,9 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     case CLUSTERING_COLUMN:
                         throw new InvalidRequestException(String.format("Cannot drop PRIMARY KEY part %s", columnName));
                     case REGULAR:
+                    case STATIC:
                         ColumnDefinition toDelete = null;
-                        for (ColumnDefinition columnDef : cfm.regularColumns())
+                        for (ColumnDefinition columnDef : cfm.regularAndStaticColumns())
                         {
                             if (columnDef.name.equals(columnName))
                                 toDelete = columnDef;

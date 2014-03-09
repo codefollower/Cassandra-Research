@@ -235,7 +235,7 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // truncate data and index file
         truncate(chunkOffset);
-        metadataWriter.resetAndTruncate(realMark.nextChunkIndex);
+        metadataWriter.resetAndTruncate(realMark.nextChunkIndex - 1);
     }
 
     /**

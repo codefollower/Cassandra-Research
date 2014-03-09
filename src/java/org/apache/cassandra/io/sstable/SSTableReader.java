@@ -52,6 +52,7 @@ import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.metadata.*;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.metrics.RestorableMeter;
+import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.tracing.Tracing;
@@ -191,10 +192,7 @@ public class SSTableReader extends SSTable implements Closeable
         if (count < 0)
         {
             for (SSTableReader sstable : sstables)
-            {
-                // using getMaxIndexSummarySize() lets us ignore the current sampling level
-                count += (sstable.getMaxIndexSummarySize() + 1) * sstable.indexSummary.getSamplingLevel();
-            }
+                count += sstable.estimatedKeys();
         }
         return count;
     }
@@ -609,7 +607,7 @@ public class SSTableReader extends SSTable implements Closeable
 
             IndexSummaryBuilder summaryBuilder = null;
             if (!summaryLoaded)
-                summaryBuilder = new IndexSummaryBuilder(estimatedKeys, metadata.getIndexInterval(), samplingLevel);
+                summaryBuilder = new IndexSummaryBuilder(estimatedKeys, metadata.getMinIndexInterval(), samplingLevel);
 
             long indexPosition;
             while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
@@ -666,7 +664,7 @@ public class SSTableReader extends SSTable implements Closeable
         try
         {
             iStream = new DataInputStream(new FileInputStream(summariesFile));
-            indexSummary = IndexSummary.serializer.deserialize(iStream, partitioner, descriptor.version.hasSamplingLevel, metadata.getIndexInterval());
+            indexSummary = IndexSummary.serializer.deserialize(iStream, partitioner, descriptor.version.hasSamplingLevel, metadata.getMinIndexInterval(), metadata.getMaxIndexInterval());
             first = partitioner.decorateKey(ByteBufferUtil.readWithLength(iStream));
             last = partitioner.decorateKey(ByteBufferUtil.readWithLength(iStream));
             ibuilder.deserializeBounds(iStream);
@@ -740,10 +738,25 @@ public class SSTableReader extends SSTable implements Closeable
      */
     public SSTableReader cloneWithNewSummarySamplingLevel(int samplingLevel) throws IOException
     {
+        int minIndexInterval = metadata.getMinIndexInterval();
+        int maxIndexInterval = metadata.getMaxIndexInterval();
+        double effectiveInterval = indexSummary.getEffectiveIndexInterval();
+
         IndexSummary newSummary;
-        if (samplingLevel < indexSummary.getSamplingLevel())
+
+         // We have to rebuild the summary from the on-disk primary index in three cases:
+         // 1. The sampling level went up, so we need to read more entries off disk
+         // 2. The min_index_interval changed (in either direction); this changes what entries would be in the summary
+         //    at full sampling (and consequently at any other sampling level)
+         // 3. The max_index_interval was lowered, forcing us to raise the sampling level
+        if (samplingLevel > indexSummary.getSamplingLevel() || indexSummary.getMinIndexInterval() != minIndexInterval || effectiveInterval > maxIndexInterval)
         {
-            newSummary = IndexSummaryBuilder.downsample(indexSummary, samplingLevel, partitioner);
+            newSummary = buildSummaryAtLevel(samplingLevel);
+        }
+        else if (samplingLevel < indexSummary.getSamplingLevel())
+        {
+            // we can use the existing index summary to make a smaller one
+            newSummary = IndexSummaryBuilder.downsample(indexSummary, samplingLevel, minIndexInterval, partitioner);
 
             SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
             SegmentedFile.Builder dbuilder = compression
@@ -751,13 +764,10 @@ public class SSTableReader extends SSTable implements Closeable
                                            : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
             saveSummary(ibuilder, dbuilder, newSummary);
         }
-        else if (samplingLevel > indexSummary.getSamplingLevel())
-        {
-            newSummary = upsampleSummary(samplingLevel);
-        }
         else
         {
-            throw new AssertionError("Attempted to clone SSTableReader with the same index summary sampling level");
+            throw new AssertionError("Attempted to clone SSTableReader with the same index summary sampling level and " +
+                                     "no adjustments to min/max_index_interval");
         }
 
         markReplaced();
@@ -771,14 +781,14 @@ public class SSTableReader extends SSTable implements Closeable
         return replacement;
     }
 
-    private IndexSummary upsampleSummary(int newSamplingLevel) throws IOException
+    private IndexSummary buildSummaryAtLevel(int newSamplingLevel) throws IOException
     {
         // we read the positions in a BRAF so we don't have to worry about an entry spanning a mmap boundary.
         RandomAccessReader primaryIndex = RandomAccessReader.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)));
         try
         {
             long indexSize = primaryIndex.length();
-            IndexSummaryBuilder summaryBuilder = new IndexSummaryBuilder(estimatedKeys(), metadata.getIndexInterval(), newSamplingLevel);
+            IndexSummaryBuilder summaryBuilder = new IndexSummaryBuilder(estimatedKeys(), metadata.getMinIndexInterval(), newSamplingLevel);
 
             long indexPosition;
             while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
@@ -803,6 +813,16 @@ public class SSTableReader extends SSTable implements Closeable
     public long getIndexSummaryOffHeapSize()
     {
         return indexSummary.getOffHeapSize();
+    }
+
+    public int getMinIndexInterval()
+    {
+        return indexSummary.getMinIndexInterval();
+    }
+
+    public double getEffectiveIndexInterval()
+    {
+        return indexSummary.getEffectiveIndexInterval();
     }
 
     public void releaseSummary() throws IOException
@@ -882,11 +902,11 @@ public class SSTableReader extends SSTable implements Closeable
     }
 
     /**
-     * @return An estimate of the number of keys in this SSTable.
+     * @return An estimate of the number of keys in this SSTable based on the index summary.
      */
     public long estimatedKeys()
     {
-        return ((long) indexSummary.getMaxNumberOfEntries()) * indexSummary.getIndexInterval();
+        return indexSummary.getEstimatedKeyCount();
     }
 
     /**
@@ -900,8 +920,8 @@ public class SSTableReader extends SSTable implements Closeable
         for (Pair<Integer, Integer> sampleIndexRange : sampleIndexes)
             sampleKeyCount += (sampleIndexRange.right - sampleIndexRange.left + 1);
 
-        // adjust for the current sampling level
-        long estimatedKeys = sampleKeyCount * (Downsampling.BASE_SAMPLING_LEVEL * indexSummary.getIndexInterval()) / indexSummary.getSamplingLevel();
+        // adjust for the current sampling level: (BSL / SL) * index_interval_at_full_sampling
+        long estimatedKeys = sampleKeyCount * (Downsampling.BASE_SAMPLING_LEVEL * indexSummary.getMinIndexInterval()) / indexSummary.getSamplingLevel();
         return Math.max(1, estimatedKeys);
     }
 
@@ -1482,6 +1502,11 @@ public class SSTableReader extends SSTable implements Closeable
             File targetLink = new File(snapshotDirectoryPath, sourceFile.getName());
             FileUtils.createHardLink(sourceFile, targetLink);
         }
+    }
+
+    public boolean isRepaired()
+    {
+        return sstableMetadata.repairedAt != ActiveRepairService.UNREPAIRED_SSTABLE;
     }
 
     /**

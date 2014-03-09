@@ -25,7 +25,7 @@
     <property name="debuglevel" value="source,lines,vars"/>
 
     <!-- default version and SCM information -->
-    <property name="base.version" value="2.1"/>
+    <property name="base.version" value="2.1.0-beta1"/>
     <property name="scm.connection" value="scm:git://git.apache.org/cassandra.git"/>
     <property name="scm.developerConnection" value="scm:git://git.apache.org/cassandra.git"/>
     <property name="scm.url" value="http://git-wip-us.apache.org/repos/asf?p=cassandra.git;a=tree"/>
@@ -56,6 +56,7 @@
     <property name="test.conf" value="${test.dir}/conf"/>
     <property name="test.data" value="${test.dir}/data"/>
     <property name="test.name" value="*Test"/>
+    <property name="test.methods" value=""/>
     <property name="test.unit.src" value="${test.dir}/unit"/>
     <property name="test.long.src" value="${test.dir}/long"/>
     <property name="test.pig.src" value="${test.dir}/pig"/>
@@ -92,7 +93,7 @@
     <property name="test.long.timeout" value="600000" />
 
     <!-- http://cobertura.sourceforge.net/ -->
-    <property name="cobertura.version" value="1.9.4.1"/>
+    <property name="cobertura.version" value="2.0.2"/>
     <property name="cobertura.build.dir" value="${build.dir}/cobertura"/>
     <property name="cobertura.report.dir" value="${cobertura.build.dir}/report"/>
     <property name="cobertura.classes.dir" value="${cobertura.build.dir}/classes"/>
@@ -201,28 +202,12 @@
     <!--
        This generates the CQL grammar files from Cql.g
     -->
-    <target name="check-gen-cql2-grammar">
-        <uptodate property="cql2current"
-                srcfile="${build.src.java}/org/apache/cassandra/cql/Cql.g"
-                targetfile="${build.src.gen-java}/org/apache/cassandra/cql/Cql.tokens"/>
-    </target>
     <target name="check-gen-cql3-grammar">
         <uptodate property="cql3current"
                 srcfile="${build.src.java}/org/apache/cassandra/cql3/Cql.g"
                 targetfile="${build.src.gen-java}/org/apache/cassandra/cql3/Cql.tokens"/>
     </target>
  
-    <target name="gen-cql2-grammar" depends="check-gen-cql2-grammar" unless="cql2current">
-      <echo>Building Grammar ${build.src.java}/org/apache/cassandra/cql/Cql.g  ...</echo>
-      <java classname="org.antlr.Tool"
-            classpath="${build.lib}/antlr-3.2.jar"
-            fork="true"
-            failonerror="true">
-         <arg value="${build.src.java}/org/apache/cassandra/cql/Cql.g" />
-         <arg value="-fo" />
-         <arg value="${build.src.gen-java}/org/apache/cassandra/cql/" />
-      </java>
-    </target>
     <target name="gen-cql3-grammar" depends="check-gen-cql3-grammar" unless="cql3current">
       <echo>Building Grammar ${build.src.java}/org/apache/cassandra/cql3/Cql.g  ...</echo>
       <java classname="org.antlr.Tool"
@@ -242,9 +227,6 @@
         </artifact:dependencies>
         <taskdef classpathref="wikitext.classpath" resource="wikitexttasks.properties" />
         <wikitext-to-html markupLanguage="Textile">
-            <fileset dir="${basedir}">
-                <include name="doc/cql/*.textile"/>
-            </fileset>
             <fileset dir="${basedir}">
                 <include name="doc/cql3/*.textile"/>
             </fileset>
@@ -340,7 +322,7 @@
           <dependency groupId="org.xerial.snappy" artifactId="snappy-java" version="1.0.5"/>
           <dependency groupId="net.jpountz.lz4" artifactId="lz4" version="1.2.0"/>
           <dependency groupId="com.ning" artifactId="compress-lzf" version="0.8.4"/>
-          <dependency groupId="com.google.guava" artifactId="guava" version="15.0"/>
+          <dependency groupId="com.google.guava" artifactId="guava" version="16.0"/>
           <dependency groupId="commons-cli" artifactId="commons-cli" version="1.1"/>
           <dependency groupId="commons-codec" artifactId="commons-codec" version="1.2"/>
           <dependency groupId="org.apache.commons" artifactId="commons-lang3" version="3.1"/>
@@ -357,7 +339,7 @@
           </dependency>
           <dependency groupId="com.googlecode.json-simple" artifactId="json-simple" version="1.1"/>
           <dependency groupId="com.github.stephenc.high-scale-lib" artifactId="high-scale-lib" version="1.1.2"/>
-          <dependency groupId="com.github.stephenc" artifactId="jamm" version="0.2.5"/>
+          <dependency groupId="com.github.stephenc" artifactId="jamm" version="0.2.6"/>
           <dependency groupId="com.thinkaurelius.thrift" artifactId="thrift-server" version="0.3.3">
 	      	<exclusion groupId="org.slf4j" artifactId="slf4j-log4j12"/>
           </dependency>
@@ -374,7 +356,7 @@
           </dependency>
           <dependency groupId="org.apache.hadoop" artifactId="hadoop-minicluster" version="1.0.3"/>
           <dependency groupId="org.apache.pig" artifactId="pig" version="0.11.1"/>
-          <dependency groupId="net.java.dev.jna" artifactId="jna" version="3.2.7"/>
+          <dependency groupId="net.java.dev.jna" artifactId="jna" version="4.0.0"/>
 
           <dependency groupId="net.sourceforge.cobertura" artifactId="cobertura" version="${cobertura.version}"/>
 
@@ -382,12 +364,12 @@
           <dependency groupId="org.apache.cassandra" artifactId="cassandra-thrift" version="${version}" />
           <dependency groupId="com.yammer.metrics" artifactId="metrics-core" version="2.2.0" />
           <dependency groupId="com.addthis.metrics" artifactId="reporter-config" version="2.1.0" />
-          <dependency groupId="edu.stanford.ppl" artifactId="snaptree" version="0.1" />
           <dependency groupId="org.mindrot" artifactId="jbcrypt" version="0.3m" />
           <dependency groupId="io.airlift" artifactId="airline" version="0.6" />
           <dependency groupId="io.netty" artifactId="netty" version="3.6.6.Final" />
           <dependency groupId="com.google.code.findbugs" artifactId="jsr305" version="2.0.2" />
-          <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.1" />
+          <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.2" />
+          <dependency groupId="net.sf.supercsv" artifactId="super-csv" version="2.1.0" />
         </dependencyManagement>
         <developer id="alakshman" name="Avinash Lakshman"/>
         <developer id="antelder" name="Anthony Elder"/>
@@ -417,9 +399,7 @@
         <dependency groupId="org.apache.hadoop" artifactId="hadoop-core"/>
       	<dependency groupId="org.apache.hadoop" artifactId="hadoop-minicluster"/>
         <dependency groupId="org.apache.pig" artifactId="pig"/>
-        <dependency groupId="net.java.dev.jna" artifactId="jna"/>
       	<dependency groupId="com.google.code.findbugs" artifactId="jsr305"/>
-        <dependency groupId="io.airlift" artifactId="airline"/>
       </artifact:pom>
 
       <artifact:pom id="coverage-deps-pom"
@@ -472,7 +452,8 @@
         <dependency groupId="com.yammer.metrics" artifactId="metrics-core"/>
         <dependency groupId="com.addthis.metrics" artifactId="reporter-config"/>
         <dependency groupId="com.thinkaurelius.thrift" artifactId="thrift-server" version="0.3.3"/>
-        <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.1" />
+        <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.2" />
+        <dependency groupId="net.sf.supercsv" artifactId="super-csv" version="2.1.0" />
 
         <dependency groupId="ch.qos.logback" artifactId="logback-core"/>
         <dependency groupId="ch.qos.logback" artifactId="logback-classic"/>
@@ -486,7 +467,7 @@
         <dependency groupId="org.apache.pig" artifactId="pig" optional="true"/>
 
         <!-- don't need jna to run, but nice to have -->
-        <dependency groupId="net.java.dev.jna" artifactId="jna" optional="true"/>
+        <dependency groupId="net.java.dev.jna" artifactId="jna" version="4.0.0"/>
         
         <!-- don't need jamm unless running a server in which case it needs to be a -javagent to be used anyway -->
         <dependency groupId="com.github.stephenc" artifactId="jamm"/>
@@ -657,7 +638,7 @@
           <pathelement location="${test.conf}"/>
         </classpath>
         <jvmarg value="-Dstorage-config=${test.conf}"/>
-        <jvmarg value="-javaagent:${basedir}/lib/jamm-0.2.5.jar" />
+        <jvmarg value="-javaagent:${basedir}/lib/jamm-0.2.6.jar" />
         <jvmarg value="-ea"/>
       </java>
     </target>
@@ -669,7 +650,7 @@
         depends="maven-ant-tasks-retrieve-build,build-project" description="Compile Cassandra classes"/>
     <target name="codecoverage" depends="cobertura-instrument,test,cobertura-report" description="Create code coverage report"/>
 
-    <target depends="init,gen-cli-grammar,gen-cql2-grammar,gen-cql3-grammar"
+    <target depends="init,gen-cli-grammar,gen-cql3-grammar"
             name="build-project">
         <echo message="${ant.project.name}: ${ant.file}"/>
         <!-- Order matters! -->
@@ -926,6 +907,9 @@
         <fileset dir="${build.dir}/tools/lib/">
             <include name="*.jar" />
         </fileset>
+        <fileset dir="${build.tools.lib}">
+            <include name="*.jar" />
+        </fileset>
       </copy>
       <artifact:writepom pomRefId="dist-pom" 
             file="${build.dir}/${final.name}-dist.pom"/>
@@ -1045,6 +1029,7 @@
     <attribute name="forkmode" default="perTest"/>
     <element name="optjvmargs" implicit="true" optional="true" />
     <attribute name="filter" default="**/${test.name}.java"/>
+    <attribute name="exclude" default="" />
     <sequential>
       <echo message="running @{suitename} tests"/>
       <mkdir dir="${build.test.dir}/cassandra"/>
@@ -1055,7 +1040,7 @@
         <formatter type="brief" usefile="false"/>
         <jvmarg value="-Dstorage-config=${test.conf}"/>
         <jvmarg value="-Djava.awt.headless=true"/>
-        <jvmarg value="-javaagent:${basedir}/lib/jamm-0.2.5.jar" />
+        <jvmarg value="-javaagent:${basedir}/lib/jamm-0.2.6.jar" />
         <jvmarg value="-ea"/>
         <jvmarg value="-Xss256k"/>
         <optjvmargs/>
@@ -1069,7 +1054,7 @@
           </fileset>
         </classpath>
         <batchtest todir="${build.test.dir}/output">
-          <fileset dir="@{inputdir}" includes="@{filter}" />
+            <fileset dir="@{inputdir}" includes="@{filter}" excludes="@{exclude}"/>
         </batchtest>
       </junit>
       <fail message="Some @{suitename} test(s) failed.">
@@ -1113,7 +1098,21 @@
   </target>
 
   <target name="test" depends="build-test" description="Execute unit tests">
-    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="60000">
+    <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
+      <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
+      <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
+      <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
+      <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
+      <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+    </testmacro>
+    <fileset dir="${test.unit.src}">
+        <exclude name="**/pig/*.java" />
+    </fileset>
+  </target>
+
+  <target name="testsome" depends="build-test" description="Execute specific unit tests" >
+    <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
+      <test name="${test.name}" methods="${test.methods}"/>
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
@@ -1123,7 +1122,7 @@
   </target>
     
   <target name="test-compression" depends="build-test" description="Execute unit tests with sstable compression enabled">
-    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="60000">
+      <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
@@ -1131,30 +1130,33 @@
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
     </testmacro>
+    <fileset dir="${test.unit.src}">
+        <exclude name="**/pig/*.java" />
+    </fileset>
   </target>
 
   <target name="msg-ser-gen-test" depends="build-test" description="Generates message serializations">
     <testmacro suitename="unit" inputdir="${test.unit.src}" 
-               timeout="60000" filter="**/SerializationsTest.java">
+        timeout="${test.timeout}" filter="**/SerializationsTest.java">
       <jvmarg value="-Dcassandra.test-serialization-writes=True"/>
     </testmacro>
   </target>
   
   <target name="msg-ser-test" depends="build-test" description="Tests message serializations">
-    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="60000"
+      <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="${test.timeout}"
                filter="**/SerializationsTest.java"/>
   </target>
   
   <target name="msg-ser-test-7" depends="build-test" description="Generates message serializations">
     <testmacro suitename="unit" inputdir="${test.unit.src}" 
-               timeout="60000" filter="**/SerializationsTest.java">
+        timeout="${test.timeout}" filter="**/SerializationsTest.java">
       <jvmarg value="-Dcassandra.version=0.7"/>
     </testmacro>
   </target>
 
   <target name="msg-ser-test-10" depends="build-test" description="Tests message serializations on 1.0 messages">
     <testmacro suitename="unit" inputdir="${test.unit.src}" 
-               timeout="60000" filter="**/SerializationsTest.java">
+        timeout="${test.timeout}" filter="**/SerializationsTest.java">
       <jvmarg value="-Dcassandra.version=1.0"/>
     </testmacro>
   </target>
@@ -1300,6 +1302,9 @@
      </fileset>
  	 <fileset dir="build/lib/jars">
   	    <include name="**/*.jar" />
+  	 </fileset>
+  	 <fileset dir="tools/lib">
+  	     <include name="**/*.jar" />
   	 </fileset>
   	</path>
   	<property name="eclipse-project-libs" refid="eclipse-project-libs-path"/>

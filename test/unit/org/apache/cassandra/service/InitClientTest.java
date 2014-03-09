@@ -2,8 +2,6 @@ package org.apache.cassandra.service;
 
 import org.junit.Test;
 
-import java.io.IOException;
-
 import org.apache.cassandra.exceptions.ConfigurationException;
 
 /**
@@ -28,8 +26,8 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 public class InitClientTest // extends CleanupHelper
 {
     @Test
-    public void testInitClientStartup() throws IOException, ConfigurationException
+    public void testInitClientStartup() throws ConfigurationException
     {
-        StorageService.instance.initClient();
+        StorageService.instance.initClient(0);
     }
 }

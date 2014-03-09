@@ -36,9 +36,9 @@ import org.apache.cassandra.utils.Pair;
 public class DeleteStatement extends ModificationStatement
 {
     //对于delete语句，Attributes只支持USING TIMESTAMP，不支持TTL
-    private DeleteStatement(int boundTerms, CFMetaData cfm, Attributes attrs)
+    private DeleteStatement(StatementType type, int boundTerms, CFMetaData cfm, Attributes attrs)
     {
-        super(boundTerms, cfm, attrs);
+        super(type, boundTerms, cfm, attrs);
     }
 
     public boolean requireFullClusteringKey()
@@ -46,15 +46,20 @@ public class DeleteStatement extends ModificationStatement
         return false;
     }
 
-    public ColumnFamily updateForKey(ByteBuffer key, Composite prefix, UpdateParameters params)
+    public void addUpdateForKey(ColumnFamily cf, ByteBuffer key, Composite prefix, UpdateParameters params)
     throws InvalidRequestException
     {
-        ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
         List<Operation> deletions = getOperations();
 
         //删除REGULAR、COMPACT_VALUE这种类型的字段时必须在where中完整指定所有的CLUSTERING_COLUMN
         if (prefix.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
-            throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.iterator().next().column.name));
+        {
+            // In general, we can't delete specific columns if not all clustering columns have been specified.
+            // However, if we delete only static colums, it's fine since we won't really use the prefix anyway.
+            for (Operation deletion : deletions)
+                if (!deletion.column.isStatic())
+                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletion.column.name));
+        }
 
         //delete from 语法
         if (deletions.isEmpty())
@@ -82,8 +87,6 @@ public class DeleteStatement extends ModificationStatement
             for (Operation op : deletions)
                 op.execute(key, cf, prefix, params);
         }
-
-        return cf;
     }
 
     public static class Parsed extends ModificationStatement.Parsed
@@ -95,7 +98,7 @@ public class DeleteStatement extends ModificationStatement
                       Attributes.Raw attrs,
                       List<Operation.RawDeletion> deletions,
                       List<Relation> whereClause,
-                      List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions)
+                      List<Pair<ColumnIdentifier, ColumnCondition.Raw>> conditions)
         {
             super(name, attrs, conditions, false);
             this.deletions = deletions;
@@ -105,7 +108,7 @@ public class DeleteStatement extends ModificationStatement
         //不能用delete xxx from这种格式删除PARTITION_KEY和CLUSTERING_COLUMN这两种字段
         protected ModificationStatement prepareInternal(CFMetaData cfm, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException
         {
-            DeleteStatement stmt = new DeleteStatement(boundNames.size(), cfm, attrs);
+            DeleteStatement stmt = new DeleteStatement(ModificationStatement.StatementType.DELETE, boundNames.size(), cfm, attrs);
 
             for (Operation.RawDeletion deletion : deletions)
             {
@@ -115,7 +118,7 @@ public class DeleteStatement extends ModificationStatement
 
                 // For compact, we only have one value except the key, so the only form of DELETE that make sense is without a column
                 // list. However, we support having the value name for coherence with the static/sparse case
-                if (def.kind != ColumnDefinition.Kind.REGULAR && def.kind != ColumnDefinition.Kind.COMPACT_VALUE)
+                if (def.isPrimaryKeyColumn())
                     throw new InvalidRequestException(String.format("Invalid identifier %s for deletion (should not be a PRIMARY KEY part)", def.name));
 
                 Operation op = deletion.prepare(cfm.ksName, def);

@@ -1,9 +1,31 @@
 package org.apache.cassandra.stress.settings;
+/*
+ * 
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ * 
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ * 
+ */
+
 
 import java.io.Serializable;
 import java.util.*;
 
 import com.datastax.driver.core.Metadata;
+import org.apache.cassandra.config.EncryptionOptions;
 import org.apache.cassandra.stress.util.JavaDriverClient;
 import org.apache.cassandra.stress.util.SimpleThriftClient;
 import org.apache.cassandra.stress.util.SmartThriftClient;
@@ -11,7 +33,6 @@ import org.apache.cassandra.thrift.Cassandra;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.transport.SimpleClient;
 import org.apache.thrift.protocol.TBinaryProtocol;
-import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.transport.TTransport;
 
 public class StressSettings implements Serializable
@@ -71,13 +92,11 @@ public class StressSettings implements Serializable
 
     public Cassandra.Client getRawThriftClient(String host, boolean setKeyspace)
     {
-        TSocket socket = new TSocket(host, port.thriftPort);
         Cassandra.Client client;
 
         try
         {
-            TTransport transport = this.transport.getFactory().getTransport(socket);
-            transport.open();
+            TTransport transport = this.transport.getFactory().openTransport(host, port.thriftPort);
 
             client = new Cassandra.Client(new TBinaryProtocol(transport));
 
@@ -85,7 +104,7 @@ public class StressSettings implements Serializable
                 client.set_cql_version(mode.cqlVersion.connectVersion);
 
             if (setKeyspace)
-                client.set_keyspace("Keyspace1");
+                client.set_keyspace(schema.keyspace);
         }
         catch (InvalidRequestException e)
         {
@@ -107,7 +126,7 @@ public class StressSettings implements Serializable
             String currentNode = node.randomNode();
             SimpleClient client = new SimpleClient(currentNode, port.nativePort);
             client.connect(false);
-            client.execute("USE \"Keyspace1\";", org.apache.cassandra.db.ConsistencyLevel.ONE);
+            client.execute("USE \"" + schema.keyspace + "\";", org.apache.cassandra.db.ConsistencyLevel.ONE);
             return client;
         }
         catch (Exception e)
@@ -131,9 +150,10 @@ public class StressSettings implements Serializable
                 if (client != null)
                     return client;
 
-                JavaDriverClient c = new JavaDriverClient(currentNode, port.nativePort);
+                EncryptionOptions.ClientEncryptionOptions encOptions = transport.getEncryptionOptions();
+                JavaDriverClient c = new JavaDriverClient(currentNode, port.nativePort, encOptions);
                 c.connect(mode.compression());
-                c.execute("USE \"Keyspace1\";", org.apache.cassandra.db.ConsistencyLevel.ONE);
+                c.execute("USE \"" + schema.keyspace + "\";", org.apache.cassandra.db.ConsistencyLevel.ONE);
                 return client = c;
             }
         }

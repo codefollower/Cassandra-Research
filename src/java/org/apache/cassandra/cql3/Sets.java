@@ -242,9 +242,9 @@ public abstract class Sets
             // delete + add
             //像这种:UPDATE users SET emails = {'fb@friendsofmordor.org','abc@d.com'}
             //就是先删除再插入
-            CellName name = cf.getComparator().create(prefix, column.name);
+            CellName name = cf.getComparator().create(prefix, column);
             cf.addAtom(params.makeTombstoneForOverwrite(name.slice()));
-            Adder.doAdd(t, cf, prefix, column.name, params);
+            Adder.doAdd(t, cf, prefix, column, params);
         }
     }
 
@@ -257,10 +257,10 @@ public abstract class Sets
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
         {
-            doAdd(t, cf, prefix, column.name, params);
+            doAdd(t, cf, prefix, column, params);
         }
 
-        static void doAdd(Term t, ColumnFamily cf, Composite prefix, ColumnIdentifier columnName, UpdateParameters params) throws InvalidRequestException
+        static void doAdd(Term t, ColumnFamily cf, Composite prefix, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.variables);
             if (value == null)
@@ -271,7 +271,7 @@ public abstract class Sets
             Set<ByteBuffer> toAdd = ((Sets.Value)value).elements;
             for (ByteBuffer bb : toAdd)
             {
-                CellName cellName = cf.getComparator().create(prefix, columnName, bb);
+                CellName cellName = cf.getComparator().create(prefix, column, bb);
                 cf.addColumn(params.makeColumn(cellName, ByteBufferUtil.EMPTY_BYTE_BUFFER));
             }
         }
@@ -298,7 +298,7 @@ public abstract class Sets
 
             for (ByteBuffer bb : toDiscard)
             {
-                cf.addColumn(params.makeTombstone(cf.getComparator().create(prefix, column.name, bb)));
+                cf.addColumn(params.makeTombstone(cf.getComparator().create(prefix, column, bb)));
             }
         }
     }

@@ -99,10 +99,8 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
         if (!await(command.getTimeout(), TimeUnit.MILLISECONDS))
         {
             // Same as for writes, see AbstractWriteResponseHandler
-            int acks = received;
-            if (resolver.isDataPresent() && acks >= blockfor)
-                acks = blockfor - 1;
             ReadTimeoutException ex = new ReadTimeoutException(consistencyLevel, received, blockfor, resolver.isDataPresent());
+
             if (logger.isDebugEnabled())
                 logger.debug("Read timeout: {}", ex.toString());
             throw ex;
@@ -120,7 +118,7 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
         if (n >= blockfor && resolver.isDataPresent())
         {
             condition.signalAll();
-            maybeResolveForRepair();
+            maybeResolveForRepair(n);
         }
     }
 
@@ -154,11 +152,11 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
 
     /**
      * Check digests in the background on the Repair stage if we've received replies
-     * too all the requests we sent.
+     * to all the requests we sent.
      */
-    protected void maybeResolveForRepair()
+    protected void maybeResolveForRepair(int n)
     {
-        if (blockfor < endpoints.size() && received == endpoints.size())
+        if (blockfor < endpoints.size() && n == endpoints.size())
         {
             assert resolver.isDataPresent();
             StageManager.getStage(Stage.READ_REPAIR).execute(new AsyncRepairRunner());

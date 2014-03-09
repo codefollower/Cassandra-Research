@@ -51,11 +51,6 @@ public class SchemaLoader
     @BeforeClass
     public static void loadSchema() throws ConfigurationException
     {
-        loadSchema(false);
-    }
-
-    public static void loadSchema(boolean withOldCfIds) throws ConfigurationException
-    {
         // Cleanup first
         cleanupAndLeaveDirs();
 
@@ -73,8 +68,8 @@ public class SchemaLoader
         // some tests now expect us to start gossip for them.
         startGossiper();
         // if you're messing with low-level sstable stuff, it can be useful to inject the schema directly
-        // Schema.instance.load(schemaDefinition(withOldCfIds));
-        for (KSMetaData ksm : schemaDefinition(withOldCfIds))
+        // Schema.instance.load(schemaDefinition());
+        for (KSMetaData ksm : schemaDefinition())
             MigrationManager.announceNewKeyspace(ksm);
     }
 
@@ -89,7 +84,7 @@ public class SchemaLoader
         Gossiper.instance.stop();
     }
 
-    public static Collection<KSMetaData> schemaDefinition(boolean withOldCfIds) throws ConfigurationException
+    public static Collection<KSMetaData> schemaDefinition() throws ConfigurationException
     {
         List<KSMetaData> schema = new ArrayList<KSMetaData>();
 
@@ -102,6 +97,7 @@ public class SchemaLoader
         String ks6 = "Keyspace6";
         String ks_kcs = "KeyCacheSpace";
         String ks_rcs = "RowCacheSpace";
+        String ks_ccs = "CounterCacheSpace";
         String ks_nocommit = "NoCommitlogSpace";
         String ks_prsi = "PerRowSecondaryIndex";
         String ks_cql = "cql_keyspace";
@@ -168,7 +164,8 @@ public class SchemaLoader
                                            standardCFMD(ks1, "legacyleveled")
                                                                                .compactionStrategyClass(LeveledCompactionStrategy.class)
                                                                                .compactionStrategyOptions(leveledOptions),
-                                           standardCFMD(ks1, "StandardLowIndexInterval").indexInterval(8).caching(CFMetaData.Caching.NONE)));
+                                           standardCFMD(ks1, "StandardLowIndexInterval").minIndexInterval(8).maxIndexInterval(256).caching(CFMetaData.Caching.NONE)));
+
 
         // Keyspace 2
         schema.add(KSMetaData.testMetadata(ks2,
@@ -181,8 +178,8 @@ public class SchemaLoader
                                            superCFMD(ks2, "Super3", bytes),
                                            superCFMD(ks2, "Super4", TimeUUIDType.instance),
                                            indexCFMD(ks2, "Indexed1", true),
-                                           compositeIndexCFMD(ks2, "Indexed2", true, withOldCfIds),
-                                           compositeIndexCFMD(ks2, "Indexed3", true, withOldCfIds).gcGraceSeconds(0)));
+                                           compositeIndexCFMD(ks2, "Indexed2", true),
+                                           compositeIndexCFMD(ks2, "Indexed3", true).gcGraceSeconds(0)));
 
         // Keyspace 3
         schema.add(KSMetaData.testMetadata(ks3,
@@ -232,7 +229,15 @@ public class SchemaLoader
                                            simple,
                                            opts_rf1,
                                            standardCFMD(ks_rcs, "CFWithoutCache").caching(CFMetaData.Caching.NONE),
-                                           standardCFMD(ks_rcs, "CachedCF").caching(CFMetaData.Caching.ALL)));
+                                           standardCFMD(ks_rcs, "CachedCF").caching(CFMetaData.Caching.ALL).rowsPerPartitionToCache(CFMetaData.RowsPerPartitionToCache.fromString("ALL")),
+                                           standardCFMD(ks_rcs, "CachedIntCF").defaultValidator(IntegerType.instance).caching(CFMetaData.Caching.ALL)));
+
+        // CounterCacheSpace
+        schema.add(KSMetaData.testMetadata(ks_ccs,
+                                           simple,
+                                           opts_rf1,
+                                           standardCFMD(ks_ccs, "Counter1").defaultValidator(CounterColumnType.instance),
+                                           standardCFMD(ks_ccs, "Counter2").defaultValidator(CounterColumnType.instance)));
 
         schema.add(KSMetaData.testMetadataNotDurable(ks_nocommit,
                                                      simple,
@@ -243,7 +248,7 @@ public class SchemaLoader
         schema.add(KSMetaData.testMetadata(ks_prsi,
                                            simple,
                                            opts_rf1,
-                                           perRowIndexedCFMD(ks_prsi, "Indexed1", withOldCfIds)));
+                                           perRowIndexedCFMD(ks_prsi, "Indexed1")));
 
         // CQLKeyspace
         schema.add(KSMetaData.testMetadata(ks_cql,
@@ -255,7 +260,14 @@ public class SchemaLoader
                                                               + "k int PRIMARY KEY,"
                                                               + "v1 text,"
                                                               + "v2 int"
-                                                              + ")", ks_cql)));
+                                                              + ")", ks_cql),
+
+                                           CFMetaData.compile("CREATE TABLE table2 ("
+                                                              + "k text,"
+                                                              + "c text,"
+                                                              + "v text,"
+                                                              + "PRIMARY KEY (k, c))", ks_cql)
+                                           ));
 
 
         if (Boolean.parseBoolean(System.getProperty("cassandra.test.compression", "false")))
@@ -290,7 +302,7 @@ public class SchemaLoader
                                     ColumnDefinition.Kind.REGULAR);
     }
 
-    private static CFMetaData perRowIndexedCFMD(String ksName, String cfName, boolean withOldCfIds)
+    private static CFMetaData perRowIndexedCFMD(String ksName, String cfName)
     {
         final Map<String, String> indexOptions = Collections.singletonMap(
                                                       SecondaryIndex.CUSTOM_INDEX_OPTION_NAME,
@@ -335,7 +347,7 @@ public class SchemaLoader
         return cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, cName, LongType.instance, null)
                                                        .setIndex(withIdxType ? ByteBufferUtil.bytesToHex(cName) : null, keys, null));
     }
-    private static CFMetaData compositeIndexCFMD(String ksName, String cfName, final Boolean withIdxType, boolean withOldCfIds) throws ConfigurationException
+    private static CFMetaData compositeIndexCFMD(String ksName, String cfName, final Boolean withIdxType) throws ConfigurationException
     {
         final CompositeType composite = CompositeType.getInstance(Arrays.asList(new AbstractType<?>[]{UTF8Type.instance, UTF8Type.instance})); 
         CFMetaData cfm = CFMetaData.sparseCFMetaData(ksName, cfName, composite);

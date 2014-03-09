@@ -1,4 +1,24 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.apache.cassandra.utils.btree;
+
+import org.apache.cassandra.utils.ObjectSizes;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -29,7 +49,6 @@ final class NodeBuilder
     // we null out the contents of buildKeys/buildChildren when clear()ing them for re-use; this is where
     // we track how much we actually have to null out
     private int maxBuildKeyPosition;
-    private int maxBuildChildPosition;
 
     // current node of the btree we're modifying/copying from
     private Object[] copyFrom;
@@ -37,6 +56,9 @@ final class NodeBuilder
     private int copyFromKeyPosition;
     // the index of the first child node in copyFrom that has not yet been copied into the build arrays
     private int copyFromChildPosition;
+
+    private UpdateFunction updateFunction;
+    private Comparator comparator;
 
     // upper bound of range owned by this level; lets us know if we need to ascend back up the tree
     // for the next key we update when bsearch gives an insertion point past the end of the values
@@ -51,22 +73,23 @@ final class NodeBuilder
         {
             if (current.upperBound != null)
             {
-                current.reset(null, null);
+                current.reset(null, null, null, null);
                 Arrays.fill(current.buildKeys, 0, current.maxBuildKeyPosition, null);
-                Arrays.fill(current.buildChildren, 0, current.maxBuildChildPosition, null);
-                current.maxBuildChildPosition = current.maxBuildKeyPosition = 0;
+                Arrays.fill(current.buildChildren, 0, current.maxBuildKeyPosition + 1, null);
+                current.maxBuildKeyPosition = 0;
             }
             current = current.child;
         }
     }
 
     // reset counters/setup to copy from provided node
-    void reset(Object[] copyFrom, Object upperBound)
+    void reset(Object[] copyFrom, Object upperBound, UpdateFunction updateFunction, Comparator comparator)
     {
         this.copyFrom = copyFrom;
         this.upperBound = upperBound;
+        this.updateFunction = updateFunction;
+        this.comparator = comparator;
         maxBuildKeyPosition = Math.max(maxBuildKeyPosition, buildKeyPosition);
-        maxBuildChildPosition = Math.max(maxBuildChildPosition, buildChildPosition);
         buildKeyPosition = 0;
         buildChildPosition = 0;
         copyFromKeyPosition = 0;
@@ -81,15 +104,24 @@ final class NodeBuilder
      * a parent if we do not -- we got here from an earlier key -- and we need to ascend back up),
      * or null if we finished the update in this node.
      */
-    <V> NodeBuilder update(Object key, Comparator<V> comparator, ReplaceFunction<V> replaceF)
+    NodeBuilder update(Object key)
     {
         assert copyFrom != null;
         int copyFromKeyEnd = getKeyEnd(copyFrom);
 
-        int i = find(comparator, (V) key, copyFrom, copyFromKeyPosition, copyFromKeyEnd);
+        int i = find(comparator, key, copyFrom, copyFromKeyPosition, copyFromKeyEnd);
         boolean found = i >= 0; // exact key match?
         boolean owns = true; // true iff this node (or a child) should contain the key
-        if (!found)
+        if (found)
+        {
+            Object prev = copyFrom[i];
+            Object next = updateFunction.apply(prev, key);
+            // we aren't actually replacing anything, so leave our state intact and continue
+            if (prev == next)
+                return null;
+            key = next;
+        }
+        else
         {
             i = -i - 1;
             if (i == copyFromKeyEnd && compare(comparator, upperBound, key) <= 0)
@@ -98,18 +130,34 @@ final class NodeBuilder
 
         if (isLeaf(copyFrom))
         {
-            // copy keys from the original node up to prior to the found index
-            copyKeys(i);
 
             if (owns)
             {
+                // copy keys from the original node up to prior to the found index
+                copyKeys(i);
+
                 if (found)
-                    replaceNextKey(key, replaceF);
+                {
+                    // if found, we've applied updateFunction already
+                    replaceNextKey(key);
+                }
                 else
-                    addNewKey(key, replaceF); // handles splitting parent if necessary via ensureRoom
+                {
+                    // if not found, we need to apply updateFunction still
+                    key = updateFunction.apply(key);
+                    addNewKey(key); // handles splitting parent if necessary via ensureRoom
+                }
 
                 // done, so return null
                 return null;
+            }
+            else
+            {
+                // we don't want to copy anything if we're ascending and haven't copied anything previously,
+                // as in this case we can return the original node. Leaving buildKeyPosition as 0 indicates
+                // to buildFromRange that it should return the original instead of building a new node
+                if (buildKeyPosition > 0)
+                    copyKeys(i);
             }
 
             // if we don't own it, all we need to do is ensure we've copied everything in this node
@@ -122,7 +170,7 @@ final class NodeBuilder
             if (found)
             {
                 copyKeys(i);
-                replaceNextKey(key, replaceF);
+                replaceNextKey(key);
                 copyChildren(i + 1);
                 return null;
             }
@@ -135,12 +183,13 @@ final class NodeBuilder
                 // so descend into the owning child
                 Object newUpperBound = i < copyFromKeyEnd ? copyFrom[i] : upperBound;
                 Object[] descendInto = (Object[]) copyFrom[copyFromKeyEnd + i];
-                ensureChild().reset(descendInto, newUpperBound);
+                ensureChild().reset(descendInto, newUpperBound, updateFunction, comparator);
                 return child;
             }
-            else
+            else if (buildKeyPosition > 0 || buildChildPosition > 0)
             {
-                // ensure we've copied all keys and children
+                // ensure we've copied all keys and children, but only if we've already copied something.
+                // otherwise we want to return the original node
                 copyKeys(copyFromKeyEnd);
                 copyChildren(copyFromKeyEnd + 1); // since we know that there are exactly 1 more child nodes, than keys
             }
@@ -176,8 +225,8 @@ final class NodeBuilder
     // builds a new root BTree node - must be called on root of operation
     Object[] toNode()
     {
-        assert buildKeyPosition <= FAN_FACTOR && buildKeyPosition > 0 : buildKeyPosition;
-        return buildFromRange(0, buildKeyPosition, isLeaf(copyFrom));
+        assert buildKeyPosition <= FAN_FACTOR && (buildKeyPosition > 0 || copyFrom.length > 0) : buildKeyPosition;
+        return buildFromRange(0, buildKeyPosition, isLeaf(copyFrom), false);
     }
 
     // finish up this level and pass any constructed children up to our parent, ensuring a parent exists
@@ -189,12 +238,12 @@ final class NodeBuilder
         {
             // split current node and move the midpoint into parent, with the two halves as children
             int mid = buildKeyPosition / 2;
-            parent.addExtraChild(buildFromRange(0, mid, isLeaf), buildKeys[mid]);
-            parent.finishChild(buildFromRange(mid + 1, buildKeyPosition - (mid + 1), isLeaf));
+            parent.addExtraChild(buildFromRange(0, mid, isLeaf, true), buildKeys[mid]);
+            parent.finishChild(buildFromRange(mid + 1, buildKeyPosition - (mid + 1), isLeaf, false));
         }
         else
         {
-            parent.finishChild(buildFromRange(0, buildKeyPosition, isLeaf));
+            parent.finishChild(buildFromRange(0, buildKeyPosition, isLeaf, false));
         }
         return parent;
     }
@@ -209,29 +258,28 @@ final class NodeBuilder
         assert len <= FAN_FACTOR : upToKeyPosition + "," + copyFromKeyPosition;
 
         ensureRoom(buildKeyPosition + len);
-        System.arraycopy(copyFrom, copyFromKeyPosition, buildKeys, buildKeyPosition, len);
-        copyFromKeyPosition = upToKeyPosition;
-        buildKeyPosition += len;
+        if (len > 0)
+        {
+            System.arraycopy(copyFrom, copyFromKeyPosition, buildKeys, buildKeyPosition, len);
+            copyFromKeyPosition = upToKeyPosition;
+            buildKeyPosition += len;
+        }
     }
 
     // skips the next key in copyf, and puts the provided key in the builder instead
-    private <V> void replaceNextKey(Object with, ReplaceFunction<V> replaceF)
+    private void replaceNextKey(Object with)
     {
         // (this first part differs from addNewKey in that we pass the replaced object to replaceF as well)
         ensureRoom(buildKeyPosition + 1);
-        if (replaceF != null)
-            with = replaceF.apply((V) copyFrom[copyFromKeyPosition], (V) with);
         buildKeys[buildKeyPosition++] = with;
 
         copyFromKeyPosition++;
     }
 
     // puts the provided key in the builder, with no impact on treatment of data from copyf
-    <V> void addNewKey(Object key, ReplaceFunction<V> replaceF)
+    void addNewKey(Object key)
     {
         ensureRoom(buildKeyPosition + 1);
-        if (replaceF != null)
-            key = replaceF.apply((V) key);
         buildKeys[buildKeyPosition++] = key;
     }
 
@@ -242,9 +290,12 @@ final class NodeBuilder
         if (copyFromChildPosition >= upToChildPosition)
             return;
         int len = upToChildPosition - copyFromChildPosition;
-        System.arraycopy(copyFrom, getKeyEnd(copyFrom) + copyFromChildPosition, buildChildren, buildChildPosition, len);
-        copyFromChildPosition = upToChildPosition;
-        buildChildPosition += len;
+        if (len > 0)
+        {
+            System.arraycopy(copyFrom, getKeyEnd(copyFrom) + copyFromChildPosition, buildChildren, buildChildPosition, len);
+            copyFromChildPosition = upToChildPosition;
+            buildChildPosition += len;
+        }
     }
 
     // adds a new and unexpected child to the builder - called by children that overflow
@@ -269,7 +320,7 @@ final class NodeBuilder
             return;
 
         // flush even number of items so we don't waste leaf space repeatedly
-        Object[] flushUp = buildFromRange(0, FAN_FACTOR, isLeaf(copyFrom));
+        Object[] flushUp = buildFromRange(0, FAN_FACTOR, isLeaf(copyFrom), true);
         ensureParent().addExtraChild(flushUp, buildKeys[FAN_FACTOR]);
         int size = FAN_FACTOR + 1;
         assert size <= buildKeyPosition : buildKeyPosition + "," + nextBuildKeyPosition;
@@ -280,13 +331,17 @@ final class NodeBuilder
         {
             System.arraycopy(buildChildren, size, buildChildren, 0, buildChildPosition - size);
             buildChildPosition -= size;
-            maxBuildChildPosition = buildChildren.length;
         }
     }
 
     // builds and returns a node from the buffered objects in the given range
-    private Object[] buildFromRange(int offset, int keyLength, boolean isLeaf)
+    private Object[] buildFromRange(int offset, int keyLength, boolean isLeaf, boolean isExtra)
     {
+        // if keyLength is 0, we didn't copy anything from the original, which means we didn't
+        // modify any of the range owned by it, so can simply return it as is
+        if (keyLength == 0)
+            return copyFrom;
+
         Object[] a;
         if (isLeaf)
         {
@@ -299,6 +354,11 @@ final class NodeBuilder
             System.arraycopy(buildKeys, offset, a, 0, keyLength);
             System.arraycopy(buildChildren, offset, a, keyLength, keyLength + 1);
         }
+        if (isExtra)
+            updateFunction.allocated(ObjectSizes.sizeOfArray(a));
+        else if (a.length != copyFrom.length)
+            updateFunction.allocated(ObjectSizes.sizeOfArray(a) -
+                                     (copyFrom.length == 0 ? 0 : ObjectSizes.sizeOfArray(copyFrom)));
         return a;
     }
 
@@ -313,7 +373,7 @@ final class NodeBuilder
             parent.child = this;
         }
         if (parent.upperBound == null)
-            parent.reset(EMPTY_BRANCH, upperBound);
+            parent.reset(EMPTY_BRANCH, upperBound, updateFunction, comparator);
         return parent;
     }
 

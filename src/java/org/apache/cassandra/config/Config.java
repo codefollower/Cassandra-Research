@@ -17,8 +17,18 @@
  */
 package org.apache.cassandra.config;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.List;
+import java.util.Set;
+
+import com.google.common.collect.Sets;
+import org.supercsv.io.CsvListReader;
+import org.supercsv.prefs.CsvPreference;
+
 import org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
+import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.NativeAllocator;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -39,7 +49,9 @@ public class Config
     public String partitioner;
 
     public Boolean auto_bootstrap = true;
-    public volatile Boolean hinted_handoff_enabled = true;
+    public volatile boolean hinted_handoff_enabled_global = true;
+    public String hinted_handoff_enabled;
+    public Set<String> hinted_handoff_enabled_by_dc = Sets.newConcurrentHashSet();
     public volatile Integer max_hint_window_in_ms = 3600 * 1000; // one hour
 
     public SeedProviderDef seed_provider;
@@ -62,6 +74,8 @@ public class Config
 
     public volatile Long write_request_timeout_in_ms = 2000L;
 
+    public volatile Long counter_write_request_timeout_in_ms = 5000L;
+
     public volatile Long cas_contention_timeout_in_ms = 1000L;
 
     public volatile Long truncate_request_timeout_in_ms = 60000L;
@@ -74,10 +88,17 @@ public class Config
 
     public Integer concurrent_reads = 32;
     public Integer concurrent_writes = 32;
-    public Integer concurrent_replicates = 32;
+    public Integer concurrent_counter_writes = 32;
 
-    public Integer memtable_flush_writers = null; // will get set to the length of data dirs in DatabaseDescriptor
+    @Deprecated
+    public Integer concurrent_replicates = null;
+
+    // we don't want a lot of contention, but we also don't want to starve all other tables
+    // if a big one flushes. OS buffering should be able to minimize contention with 2 threads.
+    public int memtable_flush_writers = 2;
+
     public Integer memtable_total_space_in_mb;
+    public float memtable_cleanup_threshold = 0.4f;
 
     public Integer storage_port = 7000;
     public Integer ssl_storage_port = 7001;
@@ -87,6 +108,7 @@ public class Config
 
     public Boolean start_rpc = true;
     public String rpc_address;
+    public String broadcast_rpc_address;
     public Integer rpc_port = 9160;
     public Integer rpc_listen_backlog = 50;
     public String rpc_server_type = "sync";
@@ -119,8 +141,10 @@ public class Config
     public Integer max_streaming_retries = 3;
 
     public volatile Integer stream_throughput_outbound_megabits_per_sec = 200;
+    public volatile Integer inter_dc_stream_throughput_outbound_megabits_per_sec = 0;
 
     public String[] data_file_directories;
+    public String flush_directory;
 
     public String saved_caches_directory;
 
@@ -159,7 +183,6 @@ public class Config
     public boolean compaction_preheat_key_cache = true; //preheat是"预热"的意思
 
     public volatile boolean incremental_backups = false;
-    public int memtable_flush_queue_size = 4;
     public boolean trickle_fsync = false;
     public int trickle_fsync_interval_in_kb = 10240;
 
@@ -169,9 +192,13 @@ public class Config
 
     public long row_cache_size_in_mb = 0;
     public volatile int row_cache_save_period = 0;
-    public int row_cache_keys_to_save = Integer.MAX_VALUE;
+    public volatile int row_cache_keys_to_save = Integer.MAX_VALUE;
+
+    public Long counter_cache_size_in_mb = null;
+    public volatile int counter_cache_save_period = 7200;
+    public volatile int counter_cache_keys_to_save = Integer.MAX_VALUE;
+
     public String memory_allocator = NativeAllocator.class.getSimpleName();
-    public boolean populate_io_cache_on_flush = false;
 
     private static boolean isClientMode = false; //不能通过cassandra.yaml指定，私有的
 
@@ -181,7 +208,7 @@ public class Config
 
     public boolean inter_dc_tcp_nodelay = true;
 
-    public String memtable_allocator = "SlabAllocator";
+    public String memtable_allocator = "HeapSlabPool";
 
     private static boolean outboundBindAny = false; //不能通过cassandra.yaml指定，私有的
 
@@ -190,6 +217,9 @@ public class Config
 
     public volatile Long index_summary_capacity_in_mb;
     public volatile int index_summary_resize_interval_in_minutes = 60;
+
+    private static final CsvPreference STANDARD_SURROUNDING_SPACES_NEED_QUOTES = new CsvPreference.Builder(CsvPreference.STANDARD_PREFERENCE)
+                                                                                                  .surroundingSpacesNeedQuotes(true).build();
 
     public static boolean getOutboundBindAny()
     {
@@ -211,12 +241,43 @@ public class Config
         isClientMode = clientMode;
     }
 
+    public void configHintedHandoff() throws ConfigurationException
+    {
+        if (hinted_handoff_enabled != null && !hinted_handoff_enabled.isEmpty())
+        {
+            if (hinted_handoff_enabled.equalsIgnoreCase("true"))
+            {
+                hinted_handoff_enabled_global = true;
+            }
+            else if (hinted_handoff_enabled.equalsIgnoreCase("false"))
+            {
+                hinted_handoff_enabled_global = false;
+            }
+            else
+            {
+                try
+                {
+                    hinted_handoff_enabled_by_dc.addAll(parseHintedHandoffEnabledDCs(hinted_handoff_enabled));
+                }
+                catch (IOException e)
+                {
+                    throw new ConfigurationException("Invalid hinted_handoff_enabled parameter " + hinted_handoff_enabled, e);
+                }
+            }
+        }
+    }
+
+    public static List<String> parseHintedHandoffEnabledDCs(final String dcNames) throws IOException
+    {
+        final CsvListReader csvListReader = new CsvListReader(new StringReader(dcNames), STANDARD_SURROUNDING_SPACES_NEED_QUOTES);
+        return csvListReader.read();
+    }
+
     public static enum CommitLogSync
     {
         periodic,
         batch
     }
-
     public static enum InternodeCompression
     {
         all, none, dc

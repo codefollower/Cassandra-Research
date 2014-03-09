@@ -23,10 +23,11 @@ package org.apache.cassandra.stress.operations;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class CqlReader extends CqlOperation<Integer>
+public class CqlReader extends CqlOperation<ByteBuffer[][]>
 {
 
     public CqlReader(State state, long idx)
@@ -41,10 +42,7 @@ public class CqlReader extends CqlOperation<Integer>
 
         if (state.settings.columns.names == null)
         {
-            if (state.isCql2())
-                query.append("FIRST ").append(state.settings.columns.maxColumnsPerKey).append(" ''..''");
-            else
-                query.append("*");
+            query.append("*");
         }
         else
         {
@@ -56,10 +54,8 @@ public class CqlReader extends CqlOperation<Integer>
             }
         }
 
-        query.append(" FROM ").append(wrapInQuotesIfRequired(state.settings.schema.columnFamily));
+        query.append(" FROM ").append(wrapInQuotes(state.settings.schema.columnFamily));
 
-        if (state.isCql2())
-            query.append(" USING CONSISTENCY ").append(state.settings.command.consistencyLevel);
         query.append(" WHERE KEY=?");
         return query.toString();
     }
@@ -79,9 +75,10 @@ public class CqlReader extends CqlOperation<Integer>
     }
 
     @Override
-    protected CqlRunOp<Integer> buildRunOp(ClientWrapper client, String query, Object queryId, List<ByteBuffer> params, String keyid, ByteBuffer key)
+    protected CqlRunOp<ByteBuffer[][]> buildRunOp(ClientWrapper client, String query, Object queryId, List<ByteBuffer> params, String keyid, ByteBuffer key)
     {
-        return new CqlRunOpTestNonEmpty(client, query, queryId, params, keyid, key);
+        List<ByteBuffer> expectRow = state.rowGen.isDeterministic() ? generateColumnValues(key) : null;
+        return new CqlRunOpMatchResults(client, query, queryId, params, keyid, key, Arrays.asList(expectRow));
     }
 
 }

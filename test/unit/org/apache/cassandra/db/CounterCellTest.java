@@ -23,10 +23,11 @@ import java.security.MessageDigest;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
+import org.apache.cassandra.utils.memory.AbstractAllocator;
+import org.apache.cassandra.utils.memory.HeapAllocator;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -62,22 +63,24 @@ public class CounterCellTest extends SchemaLoader
     }
 
     @Test
-    public void testCreate() throws UnknownHostException
+    public void testCreate()
     {
         long delta = 3L;
-        CounterUpdateCell cuc = new CounterUpdateCell(cellname("x"), delta, 1L);
-        CounterCell cell = cuc.localCopy(Keyspace.open("Keyspace5").getColumnFamilyStore("Counter1"));
+        CounterCell cell = new CounterCell(Util.cellname("x"),
+                                           CounterContext.instance().createLocal(delta, HeapAllocator.instance),
+                                           1L,
+                                           Long.MIN_VALUE);
 
-        assert delta == cell.total();
-        assert 1 == cell.value().getShort(0);
-        assert 0 == cell.value().getShort(2);
-        assert CounterId.wrap(cell.value(), 4).isLocalId();
-        assert 1L == cell.value().getLong(4 + idLength);
-        assert delta == cell.value().getLong(4 + idLength + clockLength);
+        Assert.assertEquals(delta, cell.total());
+        Assert.assertEquals(1, cell.value().getShort(0));
+        Assert.assertEquals(0, cell.value().getShort(2));
+        Assert.assertTrue(CounterId.wrap(cell.value(), 4).isLocalId());
+        Assert.assertEquals(1L, cell.value().getLong(4 + idLength));
+        Assert.assertEquals(delta, cell.value().getLong(4 + idLength + clockLength));
     }
 
     @Test
-    public void testReconcile() throws UnknownHostException
+    public void testReconcile()
     {
         Cell left;
         Cell right;
@@ -85,7 +88,7 @@ public class CounterCellTest extends SchemaLoader
 
         ByteBuffer context;
 
-        Allocator allocator = HeapAllocator.instance;
+        AbstractAllocator allocator = HeapAllocator.instance;
 
         // tombstone + tombstone
         left  = new DeletedCell(cellname("x"), 1, 1L);
@@ -96,25 +99,25 @@ public class CounterCellTest extends SchemaLoader
 
         // tombstone > live
         left  = new DeletedCell(cellname("x"), 1, 2L);
-        right = new CounterCell(cellname("x"), 0L, 1L);
+        right = CounterCell.createLocal(cellname("x"), 0L, 1L, Long.MIN_VALUE);
 
         assert left.reconcile(right) == left;
 
         // tombstone < live last delete
         left  = new DeletedCell(cellname("x"), 1, 1L);
-        right = new CounterCell(cellname("x"), 0L, 4L, 2L);
+        right = CounterCell.createLocal(cellname("x"), 0L, 4L, 2L);
 
         assert left.reconcile(right) == right;
 
         // tombstone == live last delete
         left  = new DeletedCell(cellname("x"), 1, 2L);
-        right = new CounterCell(cellname("x"), 0L, 4L, 2L);
+        right = CounterCell.createLocal(cellname("x"), 0L, 4L, 2L);
 
         assert left.reconcile(right) == right;
 
         // tombstone > live last delete
         left  = new DeletedCell(cellname("x"), 1, 4L);
-        right = new CounterCell(cellname("x"), 0L, 9L, 1L);
+        right = CounterCell.createLocal(cellname("x"), 0L, 9L, 1L);
 
         reconciled = left.reconcile(right);
         assert reconciled.name() == right.name();
@@ -123,25 +126,25 @@ public class CounterCellTest extends SchemaLoader
         assert ((CounterCell)reconciled).timestampOfLastDelete() == left.getMarkedForDeleteAt();
 
         // live < tombstone
-        left  = new CounterCell(cellname("x"), 0L, 1L);
+        left  = CounterCell.createLocal(cellname("x"), 0L, 1L, Long.MIN_VALUE);
         right = new DeletedCell(cellname("x"), 1, 2L);
 
         assert left.reconcile(right) == right;
 
         // live last delete > tombstone
-        left  = new CounterCell(cellname("x"), 0L, 4L, 2L);
+        left  = CounterCell.createLocal(cellname("x"), 0L, 4L, 2L);
         right = new DeletedCell(cellname("x"), 1, 1L);
 
         assert left.reconcile(right) == left;
 
         // live last delete == tombstone
-        left  = new CounterCell(cellname("x"), 0L, 4L, 2L);
+        left  = CounterCell.createLocal(cellname("x"), 0L, 4L, 2L);
         right = new DeletedCell(cellname("x"), 1, 2L);
 
         assert left.reconcile(right) == left;
 
         // live last delete < tombstone
-        left  = new CounterCell(cellname("x"), 0L, 9L, 1L);
+        left  = CounterCell.createLocal(cellname("x"), 0L, 9L, 1L);
         right = new DeletedCell(cellname("x"), 1, 4L);
 
         reconciled = left.reconcile(right);
@@ -203,9 +206,9 @@ public class CounterCellTest extends SchemaLoader
     }
 
     @Test
-    public void testDiff() throws UnknownHostException
+    public void testDiff()
     {
-        Allocator allocator = HeapAllocator.instance;
+        AbstractAllocator allocator = HeapAllocator.instance;
         ContextState left;
         ContextState right;
 
@@ -213,15 +216,15 @@ public class CounterCellTest extends SchemaLoader
         CounterCell rightCell;
 
         // timestamp
-        leftCell = new CounterCell(cellname("x"), 0, 1L);
-        rightCell = new CounterCell(cellname("x"), 0, 2L);
+        leftCell = CounterCell.createLocal(cellname("x"), 0, 1L, Long.MIN_VALUE);
+        rightCell = CounterCell.createLocal(cellname("x"), 0, 2L, Long.MIN_VALUE);
 
         assert rightCell == leftCell.diff(rightCell);
         assert null      == rightCell.diff(leftCell);
 
         // timestampOfLastDelete
-        leftCell = new CounterCell(cellname("x"), 0, 1L, 1L);
-        rightCell = new CounterCell(cellname("x"), 0, 1L, 2L);
+        leftCell = CounterCell.createLocal(cellname("x"), 0, 1L, 1L);
+        rightCell = CounterCell.createLocal(cellname("x"), 0, 1L, 2L);
 
         assert rightCell == leftCell.diff(rightCell);
         assert null      == rightCell.diff(leftCell);
@@ -276,7 +279,7 @@ public class CounterCellTest extends SchemaLoader
     @Test
     public void testSerializeDeserialize() throws IOException
     {
-        Allocator allocator = HeapAllocator.instance;
+        AbstractAllocator allocator = HeapAllocator.instance;
         CounterContext.ContextState state = CounterContext.ContextState.allocate(0, 2, 2, allocator);
         state.writeRemote(CounterId.fromInt(1), 4L, 4L);
         state.writeLocal(CounterId.fromInt(2), 4L, 4L);
@@ -309,7 +312,7 @@ public class CounterCellTest extends SchemaLoader
     @Test
     public void testUpdateDigest() throws Exception
     {
-        Allocator allocator = HeapAllocator.instance;
+        AbstractAllocator allocator = HeapAllocator.instance;
         MessageDigest digest1 = MessageDigest.getInstance("md5");
         MessageDigest digest2 = MessageDigest.getInstance("md5");
 

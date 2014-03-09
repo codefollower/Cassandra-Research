@@ -63,12 +63,13 @@ class Cql3ParsingRuleSet(CqlParsingRuleSet):
     columnfamily_layout_options = (
         ('bloom_filter_fp_chance', None),
         ('caching', None),
+        ('rows_per_partition_to_cache', None),
         ('comment', None),
         ('dclocal_read_repair_chance', 'local_read_repair_chance'),
         ('gc_grace_seconds', None),
-        ('index_interval', None),
+        ('min_index_interval', None),
+        ('max_index_interval', None),
         ('read_repair_chance', None),
-        ('replicate_on_write', None),
         ('populate_io_cache_on_flush', None),
         ('default_time_to_live', None),
         ('speculative_retry', None),
@@ -244,11 +245,14 @@ JUNK ::= /([ \t\r\f\v]+|(--|[/][/])[^\n\r]*([\n\r]|$)|[/][*].*?[*][/])/ ;
 <schemaChangeStatement> ::= <createKeyspaceStatement>
                           | <createColumnFamilyStatement>
                           | <createIndexStatement>
+                          | <createUserTypeStatement>
                           | <dropKeyspaceStatement>
                           | <dropColumnFamilyStatement>
                           | <dropIndexStatement>
+                          | <dropUserTypeStatement>
                           | <alterTableStatement>
                           | <alterKeyspaceStatement>
+                          | <alterUserTypeStatement>
                           ;
 
 <authenticationStatement> ::= <createUserStatement>
@@ -265,14 +269,18 @@ JUNK ::= /([ \t\r\f\v]+|(--|[/][/])[^\n\r]*([\n\r]|$)|[/][*].*?[*][/])/ ;
 # timestamp is included here, since it's also a keyword
 <simpleStorageType> ::= typename=( <identifier> | <stringLiteral> | <K_TIMESTAMP> ) ;
 
-<storageType> ::= <simpleStorageType> | <collectionType> ;
+<userType> ::= utname=<cfOrKsName> ;
 
-<collectionType> ::= "map" "<" <simpleStorageType> "," <simpleStorageType> ">"
-                   | "list" "<" <simpleStorageType> ">"
-                   | "set" "<" <simpleStorageType> ">"
+<storageType> ::= <simpleStorageType> | <collectionType> | <userType> ;
+
+<collectionType> ::= "map" "<" <simpleStorageType> "," ( <simpleStorageType> | <userType> ) ">"
+                   | "list" "<" ( <simpleStorageType> | <userType> ) ">"
+                   | "set" "<" ( <simpleStorageType> | <userType> ) ">"
                    ;
 
 <columnFamilyName> ::= ( ksname=<cfOrKsName> dot="." )? cfname=<cfOrKsName> ;
+
+<userTypeName> ::= ( ksname=<cfOrKsName> dot="." )? utname=<cfOrKsName> ;
 
 <keyspaceName> ::= ksname=<cfOrKsName> ;
 
@@ -439,7 +447,7 @@ def cf_prop_val_completer(ctxt, cass):
     if this_opt in ('replicate_on_write', 'populate_io_cache_on_flush'):
         return ["'yes'", "'no'"]
     if this_opt in ('min_compaction_threshold', 'max_compaction_threshold',
-                    'gc_grace_seconds', 'index_interval'):
+                    'gc_grace_seconds', 'min_index_interval', 'max_index_interval'):
         return [Hint('<integer>')]
     return [Hint('<option_value>')]
 
@@ -507,16 +515,18 @@ def ks_name_completer(ctxt, cass):
     ksnames = [n for n in cass.get_keyspace_names() if n not in NONALTERBALE_KEYSPACES]
     return map(maybe_escape_name, ksnames)
 
-@completer_for('columnFamilyName', 'ksname')
 def cf_ks_name_completer(ctxt, cass):
     return [maybe_escape_name(ks) + '.' for ks in cass.get_keyspace_names()]
 
-@completer_for('columnFamilyName', 'dot')
+completer_for('columnFamilyName', 'ksname')(cf_ks_name_completer)
+
 def cf_ks_dot_completer(ctxt, cass):
     name = dequote_name(ctxt.get_binding('ksname'))
     if name in cass.get_keyspace_names():
         return ['.']
     return []
+
+completer_for('columnFamilyName', 'dot')(cf_ks_dot_completer)
 
 @completer_for('columnFamilyName', 'cfname')
 def cf_name_completer(ctxt, cass):
@@ -531,6 +541,26 @@ def cf_name_completer(ctxt, cass):
         raise
     return map(maybe_escape_name, cfnames)
 
+completer_for('userTypeName', 'ksname')(cf_ks_name_completer)
+
+completer_for('userTypeName', 'dot')(cf_ks_dot_completer)
+
+def ut_name_completer(ctxt, cass):
+    ks = ctxt.get_binding('ksname', None)
+    if ks is not None:
+        ks = dequote_name(ks)
+    try:
+        utnames = cass.get_usertype_names(ks)
+    except Exception:
+        if ks is None:
+            return ()
+        raise
+    return map(maybe_escape_name, utnames)
+
+
+completer_for('userTypeName', 'utname')(ut_name_completer)
+completer_for('userType', 'utname')(ut_name_completer)
+
 @completer_for('unreservedKeyword', 'nocomplete')
 def unreserved_keyword_completer(ctxt, cass):
     # we never want to provide completions through this production;
@@ -544,6 +574,13 @@ def get_cf_layout(ctxt, cass):
         ks = dequote_name(ks)
     cf = dequote_name(ctxt.get_binding('cfname'))
     return cass.get_columnfamily_layout(ks, cf)
+
+def get_ut_layout(ctxt, cass):
+    ks = ctxt.get_binding('ksname', None)
+    if ks is not None:
+        ks = dequote_name(ks)
+    ut = dequote_name(ctxt.get_binding('utname'))
+    return cass.get_usertype_layout(ks, ut)
 
 def working_on_keyspace(ctxt):
     wat = ctxt.get_binding('wat').upper()
@@ -723,7 +760,7 @@ def update_countername_completer(ctxt, cass):
     cqltype = layout.get_column(curcol).cqltype
     coltype = cqltype.typename
     if coltype == 'counter':
-        return maybe_escape_name(curcol)
+        return [maybe_escape_name(curcol)]
     if coltype in ('map', 'set'):
         return ["{"]
     if coltype == 'list':
@@ -741,7 +778,7 @@ def update_counter_inc_completer(ctxt, cass):
     layout = get_cf_layout(ctxt, cass)
     curcol = dequote_name(ctxt.get_binding('updatecol', ''))
     if layout.is_counter_col(curcol):
-        return Hint('<wholenumber>')
+        return [Hint('<wholenumber>')]
     return []
 
 @completer_for('assignment', 'listadder')
@@ -749,6 +786,7 @@ def update_listadder_completer(ctxt, cass):
     rhs = ctxt.get_binding('update_rhs')
     if rhs.startswith('['):
         return ['+']
+    return []
 
 @completer_for('assignment', 'listcol')
 def update_listcol_completer(ctxt, cass):
@@ -851,8 +889,8 @@ syntax_rules += r'''
                     ;
 
 <compositeKeyCfSpec> ::= [newcolname]=<cident> <simpleStorageType>
-                         "," [newcolname]=<cident> <storageType>
-                         ( "," [newcolname]=<cident> <storageType> )*
+                         "," [newcolname]=<cident> <storageType> ( "static" )?
+                         ( "," [newcolname]=<cident> <storageType> ( "static" )? )*
                          "," "PRIMARY" k="KEY" p="(" ( partkey=<pkDef> | [pkey]=<cident> )
                                                      ( c="," [pkey]=<cident> )* ")"
                        ;
@@ -929,9 +967,16 @@ syntax_rules += r'''
                                cf=<columnFamilyName> "(" col=<cident> ")"
                                ( "USING" <stringLiteral> ( "WITH" "OPTIONS" "=" <mapLiteral> )? )?
                          ;
+
+<createUserTypeStatement> ::= "CREATE" "TYPE" ( ks=<nonSystemKeyspaceName> dot="." )? typename=<cfOrKsName> "(" newcol=<cident> <storageType>
+                                ( "," [newcolname]=<cident> <storageType> )*
+                            ")"
+                         ;
 '''
 
 explain_completion('createIndexStatement', 'indexname', '<new_index_name>')
+explain_completion('createUserTypeStatement', 'typename', '<new_type_name>')
+explain_completion('createUserTypeStatement', 'newcol', '<new_field_name>')
 
 @completer_for('createIndexStatement', 'col')
 def create_index_col_completer(ctxt, cass):
@@ -948,6 +993,10 @@ syntax_rules += r'''
 
 <dropIndexStatement> ::= "DROP" "INDEX" ("IF" "EXISTS")? indexname=<identifier>
                        ;
+
+<dropUserTypeStatement> ::= "DROP" "TYPE" ut=<userTypeName>
+                              ;
+
 '''
 
 @completer_for('dropIndexStatement', 'indexname')
@@ -959,12 +1008,21 @@ syntax_rules += r'''
                                <alterInstructions>
                         ;
 <alterInstructions> ::= "ALTER" existcol=<cident> "TYPE" <storageType>
-                      | "ADD" newcol=<cident> <storageType>
+                      | "ADD" newcol=<cident> <storageType> ("static")?
                       | "DROP" existcol=<cident>
                       | "WITH" <cfamProperty> ( "AND" <cfamProperty> )*
                       | "RENAME" existcol=<cident> "TO" newcol=<cident>
                          ( "AND" existcol=<cident> "TO" newcol=<cident> )*
                       ;
+
+<alterUserTypeStatement> ::= "ALTER" "TYPE" ut=<userTypeName>
+                               <alterTypeInstructions>
+                             ;
+<alterTypeInstructions> ::= "RENAME" "TO" typename=<cfOrKsName>
+                           | "ALTER" existcol=<cident> "TYPE" <storageType>
+                           | "ADD" newcol=<cident> <storageType>
+                           | "RENAME" existcol=<cident> "TO" newcol=<cident>
+                           ;
 '''
 
 @completer_for('alterInstructions', 'existcol')
@@ -973,7 +1031,16 @@ def alter_table_col_completer(ctxt, cass):
     cols = [md.name for md in layout.columns]
     return map(maybe_escape_name, cols)
 
+@completer_for('alterTypeInstructions', 'existcol')
+def alter_type_field_completer(ctxt, cass):
+    layout = get_ut_layout(ctxt, cass)
+    fields = [tuple[0] for tuple in layout]
+    return map(maybe_escape_name, fields)
+
 explain_completion('alterInstructions', 'newcol', '<new_column_name>')
+explain_completion('alterTypeInstructions', 'typename', '<new_type_name>')
+explain_completion('alterTypeInstructions', 'newcol', '<new_field_name>')
+
 
 syntax_rules += r'''
 <alterKeyspaceStatement> ::= "ALTER" ( "KEYSPACE" | "SCHEMA" ) ks=<alterableKeyspaceName>
@@ -1078,6 +1145,9 @@ class CqlColumnDef:
             c.index_options = json.loads(layout[u'index_options'])
         return c
 
+    def is_static(self):
+        return self.component_type == 'static'
+
     def __str__(self):
         indexstr = ' (index %s)' % self.index_name if self.index_name is not None else ''
         return '<CqlColumnDef %r %r%s>' % (self.name, self.cqltype, indexstr)
@@ -1169,3 +1239,31 @@ class CqlTableDef:
     def __str__(self):
         return '<%s %s.%s>' % (self.__class__.__name__, self.keyspace, self.name)
     __repr__ = __str__
+
+class UserTypesMeta(object):
+    _meta = {}
+
+    def __init__(self, meta):
+        self._meta = meta
+
+    @classmethod
+    def from_layout(cls, layout):
+        result = {}
+        for row in layout:
+            ksname = row[u'keyspace_name']
+            if ksname not in result:
+                result[ksname] = {}
+            utname = row[u'type_name']
+
+            result[ksname][utname] = zip(row[u'column_names'], row[u'column_types'])
+        return cls(meta=result)
+
+    def get_usertypes_names(self, keyspace):
+        return map(str, self._meta.get(keyspace, {}).keys())
+
+    def get_field_names(self, keyspace, type):
+        return [row[0] for row in self._meta.get(keyspace, {}).get(type, [])]
+
+    def get_fields_with_types(self, ksname, typename):
+        return [(field[0], lookup_casstype(field[1]).cql_parameterized_type()) for field in
+                self._meta.get(ksname, {}).get(typename, [])]
