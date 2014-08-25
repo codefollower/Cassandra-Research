@@ -91,7 +91,7 @@ public class Config
     public Integer concurrent_counter_writes = 32;
 
     @Deprecated
-    public Integer concurrent_replicates = null;
+    public Integer concurrent_replicates = null; //已不再使用，只在DatabaseDescriptor.applyConfig(Config)中用于警告
 
     // we don't want a lot of contention, but we also don't want to starve all other tables
     // if a big one flushes. OS buffering should be able to minimize contention with 2 threads.

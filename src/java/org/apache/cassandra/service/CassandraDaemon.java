@@ -105,6 +105,7 @@ public class CassandraDaemon
             logger.info("Could not resolve local host");
         }
         //前面这一段代码说明Cassandra推荐用64位的Oracle HotSpot JVM，不推荐OpenJDK
+        //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
         // log warnings for different kinds of sub-optimal JVMs.  tldr use 64-bit Oracle >= 1.6u32
         if (!DatabaseDescriptor.hasLargeAddressSpace())
             logger.info("32bit JVM detected.  It is recommended to run Cassandra on a 64bit JVM for better performance.");
@@ -159,6 +160,7 @@ public class CassandraDaemon
 
         CLibrary.tryMlockall(); //看一下本地库是否可用，windows下不支持JNA
 
+        //其他地方未捕获的异常转到这里
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
         {
             public void uncaughtException(Thread t, Throwable e)
@@ -182,7 +184,6 @@ public class CassandraDaemon
             }
         });
 
-        //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
         // check all directories(data, commitlog, saved cache) for existence and permission
         Iterable<String> dirs = Iterables.concat(Arrays.asList(DatabaseDescriptor.getAllDataFileLocations()),
                                                  Arrays.asList(DatabaseDescriptor.getCommitLogLocation(),

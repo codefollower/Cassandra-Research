@@ -208,16 +208,16 @@ public class DatabaseDescriptor
         }
 
         /* Authentication and authorization backend, implementing IAuthenticator and IAuthorizer */
-        if (conf.authenticator != null)
+        if (conf.authenticator != null) //认证(client到server的认证)
             authenticator = FBUtilities.newAuthenticator(conf.authenticator);
 
-        if (conf.authorizer != null)
+        if (conf.authorizer != null) //受权(client到server的受权)
             authorizer = FBUtilities.newAuthorizer(conf.authorizer);
         //AllowAllAuthenticator与AllowAllAuthorizer必须同时使用
         if (authenticator instanceof AllowAllAuthenticator && !(authorizer instanceof AllowAllAuthorizer))
             throw new ConfigurationException("AllowAllAuthenticator can't be used with " +  conf.authorizer);
 
-        if (conf.internode_authenticator != null)
+        if (conf.internode_authenticator != null) //集群节点间的认证
             internodeAuthenticator = FBUtilities.construct(conf.internode_authenticator, "internode_authenticator");
         else
             internodeAuthenticator = new AllowAllInternodeAuthenticator();
@@ -273,7 +273,7 @@ public class DatabaseDescriptor
         if (conf.file_cache_size_in_mb == null) //取512和(最大内存的1/4，1048576=1024*1024=1M)中的最小者
             conf.file_cache_size_in_mb = Math.min(512, (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576)));
 
-        if (conf.memtable_total_space_in_mb == null)
+        if (conf.memtable_total_space_in_mb == null) //最大内存的1/4
             conf.memtable_total_space_in_mb = (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576));
         if (conf.memtable_total_space_in_mb <= 0)
             throw new ConfigurationException("memtable_heap_space_in_mb must be positive");
