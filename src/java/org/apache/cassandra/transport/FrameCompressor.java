@@ -22,10 +22,9 @@ import java.io.IOException;
 import io.netty.buffer.ByteBuf;
 import org.xerial.snappy.Snappy;
 import org.xerial.snappy.SnappyError;
-
 import net.jpountz.lz4.LZ4Factory;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 
-@SuppressWarnings("deprecation")
 public interface FrameCompressor
 {
     public Frame compress(Frame frame) throws IOException;
@@ -47,6 +46,7 @@ public interface FrameCompressor
             }
             catch (Exception e)
             {
+                JVMStabilityInspector.inspectThrowable(e);
                 i = null;
             }
             catch (NoClassDefFoundError e)

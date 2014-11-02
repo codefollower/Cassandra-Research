@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.IFailureDetector;
@@ -47,7 +48,7 @@ import org.apache.cassandra.utils.FBUtilities;
 public class RangeStreamer
 {
     private static final Logger logger = LoggerFactory.getLogger(RangeStreamer.class);
-    public static final boolean useStrictConsistency = Boolean.valueOf(System.getProperty("cassandra.consistent.rangemovement","true"));
+    public static final boolean useStrictConsistency = Boolean.parseBoolean(System.getProperty("cassandra.consistent.rangemovement","true"));
     private final Collection<Token> tokens;
     private final TokenMetadata metadata;
     private final InetAddress address;
@@ -109,16 +110,12 @@ public class RangeStreamer
         this.tokens = tokens;
         this.address = address;
         this.description = description;
-        this.streamPlan = new StreamPlan(description);
+        this.streamPlan = new StreamPlan(description, true);
     }
 
     public RangeStreamer(TokenMetadata metadata, InetAddress address, String description)
     {
-        this.metadata = metadata;
-        this.tokens = null;
-        this.address = address;
-        this.description = description;
-        this.streamPlan = new StreamPlan(description);
+        this(metadata, null, address, description);
     }
 
     public void addSourceFilter(ISourceFilter filter)
@@ -305,11 +302,12 @@ public class RangeStreamer
         {
             String keyspace = entry.getKey();
             InetAddress source = entry.getValue().getKey();
+            InetAddress preferred = SystemKeyspace.getPreferredIP(source);
             Collection<Range<Token>> ranges = entry.getValue().getValue();
             /* Send messages to respective folks to stream data over to me */
             if (logger.isDebugEnabled())
                 logger.debug("{}ing from {} ranges {}", description, source, StringUtils.join(ranges, ", "));
-            streamPlan.requestRanges(source, keyspace, ranges);
+            streamPlan.requestRanges(source, preferred, keyspace, ranges);
         }
 
         return streamPlan.execute();

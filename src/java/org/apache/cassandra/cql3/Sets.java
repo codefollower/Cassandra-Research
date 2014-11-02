@@ -73,7 +73,6 @@ public abstract class Sets
             if (receiver.type instanceof MapType && elements.isEmpty())
                 return new Maps.Value(Collections.<ByteBuffer, ByteBuffer>emptyMap());
 
-
             ColumnSpecification valueSpec = Sets.valueSpecOf(receiver); //validateAssignableTo已调用过一次了
             Set<Term> values = new HashSet<Term>(elements.size());
             boolean allTerminal = true;
@@ -82,7 +81,7 @@ public abstract class Sets
                 Term t = rt.prepare(keyspace, valueSpec);
 
                 if (t.containsBindMarker())
-                    throw new InvalidRequestException(String.format("Invalid set literal for %s: bind variables are not supported inside collection literals", receiver));
+                    throw new InvalidRequestException(String.format("Invalid set literal for %s: bind variables are not supported inside collection literals", receiver.name));
 
                 if (t instanceof Term.NonTerminal) //有可能是FunctionCall
                     allTerminal = false;
@@ -102,28 +101,34 @@ public abstract class Sets
                 if (receiver.type instanceof MapType && elements.isEmpty())
                     return;
 
-                throw new InvalidRequestException(String.format("Invalid set literal for %s of type %s", receiver, receiver.type.asCQL3Type()));
+                throw new InvalidRequestException(String.format("Invalid set literal for %s of type %s", receiver.name, receiver.type.asCQL3Type()));
             }
 
             ColumnSpecification valueSpec = Sets.valueSpecOf(receiver);
             for (Term.Raw rt : elements)
             {
-                if (!rt.isAssignableTo(keyspace, valueSpec))
-                    throw new InvalidRequestException(String.format("Invalid set literal for %s: value %s is not of type %s", receiver, rt, valueSpec.type.asCQL3Type()));
+                if (!rt.testAssignment(keyspace, valueSpec).isAssignable())
+                    throw new InvalidRequestException(String.format("Invalid set literal for %s: value %s is not of type %s", receiver.name, rt, valueSpec.type.asCQL3Type()));
             }
         }
 
-        public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
-            try
+            if (!(receiver.type instanceof SetType))
             {
-                validateAssignableTo(keyspace, receiver);
-                return true;
+                // We've parsed empty maps as a set literal to break the ambiguity so handle that case now
+                if (receiver.type instanceof MapType && elements.isEmpty())
+                    return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+
+                return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
             }
-            catch (InvalidRequestException e)
-            {
-                return false;
-            }
+
+            // If there is no elements, we can't say it's an exact match (an empty set if fundamentally polymorphic).
+            if (elements.isEmpty())
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+
+            ColumnSpecification valueSpec = Sets.valueSpecOf(receiver);
+            return AssignmentTestable.TestResult.testAll(keyspace, valueSpec, elements);
         }
 
         @Override
@@ -296,6 +301,7 @@ public abstract class Sets
     }
 
     //例如: UPDATE users SET emails = emails - {'fb@friendsofmordor.org'}
+    // Note that this is reused for Map subtraction too (we subtract a set from a map)
     public static class Discarder extends Operation
     {
         public Discarder(ColumnDefinition column, Term t)

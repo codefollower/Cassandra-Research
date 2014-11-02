@@ -17,9 +17,13 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.cassandra.auth.Permission;
-import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.config.UFMetaData;
+import org.apache.cassandra.cql3.CQL3Type;
+import org.apache.cassandra.cql3.functions.*;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
@@ -32,17 +36,19 @@ import org.apache.cassandra.transport.Event;
  */
 public final class DropFunctionStatement extends SchemaAlteringStatement
 {
-    private final String namespace;
-    private final String functionName;
-    private final String qualifiedName;
+    private final FunctionName functionName;
     private final boolean ifExists;
+    private final List<CQL3Type.Raw> argRawTypes;
+    private final boolean argsPresent;
 
-    public DropFunctionStatement(String namespace, String functionName, boolean ifExists)
+    public DropFunctionStatement(FunctionName functionName,
+                                 List<CQL3Type.Raw> argRawTypes,
+                                 boolean argsPresent,
+                                 boolean ifExists)
     {
-        super();
-        this.namespace = namespace == null ? "" : namespace;
         this.functionName = functionName;
-        this.qualifiedName = UFMetaData.qualifiedName(namespace, functionName);
+        this.argRawTypes = argRawTypes;
+        this.argsPresent = argsPresent;
         this.ifExists = ifExists;
     }
 
@@ -62,14 +68,6 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
      */
     public void validate(ClientState state) throws RequestValidationException
     {
-        if (!namespace.isEmpty() && !namespace.matches("\\w+"))
-            throw new InvalidRequestException(String.format("\"%s\" is not a valid function name", qualifiedName));
-        if (!functionName.matches("\\w+"))
-            throw new InvalidRequestException(String.format("\"%s\" is not a valid function name", qualifiedName));
-        if (namespace.length() > Schema.NAME_LENGTH)
-            throw new InvalidRequestException(String.format("UDF namespace names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, qualifiedName));
-        if (functionName.length() > Schema.NAME_LENGTH)
-            throw new InvalidRequestException(String.format("UDF function names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, qualifiedName));
     }
 
     public Event.SchemaChange changeEvent()
@@ -77,20 +75,61 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         return null;
     }
 
-    // no execute() - drop propagated via MigrationManager
-
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
-        try
+        List<Function> olds = Functions.find(functionName);
+
+        if (!argsPresent && olds != null && olds.size() > 1)
+            throw new InvalidRequestException(String.format("'DROP FUNCTION %s' matches multiple function definitions; " +
+                                                            "specify the argument types by issuing a statement like " +
+                                                            "'DROP FUNCTION %s (type, type, ...)'. Hint: use cqlsh " +
+                                                            "'DESCRIBE FUNCTION %s' command to find all overloads",
+                                                            functionName, functionName, functionName));
+
+        List<AbstractType<?>> argTypes = new ArrayList<>(argRawTypes.size());
+        for (CQL3Type.Raw rawType : argRawTypes)
         {
-            MigrationManager.announceFunctionDrop(namespace, functionName, isLocalOnly);
-            return true;
+            // We have no proper keyspace to give, which means that this will break (NPE currently)
+            // for UDT: #7791 is open to fix this
+            argTypes.add(rawType.prepare(null).getType());
         }
-        catch (InvalidRequestException e)
+
+        Function old;
+        if (argsPresent)
         {
-            if (ifExists)
-                return false;
-            throw e;
+            old = Functions.find(functionName, argTypes);
+            if (old == null)
+            {
+                if (ifExists)
+                    return false;
+                // just build a nicer error message
+                StringBuilder sb = new StringBuilder();
+                for (CQL3Type.Raw rawType : argRawTypes)
+                {
+                    if (sb.length() > 0)
+                        sb.append(", ");
+                    sb.append(rawType);
+                }
+                throw new InvalidRequestException(String.format("Cannot drop non existing function '%s(%s)'",
+                                                                functionName, sb));
+            }
         }
+        else
+        {
+            if (olds == null || olds.isEmpty())
+            {
+                if (ifExists)
+                    return false;
+                throw new InvalidRequestException(String.format("Cannot drop non existing function '%s'", functionName));
+            }
+            old = olds.get(0);
+        }
+
+        if (old.isNative())
+            throw new InvalidRequestException(String.format("Cannot drop function '%s' because it is a " +
+                                                            "native (built-in) function", functionName));
+
+        MigrationManager.announceFunctionDrop((UDFunction)old, isLocalOnly);
+        return true;
     }
 }

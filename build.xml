@@ -1546,7 +1546,7 @@
   <target name="generate-eclipse-files" depends="build" description="Generate eclipse files">
     <echo file=".project"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-  <name>cassandra-trunk</name><!-- <name>${eclipse.project.name}</name> -->
+  <name>cassandra-research</name><!-- <name>${eclipse.project.name}</name> -->
   <comment></comment>
   <projects>
   </projects>

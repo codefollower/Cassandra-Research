@@ -136,6 +136,7 @@ public class Config
     /* if the size of columns or super-columns are more than this, indexing will kick in */
     public Integer column_index_size_in_kb = 64;
     public Integer batch_size_warn_threshold_in_kb = 5;
+    public volatile Integer batch_size_fail_threshold_in_kb = 50;
     public Integer concurrent_compactors;
     public volatile Integer compaction_throughput_mb_per_sec = 16;
 
@@ -201,8 +202,11 @@ public class Config
 
     public String memory_allocator = NativeAllocator.class.getSimpleName();
 
-    private static boolean isClientMode = false; //不能通过cassandra.yaml指定，私有的
-
+//<<<<<<< HEAD
+//    private static boolean isClientMode = false; //不能通过cassandra.yaml指定，私有的
+//
+//=======
+//>>>>>>> 9274197b4bdb343731b964f2fcd8f70814f42a41
     public Integer file_cache_size_in_mb;
 
     public boolean inter_dc_tcp_nodelay = true;
@@ -228,16 +232,6 @@ public class Config
     public static void setOutboundBindAny(boolean value)
     {
         outboundBindAny = value;
-    }
-
-    public static boolean isClientMode()
-    {
-       return isClientMode;
-    }
-
-    public static void setClientMode(boolean clientMode)
-    {
-        isClientMode = clientMode;
     }
 
     public void configHintedHandoff() throws ConfigurationException
@@ -306,6 +300,7 @@ public class Config
         stop,
         ignore,
         stop_paranoid,
+        die
     }
 
     public static enum CommitFailurePolicy
@@ -313,6 +308,7 @@ public class Config
         stop,
         stop_commit,
         ignore,
+        die,
     }
 
     public static enum RequestSchedulerId

@@ -27,9 +27,9 @@ import java.io.*;
 //AbstractDataInput类上面15个方法中只有skipBytes方法未实现，需要子类实现
 public abstract class AbstractDataInput extends InputStream implements DataInput
 {
-    protected abstract void seek(long position) throws IOException;
-    protected abstract long getPosition();
-    protected abstract long getPositionLimit();
+    public abstract void seek(long position) throws IOException;
+    public abstract long getPosition();
+    public abstract long getPositionLimit();
 
     public int skipBytes(int n) throws IOException
     {

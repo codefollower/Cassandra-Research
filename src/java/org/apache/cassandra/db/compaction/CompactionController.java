@@ -24,13 +24,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataTracker;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.utils.AlwaysPresentFilter;
 
 /**
@@ -41,8 +41,8 @@ public class CompactionController implements AutoCloseable
     private static final Logger logger = LoggerFactory.getLogger(CompactionController.class);
 
     public final ColumnFamilyStore cfs;
-    private final DataTracker.SSTableIntervalTree overlappingTree;
-    private final Set<SSTableReader> overlappingSSTables;
+    private DataTracker.SSTableIntervalTree overlappingTree;
+    private Set<SSTableReader> overlappingSSTables;
     private final Set<SSTableReader> compacting;
 
     public final int gcBefore;
@@ -58,6 +58,26 @@ public class CompactionController implements AutoCloseable
         this.cfs = cfs;
         this.gcBefore = gcBefore;
         this.compacting = compacting;
+        refreshOverlaps();
+    }
+
+    void maybeRefreshOverlaps()
+    {
+        for (SSTableReader reader : overlappingSSTables)
+        {
+            if (reader.isMarkedCompacted())
+            {
+                refreshOverlaps();
+                return;
+            }
+        }
+    }
+
+    private void refreshOverlaps()
+    {
+        if (this.overlappingSSTables != null)
+            SSTableReader.releaseReferences(overlappingSSTables);
+
         Set<SSTableReader> overlapping = compacting == null ? null : cfs.getAndReferenceOverlappingSSTables(compacting);
         this.overlappingSSTables = overlapping == null ? Collections.<SSTableReader>emptySet() : overlapping;
         this.overlappingTree = overlapping == null ? null : DataTracker.buildIntervalTree(overlapping);
@@ -92,7 +112,7 @@ public class CompactionController implements AutoCloseable
         if (compacting == null)
             return Collections.<SSTableReader>emptySet();
 
-        List<SSTableReader> candidates = new ArrayList<SSTableReader>();
+        List<SSTableReader> candidates = new ArrayList<>();
 
         long minTimestamp = Long.MAX_VALUE;
 

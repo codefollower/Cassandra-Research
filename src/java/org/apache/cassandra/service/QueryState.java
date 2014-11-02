@@ -18,6 +18,7 @@
 package org.apache.cassandra.service;
 
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
@@ -68,9 +69,8 @@ public class QueryState
             return true;
         }
 
-        //默认是0.0
-        double tracingProbability = StorageService.instance.getTracingProbability();
-        return tracingProbability != 0 && FBUtilities.threadLocalRandom().nextDouble() < tracingProbability;
+        double traceProbability = StorageService.instance.getTraceProbability(); //默认是0.0
+        return traceProbability != 0 && ThreadLocalRandom.current().nextDouble() < traceProbability;
     }
 
     public void prepareTracingSession(UUID sessionId)

@@ -24,6 +24,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Sets;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,12 +47,11 @@ public class SSTableDeletingTask implements Runnable
     private final Descriptor desc;
     private final Set<Component> components;
     private DataTracker tracker;
-    private final long size;
 
     public SSTableDeletingTask(SSTableReader referent)
     {
         this.referent = referent;
-        if (referent.isOpenEarly)
+        if (referent.openReason == SSTableReader.OpenReason.EARLY)
         {
             this.desc = referent.descriptor.asType(Descriptor.Type.TEMPLINK);
             this.components = Sets.newHashSet(Component.DATA, Component.PRIMARY_INDEX);
@@ -61,7 +61,6 @@ public class SSTableDeletingTask implements Runnable
             this.desc = referent.descriptor;
             this.components = referent.components;
         }
-        this.size = referent.bytesOnDisk();
     }
 
     public void setTracker(DataTracker tracker)
@@ -76,6 +75,8 @@ public class SSTableDeletingTask implements Runnable
 
     public void run()
     {
+        long size = referent.bytesOnDisk();
+
         if (tracker != null)
             tracker.notifyDeleting(referent);
 

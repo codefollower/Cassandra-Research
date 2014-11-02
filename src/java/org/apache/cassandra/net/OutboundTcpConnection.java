@@ -48,6 +48,7 @@ import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.UUIDGen;
 import org.xerial.snappy.SnappyOutputStream;
 
@@ -178,6 +179,7 @@ public class OutboundTcpConnection extends Thread
                 }
                 catch (Exception e)
                 {
+                    JVMStabilityInspector.inspectThrowable(e);
                     // really shouldn't get here, as exception handling in writeConnected() is reasonably robust
                     // but we want to catch anything bad we don't drop the messages in the current batch
                     logger.error("error processing a message intended for {}", poolReference.endPoint(), e);
@@ -370,10 +372,14 @@ public class OutboundTcpConnection extends Thread
                     disconnect();
                     continue;
                 }
+                else
+                {
+                    MessagingService.instance().setVersion(poolReference.endPoint(), maxTargetVersion);
+                }
+
                 if (targetVersion > maxTargetVersion)
                 {
                     logger.debug("Target max version is {}; will reconnect with that version", maxTargetVersion);
-                    MessagingService.instance().setVersion(poolReference.endPoint(), maxTargetVersion);
                     disconnect();
                     return false;
                 }
@@ -382,7 +388,6 @@ public class OutboundTcpConnection extends Thread
                 {
                     logger.trace("Detected higher max version {} (using {}); will reconnect when queued messages are done",
                                  maxTargetVersion, targetVersion);
-                    MessagingService.instance().setVersion(poolReference.endPoint(), Math.min(MessagingService.current_version, maxTargetVersion));
                     softCloseSocket();
                 }
 

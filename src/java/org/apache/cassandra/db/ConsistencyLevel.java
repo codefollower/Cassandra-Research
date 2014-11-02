@@ -150,12 +150,12 @@ public enum ConsistencyLevel
         return isDCLocal;
     }
 
-    private boolean isLocal(InetAddress endpoint)
+    public boolean isLocal(InetAddress endpoint)
     {
         return DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(endpoint));
     }
 
-    private int countLocalEndpoints(Iterable<InetAddress> liveEndpoints)
+    public int countLocalEndpoints(Iterable<InetAddress> liveEndpoints)
     {
         int count = 0;
         for (InetAddress endpoint : liveEndpoints)
@@ -249,7 +249,6 @@ public enum ConsistencyLevel
         }
     }
 
-    @Inline
     public void assureSufficientLiveNodes(Keyspace keyspace, Iterable<InetAddress> liveEndpoints) throws UnavailableException
     {
         int blockFor = blockFor(keyspace);

@@ -21,9 +21,11 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
@@ -47,6 +49,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.WaitQueue;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.WrappedRunnable;
 
 import static org.apache.cassandra.db.commitlog.CommitLogSegment.Allocation;
@@ -157,6 +160,7 @@ public class CommitLogSegmentManager
                     }
                     catch (Throwable t)
                     {
+                        JVMStabilityInspector.inspectThrowable(t);
                         if (!CommitLog.handleCommitError("Failed managing commit log segments", t))
                             return;
                         // sleep some arbitrary period to avoid spamming CL
@@ -293,7 +297,20 @@ public class CommitLogSegmentManager
         CommitLogSegment last = segmentsToRecycle.get(segmentsToRecycle.size() - 1);
         advanceAllocatingFrom(last);
 
+        // wait for the commit log modifications
         last.waitForModifications();
+
+        // make sure the writes have materialized inside of the memtables by waiting for all outstanding writes
+        // on the relevant keyspaces to complete
+        Set<Keyspace> keyspaces = new HashSet<>();
+        for (UUID cfId : last.getDirtyCFIDs())
+        {
+            ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(cfId);
+            if (cfs != null)
+                keyspaces.add(cfs.keyspace);
+        }
+        for (Keyspace keyspace : keyspaces)
+            keyspace.writeOrder.awaitNewBarrier();
 
         // flush and wait for all CFs that are dirty in segments up-to and including 'last'
         Future<?> future = flushDataFrom(segmentsToRecycle, true);

@@ -20,11 +20,8 @@ package org.apache.cassandra.service;
 import java.net.SocketAddress;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +39,7 @@ import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.SemanticVersion;
 
@@ -57,19 +55,11 @@ public class ClientState
     private static final Set<IResource> READABLE_SYSTEM_RESOURCES = new HashSet<>();
     private static final Set<IResource> PROTECTED_AUTH_RESOURCES = new HashSet<>();
 
-    // User-level permissions cache.
-    private static final LoadingCache<Pair<AuthenticatedUser, IResource>, Set<Permission>> permissionsCache = initPermissionsCache();
-
     static
     {
-        // We want these system cfs to be always readable since many tools rely on them (nodetool, cqlsh, bulkloader, etc.)
-        String[] cfs =  new String[] { SystemKeyspace.LOCAL_CF,
-                                       SystemKeyspace.PEERS_CF,
-                                       SystemKeyspace.SCHEMA_KEYSPACES_CF,
-                                       SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF,
-                                       SystemKeyspace.SCHEMA_COLUMNS_CF,
-                                       SystemKeyspace.SCHEMA_USER_TYPES_CF};
-        for (String cf : cfs)
+        // We want these system cfs to be always readable to authenticated users since many tools rely on them
+        // (nodetool, cqlsh, bulkloader, etc.)
+        for (String cf : Iterables.concat(Arrays.asList(SystemKeyspace.LOCAL_CF, SystemKeyspace.PEERS_CF), SystemKeyspace.allSchemaCfs))
             READABLE_SYSTEM_RESOURCES.add(DataResource.columnFamily(Keyspace.SYSTEM_KS, cf));
 
         PROTECTED_AUTH_RESOURCES.addAll(DatabaseDescriptor.getAuthenticator().protectedResources());
@@ -94,6 +84,7 @@ public class ClientState
             }
             catch (Exception e)
             {
+                JVMStabilityInspector.inspectThrowable(e);
                 logger.info("Cannot use class {} as query handler ({}), ignoring by defaulting on normal query handling", customHandlerClass, e.getMessage());
             }
         }
@@ -102,7 +93,7 @@ public class ClientState
 
     // isInternal is used to mark ClientState as used by some internal component
     // that should have an ability to modify system keyspace.
-    private final boolean isInternal;
+    public final boolean isInternal;
 
     // The remote address of the client - null for internal clients.
     private final SocketAddress remoteAddress;
@@ -159,7 +150,7 @@ public class ClientState
     public String getKeyspace() throws InvalidRequestException
     {
         if (keyspace == null)
-            throw new InvalidRequestException("No keyspace has been specified. USE a keyspace, or explicity specify keyspace.tablename");
+            throw new InvalidRequestException("No keyspace has been specified. USE a keyspace, or explicitly specify keyspace.tablename");
         return keyspace;
     }
 
@@ -282,30 +273,33 @@ public class ClientState
         return new SemanticVersion[]{ QueryProcessor.CQL_VERSION };
     }
 
-    private static LoadingCache<Pair<AuthenticatedUser, IResource>, Set<Permission>> initPermissionsCache()
-    {
-        if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
-            return null;
-
-        int validityPeriod = DatabaseDescriptor.getPermissionsValidity(); //默认是两秒
-        if (validityPeriod <= 0)
-            return null;
-
-        return CacheBuilder.newBuilder().expireAfterWrite(validityPeriod, TimeUnit.MILLISECONDS)
-                                        .build(new CacheLoader<Pair<AuthenticatedUser, IResource>, Set<Permission>>()
-                                        {
-                                            public Set<Permission> load(Pair<AuthenticatedUser, IResource> userResource)
-                                            {
-                                                return DatabaseDescriptor.getAuthorizer().authorize(userResource.left,
-                                                                                                    userResource.right);
-                                            }
-                                        });
-    }
-
+//<<<<<<< HEAD
+//    private static LoadingCache<Pair<AuthenticatedUser, IResource>, Set<Permission>> initPermissionsCache()
+//    {
+//        if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
+//            return null;
+//
+//        int validityPeriod = DatabaseDescriptor.getPermissionsValidity(); //默认是两秒
+//        if (validityPeriod <= 0)
+//            return null;
+//
+//        return CacheBuilder.newBuilder().expireAfterWrite(validityPeriod, TimeUnit.MILLISECONDS)
+//                                        .build(new CacheLoader<Pair<AuthenticatedUser, IResource>, Set<Permission>>()
+//                                        {
+//                                            public Set<Permission> load(Pair<AuthenticatedUser, IResource> userResource)
+//                                            {
+//                                                return DatabaseDescriptor.getAuthorizer().authorize(userResource.left,
+//                                                                                                    userResource.right);
+//                                            }
+//                                        });
+//    }
+//
+//=======
+//>>>>>>> 9274197b4bdb343731b964f2fcd8f70814f42a41
     private Set<Permission> authorize(IResource resource)
     {
         // AllowAllAuthorizer or manually disabled caching.
-        if (permissionsCache == null)
+        if (Auth.permissionsCache == null)
             return DatabaseDescriptor.getAuthorizer().authorize(user, resource);
 
         try
@@ -313,7 +307,7 @@ public class ClientState
             //当permissionsCache在最初调用initPermissionsCache()不为null时，
             //这里传进去的Pair.create(user, resource)会保留在CacheLoader中，默认保存两秒
             //这样如果连续的两次访问只要间隔不超过两秒就不会去读system_auth.permissions表
-            return permissionsCache.get(Pair.create(user, resource));
+            return Auth.permissionsCache.get(Pair.create(user, resource));
         }
         catch (ExecutionException e)
         {

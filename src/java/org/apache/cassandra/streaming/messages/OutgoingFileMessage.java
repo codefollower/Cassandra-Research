@@ -22,7 +22,7 @@ import java.nio.channels.ReadableByteChannel;
 import java.util.List;
 
 import org.apache.cassandra.io.compress.CompressionMetadata;
-import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.DataOutputStreamAndChannel;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.streaming.StreamWriter;
@@ -60,7 +60,7 @@ public class OutgoingFileMessage extends StreamMessage
     public FileMessageHeader header;
     public SSTableReader sstable;
 
-    public OutgoingFileMessage(SSTableReader sstable, int sequenceNumber, long estimatedKeys, List<Pair<Long, Long>> sections, long repairedAt)
+    public OutgoingFileMessage(SSTableReader sstable, int sequenceNumber, long estimatedKeys, List<Pair<Long, Long>> sections, long repairedAt, boolean keepSSTableLevel)
     {
         super(Type.FILE);
         this.sstable = sstable;
@@ -74,10 +74,12 @@ public class OutgoingFileMessage extends StreamMessage
         this.header = new FileMessageHeader(sstable.metadata.cfId,
                                             sequenceNumber,
                                             sstable.descriptor.version.toString(),
+                                            sstable.descriptor.formatType,
                                             estimatedKeys,
                                             sections,
                                             compressionInfo,
-                                            repairedAt);
+                                            repairedAt,
+                                            keepSSTableLevel ? sstable.getSSTableLevel() : 0);
     }
 
     @Override

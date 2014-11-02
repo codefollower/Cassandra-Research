@@ -40,6 +40,7 @@ import org.apache.cassandra.io.util.DataOutputStreamAndChannel;
 import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.streaming.messages.StreamMessage;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 
 /**
  * ConnectionHandler manages incoming/outgoing message exchange for the {@link StreamSession}.
@@ -178,7 +179,8 @@ public class ConnectionHandler
                     session.sessionIndex(),
                     session.planId(),
                     session.description(),
-                    isForOutgoing);
+                    isForOutgoing,
+                    session.keepSSTableLevel());
             ByteBuffer messageBuf = message.createMessage(false, protocolVersion);
             getWriteChannel(socket).write(messageBuf);
         }
@@ -256,9 +258,10 @@ public class ConnectionHandler
                 // socket is closed
                 close();
             }
-            catch (Throwable e)
+            catch (Throwable t)
             {
-                session.onError(e);
+                JVMStabilityInspector.inspectThrowable(t);
+                session.onError(t);
             }
             finally
             {

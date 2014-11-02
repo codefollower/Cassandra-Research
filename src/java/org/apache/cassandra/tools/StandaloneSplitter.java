@@ -21,6 +21,7 @@ package org.apache.cassandra.tools;
 import java.io.File;
 import java.util.*;
 
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.commons.cli.*;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -29,6 +30,7 @@ import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.compaction.SSTableSplitter;
 import org.apache.cassandra.io.sstable.*;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.tools.BulkLoader.CmdLineOptions;
@@ -109,12 +111,17 @@ public class StandaloneSplitter
 
             String snapshotName = "pre-split-" + System.currentTimeMillis();
 
-            List<SSTableReader> sstables = new ArrayList<SSTableReader>();
+            List<SSTableReader> sstables = new ArrayList<>();
             for (Map.Entry<Descriptor, Set<Component>> fn : parsedFilenames.entrySet())
             {
                 try
                 {
                     SSTableReader sstable = SSTableReader.openNoValidation(fn.getKey(), fn.getValue(), cfs.metadata);
+                    if (!isSSTableLargerEnough(sstable, options.sizeInMB)) {
+                        System.out.println(String.format("Skipping %s: it's size (%.3f MB) is less than the split size (%d MB)",
+                                sstable.getFilename(), ((sstable.onDiskLength() * 1.0d) / 1024L) / 1024L, options.sizeInMB));
+                        continue;
+                    }
                     sstables.add(sstable);
 
                     if (options.snapshot) {
@@ -125,10 +132,15 @@ public class StandaloneSplitter
                 }
                 catch (Exception e)
                 {
+                    JVMStabilityInspector.inspectThrowable(e);
                     System.err.println(String.format("Error Loading %s: %s", fn.getKey(), e.getMessage()));
                     if (options.debug)
                         e.printStackTrace(System.err);
                 }
+            }
+            if (sstables.isEmpty()) {
+                System.out.println("No sstables needed splitting.");
+                System.exit(0);
             }
             if (options.snapshot)
                 System.out.println(String.format("Pre-split sstables snapshotted into snapshot %s", snapshotName));
@@ -157,6 +169,13 @@ public class StandaloneSplitter
                 e.printStackTrace(System.err);
             System.exit(1);
         }
+    }
+
+    /**
+     * filter the sstable which size is less than the expected max sstable size.
+     */
+    private static boolean isSSTableLargerEnough(SSTableReader sstable, int sizeInMB) {
+        return sstable.onDiskLength() > sizeInMB * 1024L * 1024L;
     }
 
     private static class Options
@@ -201,7 +220,7 @@ public class StandaloneSplitter
                 opts.sizeInMB = DEFAULT_SSTABLE_SIZE;
 
                 if (cmd.hasOption(SIZE_OPTION))
-                    opts.sizeInMB = Integer.valueOf(cmd.getOptionValue(SIZE_OPTION));
+                    opts.sizeInMB = Integer.parseInt(cmd.getOptionValue(SIZE_OPTION));
 
                 return opts;
             }

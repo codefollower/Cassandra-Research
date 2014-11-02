@@ -74,9 +74,9 @@ public abstract class AbstractMarker extends Term.NonTerminal
             throw new AssertionError();
         }
 
-        public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
-            return true;
+            return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
         }
 
         @Override
@@ -108,9 +108,6 @@ public abstract class AbstractMarker extends Term.NonTerminal
         @Override
         public AbstractMarker prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
-            if (receiver.type instanceof CollectionType)
-                throw new InvalidRequestException("Collection columns do not support IN relations");
-
             return new Lists.Marker(bindIndex, makeInReceiver(receiver));
         }
     }

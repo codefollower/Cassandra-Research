@@ -295,6 +295,8 @@ public interface CQL3Type
     // actual type used, so Raw is a "not yet prepared" CQL3Type.
     public abstract class Raw
     {
+        protected boolean frozen;
+
         public boolean isCollection()
         {
             return false;
@@ -303,6 +305,12 @@ public interface CQL3Type
         public boolean isCounter()
         {
             return false;
+        }
+
+        public Raw freeze()
+        {
+            frozen = true;
+            return this;
         }
 
         public abstract CQL3Type prepare(String keyspace) throws InvalidRequestException;
@@ -350,10 +358,20 @@ public interface CQL3Type
         public static Raw tuple(List<CQL3Type.Raw> ts) throws InvalidRequestException
         {
             for (int i = 0; i < ts.size(); i++)
-                if (ts.get(i).isCounter())
+                if (ts.get(i) != null && ts.get(i).isCounter())
                     throw new InvalidRequestException("counters are not allowed inside tuples");
 
             return new RawTuple(ts);
+        }
+
+        public static Raw frozen(CQL3Type.Raw t) throws InvalidRequestException
+        {
+            if (t instanceof RawUT)
+                return ((RawUT)t).freeze();
+            if (t instanceof RawTuple)
+                return ((RawTuple)t).freeze();
+
+            throw new InvalidRequestException("frozen<> is only currently only allowed on User-Defined and tuple types");
         }
 
         private static class RawType extends Raw
@@ -393,6 +411,14 @@ public interface CQL3Type
                 this.kind = kind;
                 this.keys = keys;
                 this.values = values;
+            }
+
+            public Raw freeze()
+            {
+                if (keys != null)
+                    keys.freeze();
+                values.freeze();
+                return super.freeze();
             }
 
             public boolean isCollection()
@@ -456,7 +482,15 @@ public interface CQL3Type
                 if (type == null)
                     throw new InvalidRequestException("Unknown type " + name);
 
+                if (!frozen)
+                    throw new InvalidRequestException("Non-frozen User-Defined types are not supported, please use frozen<>");
+
                 return new UserDefined(name.toString(), type);
+            }
+
+            public boolean isUDT()
+            {
+                return true;
             }
 
             @Override
@@ -475,6 +509,14 @@ public interface CQL3Type
                 this.types = types;
             }
 
+            public Raw freeze()
+            {
+                for (CQL3Type.Raw t : types)
+                    if (t != null)
+                        t.freeze();
+                return super.freeze();
+            }
+
             public boolean isCollection()
             {
                 return false;
@@ -485,6 +527,10 @@ public interface CQL3Type
                 List<AbstractType<?>> ts = new ArrayList<>(types.size());
                 for (CQL3Type.Raw t : types)
                     ts.add(t.prepare(keyspace).getType());
+
+                if (!frozen)
+                    throw new InvalidRequestException("Non-frozen tuples are not supported, please use frozen<>");
+
                 return new Tuple(new TupleType(ts));
             }
 

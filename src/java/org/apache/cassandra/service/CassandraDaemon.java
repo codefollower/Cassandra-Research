@@ -33,7 +33,7 @@ import javax.management.StandardMBean;
 
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Uninterruptibles;
-import org.apache.cassandra.cql3.udf.UDFRegistry;
+import org.hyperic.sigar.SigarException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,6 +44,7 @@ import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
@@ -57,10 +58,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.metrics.StorageMetrics;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.CLibrary;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Mx4jTool;
-import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.*;
 
 /**
  * The <code>CassandraDaemon</code> is an abstraction for a Cassandra daemon
@@ -72,22 +70,22 @@ public class CassandraDaemon
 {
     public static final String MBEAN_NAME = "org.apache.cassandra.db:type=NativeAccess";
 
-    // Have a dedicated thread to call exit to avoid deadlock in the case where the thread that wants to invoke exit
-    // belongs to an executor that our shutdown hook wants to wait to exit gracefully. See CASSANDRA-5273.
-    private static final Thread exitThread = new Thread(new Runnable()
-    {
-        public void run()
-        {
-            System.exit(100);
-        }
-    }, "Exit invoker");
-
     private static final Logger logger = LoggerFactory.getLogger(CassandraDaemon.class);
 
     private static final CassandraDaemon instance = new CassandraDaemon();
 
     public Server thriftServer; //用于thrift客户端
     public Server nativeServer; //用于CQL3客户端
+
+    private final boolean runManaged;
+
+    public CassandraDaemon() {
+        this(false);
+    }
+
+    public CassandraDaemon(boolean runManaged) {
+        this.runManaged = runManaged;
+    }
 
     /**
      * This is a hook for concrete daemons to initialize themselves suitably.
@@ -98,7 +96,7 @@ public class CassandraDaemon
      */
     protected void setup()
     {
-        try 
+        try
         {
             logger.info("Hostname: {}", InetAddress.getLocalHost().getHostName());
         }
@@ -155,8 +153,7 @@ public class CassandraDaemon
 
             if (jnaRequired)
             {
-                logger.error("JNA failing to initialize properly. Use -Dcassandra.boot_without_jna=true to bootstrap even so.");
-                System.exit(3);
+                exitOrFail(3, "JNA failing to initialize properly. Use -Dcassandra.boot_without_jna=true to bootstrap even so.");
             }
         }
 
@@ -172,9 +169,7 @@ public class CassandraDaemon
                 Tracing.trace("Exception in thread {}", t, e);
                 for (Throwable e2 = e; e2 != null; e2 = e2.getCause())
                 {
-                    // some code, like FileChannel.map, will wrap an OutOfMemoryError in another exception
-                    if (e2 instanceof OutOfMemoryError)
-                        exitThread.start();
+                    JVMStabilityInspector.inspectThrowable(e2);
 
                     if (e2 instanceof FSError)
                     {
@@ -197,6 +192,13 @@ public class CassandraDaemon
         Iterable<String> dirs = Iterables.concat(Arrays.asList(DatabaseDescriptor.getAllDataFileLocations()),
                                                  Arrays.asList(DatabaseDescriptor.getCommitLogLocation(),
                                                                DatabaseDescriptor.getSavedCachesLocation()));
+
+        SigarLibrary sigarLibrary = new SigarLibrary();
+        if (sigarLibrary.initialized())
+            sigarLibrary.warnIfRunningInDegradedMode();
+        else
+            logger.info("Sigar could not be initialized");
+
         for (String dataDir : dirs)
         {
             logger.debug("Checking directory {}", dataDir);
@@ -209,16 +211,17 @@ public class CassandraDaemon
                 // if they don't, failing their creation, stop cassandra.
                 if (!dir.mkdirs())
                 {
-                    logger.error("Has no permission to create {} directory", dataDir);
-                    System.exit(3);
+                    exitOrFail(3, "Has no permission to create directory "+ dataDir);
                 }
             }
             // if directories exist verify their permissions
             if (!Directories.verifyFullPermissions(dir, dataDir))
             {
                 // if permissions aren't sufficient, stop cassandra.
-                System.exit(3);
+                exitOrFail(3, "Insufficient permissions on directory " + dataDir);
             }
+
+
         }
 
         //这里会触发key、row缓存的初始化
@@ -236,12 +239,13 @@ public class CassandraDaemon
         }
         catch (ConfigurationException e)
         {
-            logger.error("Fatal exception during initialization", e);
-            System.exit(100);
+            exitOrFail(100, "Fatal exception during initialization", e);
         }
 
-        // load keyspace descriptions.
+
+        // load keyspace && function descriptions.
         DatabaseDescriptor.loadSchemas();
+        Functions.loadUDFFromSchema();
         // clean up compaction leftovers
         Map<Pair<String, String>, Map<Integer, UUID>> unfinishedCompactions = SystemKeyspace.getUnfinishedCompactions();
         for (Pair<String, String> kscf : unfinishedCompactions.keySet())
@@ -292,6 +296,7 @@ public class CassandraDaemon
         }
         catch (Throwable t)
         {
+            JVMStabilityInspector.inspectThrowable(t);
             logger.warn("Unable to start GCInspector (currently only supported on the Sun JVM)");
         }
 
@@ -342,9 +347,8 @@ public class CassandraDaemon
         }
         catch (ConfigurationException e)
         {
-            logger.error("Fatal configuration error", e);
             System.err.println(e.getMessage() + "\nFatal configuration error; unable to start server.  See log for stacktrace.");
-            System.exit(1);
+            exitOrFail(1, "Fatal configuration error", e);
         }
 
         Mx4jTool.maybeLoad(); //支持XSLT(可选的)
@@ -367,9 +371,6 @@ public class CassandraDaemon
 
         if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
             waitForGossipToSettle();
-
-        // UDF
-        UDFRegistry.init();
 
         // Thift
         InetAddress rpcAddr = DatabaseDescriptor.getRpcAddress();
@@ -422,15 +423,20 @@ public class CassandraDaemon
     /**
      * Stop the daemon, ideally in an idempotent manner.
      *
-     * Hook for JSVC
+     * Hook for JSVC / Procrun
      */
     public void stop()
     {
-        // this doesn't entirely shut down Cassandra, just the RPC server.
+        // On linux, this doesn't entirely shut down Cassandra, just the RPC server.
         // jsvc takes care of taking the rest down
         logger.info("Cassandra shutting down...");
         thriftServer.stop();
         nativeServer.stop();
+
+        // On windows, we need to stop the entire system as prunsrv doesn't have the jsvc hooks
+        // We rely on the shutdown hook to drain the node
+        if (!FBUtilities.isUnix())
+            System.exit(0);
     }
 
 
@@ -462,7 +468,7 @@ public class CassandraDaemon
                 logger.error("error registering MBean {}", MBEAN_NAME, e);
                 //Allow the server to start even if the bean can't be registered
             }
-            
+
             setup(); //在里面会完成整个Cassandra的初始化
 
             if (pidFile != null)
@@ -485,8 +491,7 @@ public class CassandraDaemon
             // try to warn user on stdout too, if we haven't already detached
             e.printStackTrace();
             System.out.println("Exception encountered during startup: " + e.getMessage());
-
-            System.exit(3);
+            exitOrFail(3, "Exception encountered during startup", e);
         }
     }
 
@@ -497,6 +502,10 @@ public class CassandraDaemon
     {
         stop();
         destroy();
+        // completely shut down cassandra
+        if(!runManaged) {
+            System.exit(0);
+        }
     }
 
     private void waitForGossipToSettle()
@@ -555,14 +564,30 @@ public class CassandraDaemon
         instance.activate();
     }
     
+    private void exitOrFail(int code, String message) {
+        exitOrFail(code, message, null);
+    }
+
+    private void exitOrFail(int code, String message, Throwable cause) {
+            if(runManaged) {
+                RuntimeException t = cause!=null ? new RuntimeException(message, cause) : new RuntimeException(message);
+                throw t;
+            }
+            else {
+                logger.error(message, cause);
+                System.exit(code);
+            }
+
+        }
+
     static class NativeAccess implements NativeAccessMBean
     {
         public boolean isAvailable()
         {
             return CLibrary.jnaAvailable();
         }
-        
-        public boolean isMemoryLockable() 
+
+        public boolean isMemoryLockable()
         {
             return CLibrary.jnaMemoryLockable();
         }

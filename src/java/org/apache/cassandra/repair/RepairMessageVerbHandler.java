@@ -24,6 +24,7 @@ import java.util.UUID;
 import java.util.concurrent.Future;
 
 import com.google.common.base.Predicate;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,9 +33,9 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.dht.Bounds;
+import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
@@ -80,7 +81,9 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                 {
                     public boolean apply(SSTableReader sstable)
                     {
-                        return sstable != null && new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(Collections.singleton(repairingRange));
+                        return sstable != null &&
+                               !(sstable.partitioner instanceof LocalPartitioner) && // exclude SSTables from 2i
+                               new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(Collections.singleton(repairingRange));
                     }
                 });
 
@@ -100,7 +103,12 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
             case SYNC_REQUEST:
                 // forwarded sync request
                 SyncRequest request = (SyncRequest) message.payload;
-                StreamingRepairTask task = new StreamingRepairTask(desc, request);
+
+                long repairedAt = ActiveRepairService.UNREPAIRED_SSTABLE;
+                if (desc.parentSessionId != null && ActiveRepairService.instance.getParentRepairSession(desc.parentSessionId) != null)
+                    repairedAt = ActiveRepairService.instance.getParentRepairSession(desc.parentSessionId).repairedAt;
+
+                StreamingRepairTask task = new StreamingRepairTask(desc, request, repairedAt);
                 task.run();
                 break;
 

@@ -22,12 +22,14 @@ package org.apache.cassandra.stress.settings;
 
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.cassandra.stress.Operation;
 import org.apache.cassandra.stress.generate.DistributionFactory;
 import org.apache.cassandra.stress.generate.PartitionGenerator;
+import org.apache.cassandra.stress.generate.SeedManager;
 import org.apache.cassandra.stress.operations.OpDistributionFactory;
 import org.apache.cassandra.stress.operations.SampledOpDistributionFactory;
 import org.apache.cassandra.stress.operations.predefined.PredefinedOperation;
@@ -55,11 +57,8 @@ public class SettingsCommandPreDefinedMixed extends SettingsCommandPreDefined
 
     public OpDistributionFactory getFactory(final StressSettings settings)
     {
-        final List<Pair<Command,Double>> mathPairs = new ArrayList<>();
-        for (Map.Entry entry: ratios.entrySet())
-            mathPairs.add(new Pair(entry.getKey(),entry.getValue()));
-
-        return new SampledOpDistributionFactory<Command>(mathPairs, clustering)
+        final SeedManager seeds = new SeedManager(settings);
+        return new SampledOpDistributionFactory<Command>(ratios, clustering)
         {
             protected Operation get(Timer timer, PartitionGenerator generator, Command key)
             {
@@ -68,7 +67,7 @@ public class SettingsCommandPreDefinedMixed extends SettingsCommandPreDefined
 
             protected PartitionGenerator newGenerator()
             {
-                return SettingsCommandPreDefinedMixed.this.newGenerator(settings);
+                return SettingsCommandPreDefinedMixed.this.newGenerator(settings, seeds);
             }
         };
     }
@@ -110,11 +109,7 @@ public class SettingsCommandPreDefinedMixed extends SettingsCommandPreDefined
         @Override
         public List<? extends Option> options()
         {
-            final List<Option> options = new ArrayList<>();
-            options.add(clustering);
-            options.add(probabilities);
-            options.addAll(super.options());
-            return options;
+            return merge(Arrays.asList(clustering, probabilities), super.options());
         }
 
     }

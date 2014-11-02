@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
@@ -43,6 +44,8 @@ import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
+import org.apache.cassandra.io.sstable.format.Version;
+import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -218,7 +221,7 @@ public final class CFMetaData
     public static final CFMetaData SchemaFunctionsCf = compile("CREATE TABLE " + SystemKeyspace.SCHEMA_FUNCTIONS_CF + " ("
                                                                + "namespace text,"
                                                                + "name text,"
-                                                               + "signature text,"
+                                                               + "signature blob,"
                                                                + "argument_names list<text>,"
                                                                + "argument_types list<text>,"
                                                                + "return_type text,"
@@ -509,8 +512,7 @@ public final class CFMetaData
     public CFMetaData speculativeRetry(SpeculativeRetry prop) {speculativeRetry = prop; return this;}
     public CFMetaData droppedColumns(Map<ColumnIdentifier, Long> cols) {droppedColumns = cols; return this;}
     public CFMetaData triggers(Map<String, TriggerDefinition> prop) {triggers = prop; return this;}
-    public CFMetaData setDense(Boolean prop) {isDense = prop; return this;}
-
+    public CFMetaData isDense(Boolean prop) {isDense = prop; return this;}
     /**
      * Create new ColumnFamily metadata with generated random ID.
      * When loading from existing schema, use CFMetaData
@@ -691,7 +693,7 @@ public final class CFMetaData
                       .memtableFlushPeriod(oldCFMD.memtableFlushPeriod)
                       .droppedColumns(new HashMap<>(oldCFMD.droppedColumns))
                       .triggers(new HashMap<>(oldCFMD.triggers))
-                      .setDense(oldCFMD.isDense)
+                      .isDense(oldCFMD.isDense)
                       .rebuild();
     }
 
@@ -719,6 +721,23 @@ public final class CFMetaData
         return cfType == ColumnFamilyType.Super;
     }
 
+    /**
+     * The '.' char is the only way to identify if the CFMetadata is for a secondary index
+     */
+    public boolean isSecondaryIndex()
+    {
+        return cfName.contains(".");
+    }
+
+    /**
+     *
+     * @return The name of the parent cf if this is a seconday index
+     */
+    public String getParentColumnFamilyName()
+    {
+        return isSecondaryIndex() ? cfName.substring(0, cfName.indexOf('.')) : null;
+    }
+
     public double getReadRepairChance()
     {
         return readRepairChance;
@@ -731,7 +750,7 @@ public final class CFMetaData
 
     public ReadRepairDecision newReadRepairDecision()
     {
-        double chance = FBUtilities.threadLocalRandom().nextDouble();
+        double chance = ThreadLocalRandom.current().nextDouble();
         if (getReadRepairChance() > chance)
             return ReadRepairDecision.GLOBAL;
 
@@ -895,6 +914,11 @@ public final class CFMetaData
     public Map<ColumnIdentifier, Long> getDroppedColumns()
     {
         return droppedColumns;
+    }
+
+    public Boolean getIsDense()
+    {
+        return isDense;
     }
 
     @Override
@@ -1070,7 +1094,7 @@ public final class CFMetaData
                 defs.add(def);
             }
 
-            CellNameType comparator = CellNames.fromAbstractType(fullRawComparator, isDense(fullRawComparator, defs));
+            CellNameType comparator = CellNames.fromAbstractType(fullRawComparator, calculateIsDense(fullRawComparator, defs));
 
             UUID cfId = Schema.instance.getId(cf_def.keyspace, cf_def.name);
             if (cfId == null)
@@ -1230,7 +1254,7 @@ public final class CFMetaData
 
         triggers = cfm.triggers;
 
-        setDense(cfm.isDense);
+        isDense(cfm.isDense);
 
         rebuild();
         logger.debug("application result is {}", this);
@@ -1458,17 +1482,17 @@ public final class CFMetaData
         return (cfName + "_" + columnName + "_idx").replaceAll("\\W", "");
     }
 
-    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput in, Descriptor.Version version)
+    public Iterator<OnDiskAtom> getOnDiskIterator(FileDataInput in, Version version)
     {
         return getOnDiskIterator(in, ColumnSerializer.Flag.LOCAL, Integer.MIN_VALUE, version);
     }
 
-    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput in, ColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version)
+    public Iterator<OnDiskAtom> getOnDiskIterator(FileDataInput in, ColumnSerializer.Flag flag, int expireBefore, Version version)
     {
-        return AbstractCell.onDiskIterator(in, flag, expireBefore, version, comparator);
+        return version.getSSTableFormat().getOnDiskIterator(in, flag, expireBefore, this, version);
     }
 
-    public AtomDeserializer getOnDiskDeserializer(DataInput in, Descriptor.Version version)
+    public AtomDeserializer getOnDiskDeserializer(DataInput in, Version version)
     {
         return new AtomDeserializer(comparator, in, ColumnSerializer.Flag.LOCAL, Integer.MIN_VALUE, version);
     }
@@ -1780,7 +1804,7 @@ public final class CFMetaData
 
             boolean isDense = result.has("is_dense")
                             ? result.getBoolean("is_dense")
-                            : isDense(fullRawComparator, columnDefs);
+                            : calculateIsDense(fullRawComparator, columnDefs);
 
             CellNameType comparator = CellNames.fromAbstractType(fullRawComparator, isDense);
 
@@ -1790,7 +1814,7 @@ public final class CFMetaData
                       : generateLegacyCfId(ksName, cfName);
 
             CFMetaData cfm = new CFMetaData(ksName, cfName, cfType, comparator, cfId);
-            cfm.setDense(isDense);
+            cfm.isDense(isDense);
 
             cfm.readRepairChance(result.getDouble("read_repair_chance"));
             cfm.dcLocalReadRepairChance(result.getDouble("local_read_repair_chance"));
@@ -2054,7 +2078,7 @@ public final class CFMetaData
     public CFMetaData rebuild()
     {
         if (isDense == null)
-            setDense(isDense(comparator.asAbstractType(), allColumns()));
+            isDense(calculateIsDense(comparator.asAbstractType(), allColumns()));
 
         List<ColumnDefinition> pkCols = nullInitializedList(keyValidator.componentsCount());
         List<ColumnDefinition> ckCols = nullInitializedList(comparator.clusteringPrefixSize());
@@ -2174,7 +2198,7 @@ public final class CFMetaData
      * information for table just created through thrift, nor for table prior to CASSANDRA-7744, so this
      * method does its best to infer whether the table is dense or not based on other elements.
      */
-    private static boolean isDense(AbstractType<?> comparator, Collection<ColumnDefinition> defs)
+    private static boolean calculateIsDense(AbstractType<?> comparator, Collection<ColumnDefinition> defs)
     {
         /*
          * As said above, this method is only here because we need to deal with thrift upgrades.
@@ -2254,6 +2278,11 @@ public final class CFMetaData
             if (def.kind == ColumnDefinition.Kind.REGULAR && !def.isThriftCompatible())
                 return false;
         }
+
+        // The table might also have no REGULAR columns (be PK-only), but still be "thrift incompatible". See #7832.
+        if (isCQL3OnlyPKComparator(comparator.asAbstractType()) && !isDense)
+            return false;
+
         return true;
     }
 

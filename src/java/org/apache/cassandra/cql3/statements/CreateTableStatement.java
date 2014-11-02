@@ -213,7 +213,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
         cfmd.defaultValidator(defaultValidator)
             .keyValidator(keyValidator)
             .addAllColumnDefinitions(getColumns(cfmd))
-            .setDense(isDense);
+            .isDense(isDense);
 
         //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
         //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，

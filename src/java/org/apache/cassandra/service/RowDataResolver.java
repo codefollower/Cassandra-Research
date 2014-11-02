@@ -41,9 +41,9 @@ public class RowDataResolver extends AbstractRowResolver
     private final IDiskAtomFilter filter;
     private final long timestamp;
 
-    public RowDataResolver(String keyspaceName, ByteBuffer key, IDiskAtomFilter qFilter, long timestamp)
+    public RowDataResolver(String keyspaceName, ByteBuffer key, IDiskAtomFilter qFilter, long timestamp, int maxResponseCount)
     {
-        super(key, keyspaceName);
+        super(key, keyspaceName, maxResponseCount);
         this.filter = qFilter;
         this.timestamp = timestamp;
     }
@@ -57,16 +57,20 @@ public class RowDataResolver extends AbstractRowResolver
     */
     public Row resolve() throws DigestMismatchException
     {
+        int replyCount = replies.size();
         if (logger.isDebugEnabled())
-            logger.debug("resolving {} responses", replies.size());
+            logger.debug("resolving {} responses", replyCount);
         long start = System.nanoTime();
 
         ColumnFamily resolved;
-        //计算每个节点返回的记录
-        if (replies.size() > 1)
+//<<<<<<< HEAD
+//        //计算每个节点返回的记录
+//        if (replies.size() > 1)
+//=======
+        if (replyCount > 1)
         {
-            List<ColumnFamily> versions = new ArrayList<ColumnFamily>(replies.size());
-            List<InetAddress> endpoints = new ArrayList<InetAddress>(replies.size());
+            List<ColumnFamily> versions = new ArrayList<>(replyCount);
+            List<InetAddress> endpoints = new ArrayList<>(replyCount);
 
             for (MessageIn<ReadResponse> message : replies)
             {
@@ -162,6 +166,7 @@ public class RowDataResolver extends AbstractRowResolver
 
     public Row getData()
     {
+        assert !replies.isEmpty();
         return replies.get(0).payload.row();
     }
 

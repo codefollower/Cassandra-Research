@@ -45,6 +45,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.QueryOptions;
+import org.apache.cassandra.cql3.statements.ParsedStatement;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.context.CounterContext;
@@ -927,8 +928,8 @@ public class CassandraServer implements Cassandra.Iface
                                      del.timestamp);
             else
                 mutation.deleteRange(cfm.cfName,
-                                     cfm.comparator.cellFromByteBuffer(del.predicate.getSlice_range().start),
-                                     cfm.comparator.cellFromByteBuffer(del.predicate.getSlice_range().finish),
+                                     cfm.comparator.fromByteBuffer(del.predicate.getSlice_range().start),
+                                     cfm.comparator.fromByteBuffer(del.predicate.getSlice_range().finish),
                                      del.timestamp);
         }
         else
@@ -1970,16 +1971,16 @@ public class CassandraServer implements Cassandra.Iface
         try
         {
             ThriftClientState cState = state();
-            org.apache.cassandra.cql3.CQLStatement statement = cState.getCQLQueryHandler().getPreparedForThrift(itemId);
+            ParsedStatement.Prepared prepared = cState.getCQLQueryHandler().getPreparedForThrift(itemId);
 
-            if (statement == null)
+            if (prepared == null)
                 throw new InvalidRequestException(String.format("Prepared query with ID %d not found" +
                                                                 " (either the query was not prepared on this host (maybe the host has been restarted?)" +
                                                                 " or you have prepared too many queries and it has been evicted from the internal cache)",
                                                                 itemId));
-            logger.trace("Retrieved prepared statement #{} with {} bind markers", itemId, statement.getBoundTerms());
+            logger.trace("Retrieved prepared statement #{} with {} bind markers", itemId, prepared.statement.getBoundTerms());
 
-            return cState.getCQLQueryHandler().processPrepared(statement,
+            return cState.getCQLQueryHandler().processPrepared(prepared.statement,
                                                                cState.getQueryState(),
                                                                QueryOptions.fromProtocolV2(ThriftConversion.fromThrift(cLevel), bindVariables)).toThriftResult();
         }

@@ -27,6 +27,7 @@ import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.ISSTableSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.serializers.MarshalException;
@@ -117,6 +118,7 @@ public class RangeTombstone extends Interval<Composite, DeletionTime> implements
                 return comparator.compare(t1.max, t2.max);
             }
         });
+        public final Set<RangeTombstone> expired = new HashSet<RangeTombstone>();
         private int atomCount;
 
         public Tracker(Comparator<Composite> comparator)
@@ -148,6 +150,9 @@ public class RangeTombstone extends Interval<Composite, DeletionTime> implements
                 // If ever the first column is outside the range, skip it (in
                 // case update() hasn't been called yet)
                 if (comparator.compare(firstColumn.name(), tombstone.max) > 0)
+                    continue;
+
+                if (expired.contains(tombstone))
                     continue;
 
                 RangeTombstone updated = new RangeTombstone(firstColumn.name(), tombstone.max, tombstone.data);
@@ -184,7 +189,7 @@ public class RangeTombstone extends Interval<Composite, DeletionTime> implements
          * If column is a Cell, check if any tracked range is useless and
          * can be removed. If it is a RangeTombstone, add it to this tracker.
          */
-        public void update(OnDiskAtom atom)
+        public void update(OnDiskAtom atom, boolean isExpired)
         {
             if (atom instanceof RangeTombstone)
             {
@@ -205,6 +210,8 @@ public class RangeTombstone extends Interval<Composite, DeletionTime> implements
                 }
                 ranges.addLast(t);
                 maxOrderingSet.add(t);
+                if (isExpired)
+                    expired.add(t);
             }
             else
             {
@@ -261,7 +268,7 @@ public class RangeTombstone extends Interval<Composite, DeletionTime> implements
             DeletionTime.serializer.serialize(t.data, out);
         }
 
-        public RangeTombstone deserializeFromSSTable(DataInput in, Descriptor.Version version) throws IOException
+        public RangeTombstone deserializeFromSSTable(DataInput in, Version version) throws IOException
         {
             Composite min = type.serializer().deserialize(in);
 
@@ -270,14 +277,14 @@ public class RangeTombstone extends Interval<Composite, DeletionTime> implements
             return deserializeBody(in, min, version);
         }
 
-        public RangeTombstone deserializeBody(DataInput in, Composite min, Descriptor.Version version) throws IOException
+        public RangeTombstone deserializeBody(DataInput in, Composite min, Version version) throws IOException
         {
             Composite max = type.serializer().deserialize(in);
             DeletionTime dt = DeletionTime.serializer.deserialize(in);
             return new RangeTombstone(min, max, dt);
         }
 
-        public void skipBody(DataInput in, Descriptor.Version version) throws IOException
+        public void skipBody(DataInput in, Version version) throws IOException
         {
             type.serializer().skip(in);
             DeletionTime.serializer.skip(in);

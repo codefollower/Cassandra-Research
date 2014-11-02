@@ -33,7 +33,7 @@ public abstract class Relation {
     public static enum Type
     {
         //CONTAINS, CONTAINS_KEY是CASSANDRA-4511新加的，见:https://issues.apache.org/jira/browse/CASSANDRA-4511
-        EQ, LT, LTE, GTE, GT, IN, CONTAINS, CONTAINS_KEY;
+        EQ, LT, LTE, GTE, GT, IN, CONTAINS, CONTAINS_KEY, NEQ;
 
         public boolean allowsIndexQuery()
         {
@@ -93,6 +93,8 @@ public abstract class Relation {
                     return ">";
                 case GTE:
                     return ">=";
+                case NEQ:
+                    return "!=";
                 default:
                     return this.name();
             }

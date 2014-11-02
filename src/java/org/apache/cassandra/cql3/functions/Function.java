@@ -17,29 +17,34 @@
  */
 package org.apache.cassandra.cql3.functions;
 
-import java.nio.ByteBuffer;
 import java.util.List;
 
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.exceptions.InvalidRequestException;
 
 public interface Function
 {
-    public String name();
-    public List<AbstractType<?>> argsType();
+    public FunctionName name();
+    public List<AbstractType<?>> argTypes();
     public AbstractType<?> returnType();
 
-    public ByteBuffer execute(List<ByteBuffer> parameters) throws InvalidRequestException;
-
-    // Whether the function is a pure function (as in doesn't depend on, nor produce side effects).
+    /**
+     * Checks whether the function is a pure function (as in doesn't depend on, nor produce side effects) or not.
+     *
+     * @return <code>true</code> if the function is a pure function, <code>false</code> otherwise.
+     */
     public boolean isPure();
 
-    public interface Factory
-    {
-        // We allow the function to be parametered by the keyspace it is part of because the
-        // "token" function needs it (the argument depends on the keyValidator). However,
-        // for most function, the factory will just always the same function object (see
-        // AbstractFunction).
-        public Function create(String ksName, String cfName);
-    }
+    /**
+     * Checks whether the function is a native/hard coded one or not.
+     *
+     * @return <code>true</code> if the function is a native/hard coded one, <code>false</code> otherwise.
+     */
+    public boolean isNative();
+
+    /**
+     * Checks whether the function is an aggregate function or not.
+     *
+     * @return <code>true</code> if the function is an aggregate function, <code>false</code> otherwise.
+     */
+    public boolean isAggregate();
 }

@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -32,6 +33,8 @@ import org.apache.cassandra.hadoop.ConfigHelper;
 import org.apache.cassandra.hadoop.HadoopCompat;
 import org.apache.cassandra.io.sstable.CQLSSTableWriter;
 import org.apache.cassandra.io.sstable.SSTableLoader;
+import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.streaming.StreamState;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.util.Progressable;
@@ -57,6 +60,7 @@ public class CqlBulkRecordWriter extends AbstractBulkRecordWriter<Object, List<B
     private String schema;
     private String insertStatement;
     private File outputDir;
+    private boolean deleteSrc;
 
     CqlBulkRecordWriter(TaskAttemptContext context) throws IOException
     {
@@ -84,6 +88,7 @@ public class CqlBulkRecordWriter extends AbstractBulkRecordWriter<Object, List<B
         schema = CqlBulkOutputFormat.getColumnFamilySchema(conf, columnFamily);
         insertStatement = CqlBulkOutputFormat.getColumnFamilyInsertStatement(conf, columnFamily);
         outputDir = getColumnFamilyDirectory();
+        deleteSrc = CqlBulkOutputFormat.getDeleteSourceOnSuccess(conf);
     }
 
     
@@ -107,7 +112,14 @@ public class CqlBulkRecordWriter extends AbstractBulkRecordWriter<Object, List<B
                 
                 externalClient.addKnownCfs(keyspace, schema);
 
-                this.loader = new SSTableLoader(outputDir, externalClient, new BulkRecordWriter.NullOutputHandler());
+                this.loader = new SSTableLoader(outputDir, externalClient, new BulkRecordWriter.NullOutputHandler()) {
+                    @Override
+                    public void onSuccess(StreamState finalState)
+                    {
+                        if (deleteSrc)
+                            FileUtils.deleteRecursive(outputDir);
+                    }
+                };
             }
         }
         catch (Exception e)
@@ -150,7 +162,7 @@ public class CqlBulkRecordWriter extends AbstractBulkRecordWriter<Object, List<B
     
     private File getColumnFamilyDirectory() throws IOException
     {
-        File dir = new File(String.format("%s%s%s%s%s", getOutputLocation(), File.separator, keyspace, File.separator, columnFamily));
+        File dir = new File(String.format("%s%s%s%s%s-%s", getOutputLocation(), File.separator, keyspace, File.separator, columnFamily, UUID.randomUUID().toString()));
         
         if (!dir.exists() && !dir.mkdirs())
         {
