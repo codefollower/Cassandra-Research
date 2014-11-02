@@ -1,99 +1,36 @@
-Executive summary
------------------
+Cassandra-Research
+==================
 
-Cassandra is a partitioned row store.  Rows are organized into tables with a required primary key.
+Cassandra数据库源代码学习研究(包括代码注释、文档、用于代码分析的测试用例)
 
-http://wiki.apache.org/cassandra/Partitioners[Partitioning] means that Cassandra can distribute your data across multiple machines in an application-transparent matter.  Cassandra will automatically repartition as machines are added and removed from the cluster.
 
-http://wiki.apache.org/cassandra/DataModel[Row store] means that like relational databases, Cassandra organizes data by rows and columns.  The Cassandra Query Language (CQL) is a close relative of SQL.
+## 使用的Cassandra版本
 
-For more information, see http://cassandra.apache.org/[the Apache Cassandra web site].
+保持与官方的[trunk](https://github.com/apache/cassandra)版本同步
 
-Requirements
-------------
-. Java >= 1.7 (OpenJDK and Oracle JVMS have been tested)
-. Python 2.7 (for cqlsh)
 
-Getting started
----------------
+## 构建与运行环境
 
-This short guide will walk you through getting a basic one node cluster up
-and running, and demonstrate some simple reads and writes.
+需要JDK7以及[Apache Ant™](http://ant.apache.org/)
 
-First, we'll unpack our archive:
 
-  $ tar -zxvf apache-cassandra-$VERSION.tar.gz
-  $ cd apache-cassandra-$VERSION
+## 生成Eclipse工程
 
-and create the log and data directories.  These correspond to the defaults from conf/ and may be adjusted to suit your own environment:
+* 生成Cassandra Eclipse工程
 
-  $ sudo mkdir -p /var/log/cassandra
-  $ sudo chown -R `whoami` /var/log/cassandra
-  $ sudo mkdir -p /var/lib/cassandra
-  $ sudo chown -R `whoami` /var/lib/cassandra
+  ant generate-eclipse-files
 
-Finally, we start the server.  Running the startup script with the -f argument will cause
-Cassandra to remain in the foreground and log to standard out; it can be stopped with ctrl-C.
+* 在eclipse中导入
 
-  $ bin/cassandra -f
+  File->Import->General->Existing Projects into Workspace
 
-****
-Note for Windows users: to install Cassandra as a service, download
-http://commons.apache.org/daemon/procrun.html[Procrun], set the
-PRUNSRV environment variable to the full path of prunsrv (e.g.,
-C:\procrun\prunsrv.exe), and run "bin\cassandra.bat install".
-Similarly, "uninstall" will remove the service.
-****
 
-Now let's try to read and write some data using the Cassandra Query Language:
+## 运行Cassandra Server
 
-  $ bin/cqlsh
+在eclipse中直接运行my.test.start.CassandraDaemonStart
 
-The command line client is interactive so if everything worked you should
-be sitting in front of a prompt:
 
-----
-Connected to Test Cluster at localhost:9160.
-[cqlsh 2.2.0 | Cassandra 1.2.0 | CQL spec 3.0.0 | Thrift protocol 19.35.0]
-Use HELP for help.
-cqlsh> 
-----
+## 运行Client端例子
 
-As the banner says, you can use 'help;' or '?' to see what CQL has to
-offer, and 'quit;' or 'exit;' when you've had enough fun. But lets try
-something slightly more interesting:
+[请参考这里](https://github.com/codefollower/Cassandra-Java-Driver-Research)
 
-----
-cqlsh> CREATE SCHEMA schema1 
-       WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
-cqlsh> USE schema1;
-cqlsh:Schema1> CREATE TABLE users (
-                 user_id varchar PRIMARY KEY,
-                 first varchar,
-                 last varchar,
-                 age int
-               );
-cqlsh:Schema1> INSERT INTO users (user_id, first, last, age) 
-               VALUES ('jsmith', 'John', 'Smith', 42);
-cqlsh:Schema1> SELECT * FROM users;
- user_id | age | first | last
----------+-----+-------+-------
-  jsmith |  42 |  john | smith
- cqlsh:Schema1> 
-----
-
-If your session looks similar to what's above, congrats, your single node
-cluster is operational! 
-
-For more on what commands are supported by CQL, see
-https://github.com/apache/cassandra/blob/trunk/doc/cql3/CQL.textile[the CQL reference].  A
-reasonable way to think of it is as, "SQL minus joins and subqueries, plus collections."
-
-Wondering where to go from here? 
-
-  * Getting started: http://wiki.apache.org/cassandra/GettingStarted
-  * Join us in #cassandra on irc.freenode.net and ask questions
-  * Subscribe to the Users mailing list by sending a mail to
-    user-subscribe@cassandra.apache.org
-  * Planet Cassandra aggregates Cassandra articles and news:
-    http://planetcassandra.org/
