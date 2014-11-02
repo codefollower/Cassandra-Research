@@ -17,10 +17,14 @@
  */
 package org.apache.cassandra.io.util;
 
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.utils.FastByteOperations;
+import org.apache.cassandra.utils.memory.MemoryUtil;
 import sun.misc.Unsafe;
+import sun.nio.ch.DirectBuffer;
 
 /**
  * An off-heap region of memory that must be manually free'd when no longer needed.
@@ -157,6 +161,24 @@ public class Memory
         }
     }
 
+    public void setBytes(long memoryOffset, ByteBuffer buffer)
+    {
+        if (buffer == null)
+            throw new NullPointerException();
+        else if (buffer.remaining() == 0)
+            return;
+        checkPosition(memoryOffset + buffer.remaining());
+        if (buffer.hasArray())
+        {
+            setBytes(memoryOffset, buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining());
+        }
+        else if (buffer instanceof DirectBuffer)
+        {
+            unsafe.copyMemory(((DirectBuffer) buffer).address() + buffer.position(), peer + memoryOffset, buffer.remaining());
+        }
+        else
+            throw new IllegalStateException();
+    }
     /**
      * Transfers count bytes from buffer to Memory
      *
@@ -266,13 +288,25 @@ public class Memory
         long end = memoryOffset + count;
         checkPosition(end - 1);
 
-        unsafe.copyMemory(null, peer + memoryOffset, buffer, BYTE_ARRAY_BASE_OFFSET + bufferOffset, count);
+        FastByteOperations.UnsafeOperations.copy(null, peer + memoryOffset, buffer, bufferOffset, count);
     }
 
     private void checkPosition(long offset)
     {
         assert peer != 0 : "Memory was freed";
         assert offset >= 0 && offset < size : "Illegal offset: " + offset + ", size: " + size;
+    }
+
+    public void put(long trgOffset, Memory memory, long srcOffset, long size)
+    {
+        unsafe.copyMemory(memory.peer + srcOffset, peer + trgOffset, size);
+    }
+
+    public Memory copy(long newSize)
+    {
+        Memory copy = Memory.allocate(newSize);
+        copy.put(0, this, 0, Math.min(size(), newSize));
+        return copy;
     }
 
     public void free()
@@ -300,5 +334,21 @@ public class Memory
             return true;
         return false;
     }
-}
 
+    public ByteBuffer[] asByteBuffers()
+    {
+        if (size() == 0)
+            return new ByteBuffer[0];
+
+        ByteBuffer[] result = new ByteBuffer[(int) (size() / Integer.MAX_VALUE) + 1];
+        long offset = 0;
+        int size = (int) (size() / result.length);
+        for (int i = 0 ; i < result.length - 1 ; i++)
+        {
+            result[i] = MemoryUtil.getByteBuffer(peer + offset, size);
+            offset += size;
+        }
+        result[result.length - 1] = MemoryUtil.getByteBuffer(peer + offset, (int) (size() - offset));
+        return result;
+    }
+}

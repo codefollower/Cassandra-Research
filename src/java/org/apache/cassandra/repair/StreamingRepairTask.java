@@ -47,15 +47,6 @@ public class StreamingRepairTask implements Runnable, StreamEventHandler
         this.request = request;
     }
 
-    /**
-     * Returns true if the task if the task can be executed locally, false if
-     * it has to be forwarded.
-     */
-    public boolean isLocalTask()
-    {
-        return request.initiator.equals(request.src);
-    }
-
     public void run()
     {
         if (request.src.equals(FBUtilities.getBroadcastAddress()))
@@ -71,7 +62,7 @@ public class StreamingRepairTask implements Runnable, StreamEventHandler
             repairedAt = ActiveRepairService.instance.getParentRepairSession(desc.parentSessionId).repairedAt;
 
         logger.info(String.format("[streaming task #%s] Performing streaming repair of %d ranges with %s", desc.sessionId, request.ranges.size(), request.dst));
-        StreamResultFuture op = new StreamPlan("Repair", repairedAt)
+        StreamResultFuture op = new StreamPlan("Repair", repairedAt, 1)
                                     .flushBeforeTransfer(true)
                                     // request ranges from the remote node
                                     .requestRanges(request.dst, desc.keyspace, request.ranges, desc.columnFamily)

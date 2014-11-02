@@ -30,7 +30,6 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.RateLimiter;
@@ -121,7 +120,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
      * Returns a mutation representing a Hint to be sent to <code>targetId</code>
      * as soon as it becomes available again.
      */
-    public Mutation hintFor(Mutation mutation, int ttl, UUID targetId)
+    public Mutation hintFor(Mutation mutation, long now, int ttl, UUID targetId)
     {
         assert ttl > 0;
 
@@ -137,7 +136,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         CellName name = CFMetaData.HintsCf.comparator.makeCellName(hintId, MessagingService.current_version);
         ByteBuffer value = ByteBuffer.wrap(FBUtilities.serialize(mutation, Mutation.serializer, MessagingService.current_version));
         ColumnFamily cf = ArrayBackedSortedColumns.factory.create(Schema.instance.getCFMetaData(Keyspace.SYSTEM_KS, SystemKeyspace.HINTS_CF));
-        cf.addColumn(name, value, System.currentTimeMillis(), ttl);
+        cf.addColumn(name, value, now, ttl);
         return new Mutation(Keyspace.SYSTEM_KS, UUIDType.instance.decompose(targetId), cf);
     }
 
@@ -256,7 +255,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
     {
         hintStore.forceBlockingFlush();
         ArrayList<Descriptor> descriptors = new ArrayList<Descriptor>();
-        for (SSTable sstable : hintStore.getSSTables())
+        for (SSTable sstable : hintStore.getDataTracker().getUncompactingSSTables())
             descriptors.add(sstable.descriptor);
         return CompactionManager.instance.submitUserDefined(hintStore, descriptors, (int) (System.currentTimeMillis() / 1000));
     }
@@ -265,7 +264,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
     {
         // done if no hints found or the start column (same as last column processed in previous iteration) is the only one
         return hintColumnFamily == null
-               || (hintColumnFamily.getSortedColumns().size() == 1 && hintColumnFamily.getColumn((CellName)startColumn) != null);
+               || (!startColumn.isEmpty() && hintColumnFamily.getSortedColumns().size() == 1 && hintColumnFamily.getColumn((CellName)startColumn) != null);
     }
 
     private int waitForSchemaAgreement(InetAddress endpoint) throws TimeoutException
@@ -389,7 +388,6 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
             }
 
             List<WriteResponseHandler> responseHandlers = Lists.newArrayList();
-            Map<UUID, Long> truncationTimesCache = new HashMap<UUID, Long>();
             for (final Cell hint : hintsPage)
             {
                 // check if hints delivery has been paused during the process
@@ -404,7 +402,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                 // in which the local deletion timestamp was generated on the last column in the old page, in which
                 // case the hint will have no columns (since it's deleted) but will still be included in the resultset
                 // since (even with gcgs=0) it's still a "relevant" tombstone.
-                if (!hint.isLive(System.currentTimeMillis()))
+                if (!hint.isLive())
                     continue;
 
                 startColumn = hint.name();
@@ -418,8 +416,8 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                 }
                 catch (UnknownColumnFamilyException e)
                 {
-                    logger.debug("Skipping delivery of hint for deleted columnfamily", e);
-                    deleteHint(hostIdBytes, hint.name(), hint.maxTimestamp());
+                    logger.debug("Skipping delivery of hint for deleted table", e);
+                    deleteHint(hostIdBytes, hint.name(), hint.timestamp());
                     continue;
                 }
                 catch (IOException e)
@@ -427,27 +425,18 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                     throw new AssertionError(e);
                 }
 
-                truncationTimesCache.clear();
-                for (UUID cfId : ImmutableSet.copyOf((mutation.getColumnFamilyIds())))
+                for (UUID cfId : mutation.getColumnFamilyIds())
                 {
-                    Long truncatedAt = truncationTimesCache.get(cfId);
-                    if (truncatedAt == null)
+                    if (hint.timestamp() <= SystemKeyspace.getTruncatedAt(cfId))
                     {
-                        ColumnFamilyStore cfs = Keyspace.open(mutation.getKeyspaceName()).getColumnFamilyStore(cfId);
-                        truncatedAt = cfs.getTruncationTime();
-                        truncationTimesCache.put(cfId, truncatedAt);
-                    }
-
-                    if (hint.maxTimestamp() < truncatedAt)
-                    {
-                        logger.debug("Skipping delivery of hint for truncated columnfamily {}", cfId);
+                        logger.debug("Skipping delivery of hint for truncated table {}", cfId);
                         mutation = mutation.without(cfId);
                     }
                 }
 
                 if (mutation.isEmpty())
                 {
-                    deleteHint(hostIdBytes, hint.name(), hint.maxTimestamp());
+                    deleteHint(hostIdBytes, hint.name(), hint.timestamp());
                     continue;
                 }
 
@@ -458,11 +447,11 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                     public void run()
                     {
                         rowsReplayed.incrementAndGet();
-                        deleteHint(hostIdBytes, hint.name(), hint.maxTimestamp());
+                        deleteHint(hostIdBytes, hint.name(), hint.timestamp());
                     }
                 };
-                WriteResponseHandler responseHandler = new WriteResponseHandler(endpoint, WriteType.UNLOGGED_BATCH, callback);
-                MessagingService.instance().sendRR(message, endpoint, responseHandler);
+                WriteResponseHandler responseHandler = new WriteResponseHandler(endpoint, WriteType.SIMPLE, callback);
+                MessagingService.instance().sendRR(message, endpoint, responseHandler, false);
                 responseHandlers.add(responseHandler);
             }
 
@@ -493,20 +482,19 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         }
     }
 
+    // read less columns (mutations) per page if they are very large
     private int calculatePageSize()
     {
-        // read less columns (mutations) per page if they are very large
         int meanColumnCount = hintStore.getMeanColumns();
-        if (meanColumnCount > 0)
-        {
-            int averageColumnSize = (int) (hintStore.getMeanRowSize() / meanColumnCount);
-            // page size of 1 does not allow actual paging b/c of >= behavior on startColumn
-            return Math.max(2, Math.min(PAGE_SIZE, DatabaseDescriptor.getInMemoryCompactionLimit() / averageColumnSize));
-        }
-        else
-        {
+        if (meanColumnCount <= 0)
             return PAGE_SIZE;
-        }
+
+        int averageColumnSize = (int) (hintStore.getMeanRowSize() / meanColumnCount);
+        if (averageColumnSize <= 0)
+            return PAGE_SIZE;
+
+        // page size of 1 does not allow actual paging b/c of >= behavior on startColumn
+        return Math.max(2, Math.min(PAGE_SIZE, 4 * 1024 * 1024 / averageColumnSize));
     }
 
     /**
@@ -525,7 +513,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         List<Row> rows = hintStore.getRangeSlice(range, null, filter, Integer.MAX_VALUE, System.currentTimeMillis());
         for (Row row : rows)
         {
-            UUID hostId = UUIDGen.getUUID(row.key.key);
+            UUID hostId = UUIDGen.getUUID(row.key.getKey());
             InetAddress target = StorageService.instance.getTokenMetadata().getEndpointForHostId(hostId);
             // token may have since been removed (in which case we have just read back a tombstone)
             if (target != null)
@@ -584,7 +572,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         for (Row row : getHintsSlice(1))
         {
             if (row.cf != null) //ignore removed rows
-                result.addFirst(tokenFactory.toString(row.key.token));
+                result.addFirst(tokenFactory.toString(row.key.getToken()));
         }
         return result;
     }

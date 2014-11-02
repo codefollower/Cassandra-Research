@@ -18,7 +18,6 @@
 package org.apache.cassandra.service;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
@@ -30,6 +29,8 @@ import java.util.concurrent.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
 
+import org.apache.cassandra.config.UFMetaData;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +46,7 @@ import org.apache.cassandra.exceptions.AlreadyExistsException;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FBUtilities;
@@ -89,11 +91,15 @@ public class MigrationManager
     private static void maybeScheduleSchemaPull(final UUID theirVersion, final InetAddress endpoint)
     {
         if ((Schema.instance.getVersion() != null && Schema.instance.getVersion().equals(theirVersion)) || !shouldPullSchemaFrom(endpoint))
+        {
+            logger.debug("Not pulling schema because versions match or shouldPullSchemaFrom returned false");
             return;
+        }
 
         if (Schema.emptyVersion.equals(Schema.instance.getVersion()) || runtimeMXBean.getUptime() < MIGRATION_DELAY_IN_MS)
         {
             // If we think we may be bootstrapping or have recently started, submit MigrationTask immediately
+            logger.debug("Submitting migration task for {}", endpoint);
             submitMigrationTask(endpoint);
         }
         else
@@ -107,12 +113,18 @@ public class MigrationManager
                     // grab the latest version of the schema since it may have changed again since the initial scheduling
                     EndpointState epState = Gossiper.instance.getEndpointStateForEndpoint(endpoint);
                     if (epState == null)
+                    {
+                        logger.debug("epState vanished for {}, not submitting migration task", endpoint);
                         return;
+                    }
                     VersionedValue value = epState.getApplicationState(ApplicationState.SCHEMA);
                     UUID currentVersion = UUID.fromString(value.value);
                     if (Schema.instance.getVersion().equals(currentVersion))
+                    {
+                        logger.debug("not submitting migration task for {} because our versions match", endpoint);
                         return;
-
+                    }
+                    logger.debug("submitting migration task for {}", endpoint);
                     submitMigrationTask(endpoint);
                 }
             };
@@ -157,6 +169,30 @@ public class MigrationManager
             listener.onCreateColumnFamily(cfm.ksName, cfm.cfName);
     }
 
+    public void notifyCreateUserType(UserType ut)
+    {
+        for (IMigrationListener listener : listeners)
+            listener.onCreateUserType(ut.keyspace, ut.getNameAsString());
+    }
+
+    public void notifyCreateFunction(UFMetaData uf)
+    {
+        for (IMigrationListener listener : listeners)
+            listener.onCreateFunction(uf.namespace, uf.functionName);
+    }
+
+    public void notifyUpdateFunction(UFMetaData uf)
+    {
+        for (IMigrationListener listener : listeners)
+            listener.onUpdateFunction(uf.namespace, uf.functionName);
+    }
+
+    public void notifyDropFunction(UFMetaData uf)
+    {
+        for (IMigrationListener listener : listeners)
+            listener.onDropFunction(uf.namespace, uf.functionName);
+    }
+
     public void notifyUpdateKeyspace(KSMetaData ksm)
     {
         for (IMigrationListener listener : listeners)
@@ -167,6 +203,12 @@ public class MigrationManager
     {
         for (IMigrationListener listener : listeners)
             listener.onUpdateColumnFamily(cfm.ksName, cfm.cfName);
+    }
+
+    public void notifyUpdateUserType(UserType ut)
+    {
+        for (IMigrationListener listener : listeners)
+            listener.onUpdateUserType(ut.keyspace, ut.getNameAsString());
     }
 
     public void notifyDropKeyspace(KSMetaData ksm)
@@ -181,13 +223,29 @@ public class MigrationManager
             listener.onDropColumnFamily(cfm.ksName, cfm.cfName);
     }
 
-    //通告有新的Keyspace了，会更新本地和其它节点
-    public static void announceNewKeyspace(KSMetaData ksm) throws ConfigurationException
+//<<<<<<< HEAD
+//    //通告有新的Keyspace了，会更新本地和其它节点
+//    public static void announceNewKeyspace(KSMetaData ksm) throws ConfigurationException
+//    {
+//        announceNewKeyspace(ksm, FBUtilities.timestampMicros()); //获得当前时间，按微妙算
+//=======
+    public void notifyDropUserType(UserType ut)
     {
-        announceNewKeyspace(ksm, FBUtilities.timestampMicros()); //获得当前时间，按微妙算
+        for (IMigrationListener listener : listeners)
+            listener.onDropUserType(ut.keyspace, ut.getNameAsString());
     }
 
-    public static void announceNewKeyspace(KSMetaData ksm, long timestamp) throws ConfigurationException
+    public static void announceNewKeyspace(KSMetaData ksm) throws ConfigurationException
+    {
+        announceNewKeyspace(ksm, false);
+    }
+
+    public static void announceNewKeyspace(KSMetaData ksm, boolean announceLocally) throws ConfigurationException
+    {
+        announceNewKeyspace(ksm, FBUtilities.timestampMicros(), announceLocally);
+    }
+
+    public static void announceNewKeyspace(KSMetaData ksm, long timestamp, boolean announceLocally) throws ConfigurationException
     {
         ksm.validate(); //检查AbstractReplicationStrategy和CFMetaData
 
@@ -195,29 +253,44 @@ public class MigrationManager
             throw new AlreadyExistsException(ksm.name);
 
         logger.info(String.format("Create new Keyspace: %s", ksm));
-        announce(ksm.toSchema(timestamp));
+        announce(ksm.toSchema(timestamp), announceLocally);
     }
 
     public static void announceNewColumnFamily(CFMetaData cfm) throws ConfigurationException
+    {
+        announceNewColumnFamily(cfm, false);
+    }
+
+    public static void announceNewColumnFamily(CFMetaData cfm, boolean announceLocally) throws ConfigurationException
     {
         cfm.validate();
 
         KSMetaData ksm = Schema.instance.getKSMetaData(cfm.ksName);
         if (ksm == null)
-            throw new ConfigurationException(String.format("Cannot add column family '%s' to non existing keyspace '%s'.", cfm.cfName, cfm.ksName));
+            throw new ConfigurationException(String.format("Cannot add table '%s' to non existing keyspace '%s'.", cfm.cfName, cfm.ksName));
         else if (ksm.cfMetaData().containsKey(cfm.cfName))
             throw new AlreadyExistsException(cfm.ksName, cfm.cfName);
 
-        logger.info(String.format("Create new ColumnFamily: %s", cfm));
-        announce(addSerializedKeyspace(cfm.toSchema(FBUtilities.timestampMicros()), cfm.ksName));
+        logger.info(String.format("Create new table: %s", cfm));
+        announce(addSerializedKeyspace(cfm.toSchema(FBUtilities.timestampMicros()), cfm.ksName), announceLocally);
     }
 
     public static void announceNewType(UserType newType)
     {
-        announce(UTMetaData.toSchema(newType, FBUtilities.timestampMicros()));
+        announceNewType(newType, false);
+    }
+
+    public static void announceNewType(UserType newType, boolean announceLocally)
+    {
+        announce(addSerializedKeyspace(UTMetaData.toSchema(newType, FBUtilities.timestampMicros()), newType.keyspace), announceLocally);
     }
 
     public static void announceKeyspaceUpdate(KSMetaData ksm) throws ConfigurationException
+    {
+        announceKeyspaceUpdate(ksm, false);
+    }
+
+    public static void announceKeyspaceUpdate(KSMetaData ksm, boolean announceLocally) throws ConfigurationException
     {
         ksm.validate();
 
@@ -226,67 +299,127 @@ public class MigrationManager
             throw new ConfigurationException(String.format("Cannot update non existing keyspace '%s'.", ksm.name));
 
         logger.info(String.format("Update Keyspace '%s' From %s To %s", ksm.name, oldKsm, ksm));
-        announce(oldKsm.toSchemaUpdate(ksm, FBUtilities.timestampMicros()));
+        announce(oldKsm.toSchemaUpdate(ksm, FBUtilities.timestampMicros()), announceLocally);
     }
 
     public static void announceColumnFamilyUpdate(CFMetaData cfm, boolean fromThrift) throws ConfigurationException
+    {
+        announceColumnFamilyUpdate(cfm, fromThrift, false);
+    }
+
+    public static void announceColumnFamilyUpdate(CFMetaData cfm, boolean fromThrift, boolean announceLocally) throws ConfigurationException
     {
         cfm.validate();
 
         CFMetaData oldCfm = Schema.instance.getCFMetaData(cfm.ksName, cfm.cfName);
         if (oldCfm == null)
-            throw new ConfigurationException(String.format("Cannot update non existing column family '%s' in keyspace '%s'.", cfm.cfName, cfm.ksName));
+            throw new ConfigurationException(String.format("Cannot update non existing table '%s' in keyspace '%s'.", cfm.cfName, cfm.ksName));
 
         oldCfm.validateCompatility(cfm);
 
-        logger.info(String.format("Update ColumnFamily '%s/%s' From %s To %s", cfm.ksName, cfm.cfName, oldCfm, cfm));
-        announce(addSerializedKeyspace(oldCfm.toSchemaUpdate(cfm, FBUtilities.timestampMicros(), fromThrift), cfm.ksName));
+        logger.info(String.format("Update table '%s/%s' From %s To %s", cfm.ksName, cfm.cfName, oldCfm, cfm));
+        announce(addSerializedKeyspace(oldCfm.toSchemaUpdate(cfm, FBUtilities.timestampMicros(), fromThrift), cfm.ksName), announceLocally);
     }
 
     public static void announceTypeUpdate(UserType updatedType)
     {
-        announceNewType(updatedType);
+        announceTypeUpdate(updatedType, false);
+    }
+
+    public static void announceTypeUpdate(UserType updatedType, boolean announceLocally)
+    {
+        announceNewType(updatedType, announceLocally);
     }
 
     public static void announceKeyspaceDrop(String ksName) throws ConfigurationException
+    {
+        announceKeyspaceDrop(ksName, false);
+    }
+
+    public static void announceKeyspaceDrop(String ksName, boolean announceLocally) throws ConfigurationException
     {
         KSMetaData oldKsm = Schema.instance.getKSMetaData(ksName);
         if (oldKsm == null)
             throw new ConfigurationException(String.format("Cannot drop non existing keyspace '%s'.", ksName));
 
         logger.info(String.format("Drop Keyspace '%s'", oldKsm.name));
-        announce(oldKsm.dropFromSchema(FBUtilities.timestampMicros()));
+        announce(oldKsm.dropFromSchema(FBUtilities.timestampMicros()), announceLocally);
     }
 
     public static void announceColumnFamilyDrop(String ksName, String cfName) throws ConfigurationException
     {
+        announceColumnFamilyDrop(ksName, cfName, false);
+    }
+
+    public static void announceColumnFamilyDrop(String ksName, String cfName, boolean announceLocally) throws ConfigurationException
+    {
         CFMetaData oldCfm = Schema.instance.getCFMetaData(ksName, cfName);
         if (oldCfm == null)
-            throw new ConfigurationException(String.format("Cannot drop non existing column family '%s' in keyspace '%s'.", cfName, ksName));
+            throw new ConfigurationException(String.format("Cannot drop non existing table '%s' in keyspace '%s'.", cfName, ksName));
 
-        logger.info(String.format("Drop ColumnFamily '%s/%s'", oldCfm.ksName, oldCfm.cfName));
-        announce(addSerializedKeyspace(oldCfm.dropFromSchema(FBUtilities.timestampMicros()), ksName));
+        logger.info(String.format("Drop table '%s/%s'", oldCfm.ksName, oldCfm.cfName));
+        announce(addSerializedKeyspace(oldCfm.dropFromSchema(FBUtilities.timestampMicros()), ksName), announceLocally);
     }
 
     // Include the serialized keyspace for when a target node missed the CREATE KEYSPACE migration (see #5631).
     private static Mutation addSerializedKeyspace(Mutation migration, String ksName)
     {
-        migration.add(SystemKeyspace.readSchemaRow(ksName).cf);
+        migration.add(SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_KEYSPACES_CF, ksName).cf);
         return migration;
     }
 
     public static void announceTypeDrop(UserType droppedType)
     {
-        announce(UTMetaData.dropFromSchema(droppedType, FBUtilities.timestampMicros()));
+        announceTypeDrop(droppedType, false);
+    }
+
+    public static void announceTypeDrop(UserType droppedType, boolean announceLocally)
+    {
+        announce(addSerializedKeyspace(UTMetaData.dropFromSchema(droppedType, FBUtilities.timestampMicros()), droppedType.keyspace), announceLocally);
+    }
+
+    public static void announceFunctionDrop(String namespace, String functionName, boolean announceLocally) throws InvalidRequestException
+    {
+        Mutation mutation = UFMetaData.dropFunction(FBUtilities.timestampMicros(), namespace, functionName);
+        if (mutation == null)
+            throw new InvalidRequestException(String.format("Cannot drop non existing function '%s'.", functionName));
+
+        logger.info(String.format("Drop Function '%s::%s'", namespace, functionName));
+        announce(mutation, announceLocally);
+    }
+
+    public static void announceNewFunction(UFMetaData function, boolean announceLocally)
+        throws ConfigurationException
+    {
+        Mutation mutation = UFMetaData.createOrReplaceFunction(FBUtilities.timestampMicros(), function);
+        if (mutation == null)
+            throw new ConfigurationException(String.format("Function '%s' already exists.", function.qualifiedName));
+
+        logger.info(String.format("Create Function '%s'", function));
+        announce(mutation, announceLocally);
     }
 
     /**
      * actively announce a new version to active hosts via rpc
      * @param schema The schema mutation to be applied
      */
-    private static void announce(Mutation schema)
+    private static void announce(Mutation schema, boolean announceLocally)
     {
-        FBUtilities.waitOnFuture(announce(Collections.singletonList(schema)));
+        if (announceLocally)
+        {
+            try
+            {
+                DefsTables.mergeSchemaInternal(Collections.singletonList(schema), false);
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+        else
+        {
+            FBUtilities.waitOnFuture(announce(Collections.singletonList(schema)));
+        }
     }
 
     private static void pushSchemaMutation(InetAddress endpoint, Collection<Mutation> schema)
@@ -375,7 +508,7 @@ public class MigrationManager
     {
         public static MigrationsSerializer instance = new MigrationsSerializer();
 
-        public void serialize(Collection<Mutation> schema, DataOutput out, int version) throws IOException
+        public void serialize(Collection<Mutation> schema, DataOutputPlus out, int version) throws IOException
         {
             out.writeInt(schema.size());
             for (Mutation mutation : schema)

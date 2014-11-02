@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.io.sstable;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
@@ -33,9 +34,8 @@ import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.CounterId;
 import org.apache.cassandra.utils.Pair;
-import org.apache.cassandra.utils.memory.HeapAllocator;
 
-public abstract class AbstractSSTableSimpleWriter
+public abstract class AbstractSSTableSimpleWriter implements Closeable
 {
     protected final File directory;
     protected final CFMetaData metadata;
@@ -84,7 +84,7 @@ public abstract class AbstractSSTableSimpleWriter
         int maxGen = 0;
         for (Descriptor desc : existing)
             maxGen = Math.max(maxGen, desc.generation);
-        return new Descriptor(directory, keyspace, columnFamily, maxGen + 1, true).filenameFor(Component.DATA);
+        return new Descriptor(directory, keyspace, columnFamily, maxGen + 1, Descriptor.Type.TEMP).filenameFor(Component.DATA);
     }
 
     /**
@@ -107,7 +107,7 @@ public abstract class AbstractSSTableSimpleWriter
     public void newSuperColumn(ByteBuffer name)
     {
         if (!columnFamily.metadata().isSuper())
-            throw new IllegalStateException("Cannot add a super column to a standard column family");
+            throw new IllegalStateException("Cannot add a super column to a standard table");
 
         currentSuperColumn = name;
     }
@@ -132,7 +132,7 @@ public abstract class AbstractSSTableSimpleWriter
      */
     public void addColumn(ByteBuffer name, ByteBuffer value, long timestamp)
     {
-        addColumn(new Cell(metadata.comparator.cellFromByteBuffer(name), value, timestamp));
+        addColumn(new BufferCell(metadata.comparator.cellFromByteBuffer(name), value, timestamp));
     }
 
     /**
@@ -147,7 +147,7 @@ public abstract class AbstractSSTableSimpleWriter
      */
     public void addExpiringColumn(ByteBuffer name, ByteBuffer value, long timestamp, int ttl, long expirationTimestampMS)
     {
-        addColumn(new ExpiringCell(metadata.comparator.cellFromByteBuffer(name), value, timestamp, ttl, (int)(expirationTimestampMS / 1000)));
+        addColumn(new BufferExpiringCell(metadata.comparator.cellFromByteBuffer(name), value, timestamp, ttl, (int)(expirationTimestampMS / 1000)));
     }
 
     /**
@@ -157,17 +157,10 @@ public abstract class AbstractSSTableSimpleWriter
      */
     public void addCounterColumn(ByteBuffer name, long value)
     {
-        addColumn(new CounterCell(metadata.comparator.cellFromByteBuffer(name),
-                                  CounterContext.instance().createGlobal(counterid, 1L, value, HeapAllocator.instance),
-                                  System.currentTimeMillis()));
+        addColumn(new BufferCounterCell(metadata.comparator.cellFromByteBuffer(name),
+                                        CounterContext.instance().createGlobal(counterid, 1L, value),
+                                        System.currentTimeMillis()));
     }
-
-    /**
-     * Close this writer.
-     * This method should be called, otherwise the produced sstables are not
-     * guaranteed to be complete (and won't be in practice).
-     */
-    public abstract void close() throws IOException;
 
     /**
      * Package protected for use by AbstractCQLSSTableWriter.

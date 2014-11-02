@@ -25,12 +25,13 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.config.TriggerDefinition;
 import org.apache.cassandra.cql3.CFName;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.thrift.ThriftValidation;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.triggers.TriggerExecutor;
 
 public class CreateTriggerStatement extends SchemaAlteringStatement
@@ -39,17 +40,19 @@ public class CreateTriggerStatement extends SchemaAlteringStatement
 
     private final String triggerName;
     private final String triggerClass;
+    private final boolean ifNotExists;
 
-    public CreateTriggerStatement(CFName name, String triggerName, String clazz)
+    public CreateTriggerStatement(CFName name, String triggerName, String clazz, boolean ifNotExists)
     {
         super(name);
         this.triggerName = triggerName;
         this.triggerClass = clazz;
+        this.ifNotExists = ifNotExists;
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException
     {
-        state.ensureIsSuper("Only superusers are allowed to perfrom CREATE TRIGGER queries");
+        state.ensureIsSuper("Only superusers are allowed to perform CREATE TRIGGER queries");
     }
 
     public void validate(ClientState state) throws RequestValidationException
@@ -65,16 +68,24 @@ public class CreateTriggerStatement extends SchemaAlteringStatement
         }
     }
 
-    public void announceMigration() throws ConfigurationException
+    public boolean announceMigration(boolean isLocalOnly) throws ConfigurationException, InvalidRequestException
     {
-        CFMetaData cfm = Schema.instance.getCFMetaData(keyspace(), columnFamily()).clone();
-        cfm.addTriggerDefinition(TriggerDefinition.create(triggerName, triggerClass));
-        logger.info("Adding trigger with name {} and class {}", triggerName, triggerClass);
-        MigrationManager.announceColumnFamilyUpdate(cfm, false);
+        CFMetaData cfm = Schema.instance.getCFMetaData(keyspace(), columnFamily()).copy();
+
+        TriggerDefinition triggerDefinition = TriggerDefinition.create(triggerName, triggerClass);
+
+        if (!ifNotExists || !cfm.containsTriggerDefinition(triggerDefinition))
+        {
+            cfm.addTriggerDefinition(triggerDefinition);
+            logger.info("Adding trigger with name {} and class {}", triggerName, triggerClass);
+            MigrationManager.announceColumnFamilyUpdate(cfm, false, isLocalOnly);
+            return true;
+        }
+        return false;
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
-        return ResultMessage.SchemaChange.Change.UPDATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TABLE, keyspace(), columnFamily());
     }
 }

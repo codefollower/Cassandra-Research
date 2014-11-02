@@ -28,7 +28,7 @@ import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 
 public abstract class AlterTypeStatement extends SchemaAlteringStatement
 {
@@ -70,12 +70,15 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         return new Renames(name, renames);
     }
 
-    //重合名类型自身，如: ALTER TYPE type1 RENAME TO type2
-    public static AlterTypeStatement typeRename(UTName name, UTName newName)
-    {
-        return new TypeRename(name, newName);
-    }
-
+//<<<<<<< HEAD
+//    //重合名类型自身，如: ALTER TYPE type1 RENAME TO type2
+//    public static AlterTypeStatement typeRename(UTName name, UTName newName)
+//    {
+//        return new TypeRename(name, newName);
+//    }
+//
+//=======
+//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
     {
         state.hasKeyspaceAccess(keyspace(), Permission.ALTER);
@@ -87,9 +90,9 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         // It doesn't really change anything anyway.
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
-        return ResultMessage.SchemaChange.Change.UPDATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TYPE, keyspace(), name.getStringTypeName());
     }
 
     @Override
@@ -98,7 +101,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         return name.getKeyspace();
     }
 
-    public void announceMigration() throws InvalidRequestException, ConfigurationException
+    public boolean announceMigration(boolean isLocalOnly) throws InvalidRequestException, ConfigurationException
     {
         KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         if (ksm == null)
@@ -113,18 +116,18 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
 
         // Now, we need to announce the type update to basically change it for new tables using this type,
         // but we also need to find all existing user types and CF using it and change them.
-        MigrationManager.announceTypeUpdate(updated);
+        MigrationManager.announceTypeUpdate(updated, isLocalOnly);
 
         for (KSMetaData ksm2 : Schema.instance.getKeyspaceDefinitions())
         {
             for (CFMetaData cfm : ksm2.cfMetaData().values())
             {
-                CFMetaData copy = cfm.clone();
+                CFMetaData copy = cfm.copy();
                 boolean modified = false;
                 for (ColumnDefinition def : copy.allColumns())
                     modified |= updateDefinition(copy, def, toUpdate.keyspace, toUpdate.name, updated);
                 if (modified)
-                    MigrationManager.announceColumnFamilyUpdate(copy, false);
+                    MigrationManager.announceColumnFamilyUpdate(copy, false, isLocalOnly);
             }
 
             // Other user types potentially using the updated type
@@ -140,15 +143,16 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
                 }
                 AbstractType<?> upd = updateWith(ut, toUpdate.keyspace, toUpdate.name, updated);
                 if (upd != null)
-                    MigrationManager.announceTypeUpdate((UserType)upd);
+                    MigrationManager.announceTypeUpdate((UserType)upd, isLocalOnly);
             }
         }
+        return true;
     }
 
     private static int getIdxOfField(UserType type, ColumnIdentifier field)
     {
-        for (int i = 0; i < type.types.size(); i++)
-            if (field.bytes.equals(type.columnNames.get(i)))
+        for (int i = 0; i < type.size(); i++)
+            if (field.bytes.equals(type.fieldName(i)))
                 return i;
         return -1;
     }
@@ -192,8 +196,8 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
                 return updated;
 
             // Otherwise, check for nesting
-            List<AbstractType<?>> updatedTypes = updateTypes(ut.types, keyspace, toReplace, updated);
-            return updatedTypes == null ? null : new UserType(ut.keyspace, ut.name, new ArrayList<>(ut.columnNames), updatedTypes);
+            List<AbstractType<?>> updatedTypes = updateTypes(ut.fieldTypes(), keyspace, toReplace, updated);
+            return updatedTypes == null ? null : new UserType(ut.keyspace, ut.name, new ArrayList<>(ut.fieldNames()), updatedTypes);
         }
         else if (type instanceof CompositeType)
         {
@@ -284,12 +288,12 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
             if (getIdxOfField(toUpdate, fieldName) >= 0)
                 throw new InvalidRequestException(String.format("Cannot add new field %s to type %s: a field of the same name already exists", fieldName, name));
 
-            List<ByteBuffer> newNames = new ArrayList<>(toUpdate.columnNames.size() + 1);
-            newNames.addAll(toUpdate.columnNames);
+            List<ByteBuffer> newNames = new ArrayList<>(toUpdate.size() + 1);
+            newNames.addAll(toUpdate.fieldNames());
             newNames.add(fieldName.bytes);
 
-            List<AbstractType<?>> newTypes = new ArrayList<>(toUpdate.types.size() + 1);
-            newTypes.addAll(toUpdate.types);
+            List<AbstractType<?>> newTypes = new ArrayList<>(toUpdate.size() + 1);
+            newTypes.addAll(toUpdate.fieldTypes());
             newTypes.add(type.prepare(keyspace()).getType());
 
             return new UserType(toUpdate.keyspace, toUpdate.name, newNames, newTypes);
@@ -301,12 +305,12 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
             if (idx < 0)
                 throw new InvalidRequestException(String.format("Unknown field %s in type %s", fieldName, name));
 
-            AbstractType<?> previous = toUpdate.types.get(idx);
+            AbstractType<?> previous = toUpdate.fieldType(idx);
             if (!type.prepare(keyspace()).getType().isCompatibleWith(previous))
                 throw new InvalidRequestException(String.format("Type %s is incompatible with previous type %s of field %s in user type %s", type, previous.asCQL3Type(), fieldName, name));
 
-            List<ByteBuffer> newNames = new ArrayList<>(toUpdate.columnNames);
-            List<AbstractType<?>> newTypes = new ArrayList<>(toUpdate.types);
+            List<ByteBuffer> newNames = new ArrayList<>(toUpdate.fieldNames());
+            List<AbstractType<?>> newTypes = new ArrayList<>(toUpdate.fieldTypes());
             newTypes.set(idx, type.prepare(keyspace()).getType());
 
             return new UserType(toUpdate.keyspace, toUpdate.name, newNames, newTypes);
@@ -330,8 +334,8 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
 
         protected UserType makeUpdatedType(UserType toUpdate) throws InvalidRequestException
         {
-            List<ByteBuffer> newNames = new ArrayList<>(toUpdate.columnNames);
-            List<AbstractType<?>> newTypes = new ArrayList<>(toUpdate.types);
+            List<ByteBuffer> newNames = new ArrayList<>(toUpdate.fieldNames());
+            List<AbstractType<?>> newTypes = new ArrayList<>(toUpdate.fieldTypes());
 
             for (Map.Entry<ColumnIdentifier, ColumnIdentifier> entry : renames.entrySet())
             {
@@ -348,41 +352,5 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
             return updated;
         }
 
-    }
-
-    private static class TypeRename extends AlterTypeStatement
-    {
-        private final UTName newName;
-
-        public TypeRename(UTName name, UTName newName)
-        {
-            super(name);
-            this.newName = newName;
-        }
-
-        @Override
-        public void prepareKeyspace(ClientState state) throws InvalidRequestException
-        {
-            super.prepareKeyspace(state);
-
-            if (!newName.hasKeyspace())
-                newName.setKeyspace(state.getKeyspace());
-
-            if (newName.getKeyspace() == null)
-                throw new InvalidRequestException("You need to be logged in a keyspace or use a fully qualified user type name");
-        }
-
-        protected UserType makeUpdatedType(UserType toUpdate) throws InvalidRequestException
-        {
-            KSMetaData ksm = Schema.instance.getKSMetaData(newName.getKeyspace());
-            if (ksm == null)
-                throw new InvalidRequestException("Unknown keyspace " + newName.getKeyspace());
-
-            UserType previous = ksm.userTypes.getType(newName.getUserTypeName());
-            if (previous != null)
-                throw new InvalidRequestException(String.format("Cannot rename user type %s to %s as another type of that name exists", name, newName));
-
-            return new UserType(newName.getKeyspace(), newName.getUserTypeName(), new ArrayList<>(toUpdate.columnNames), new ArrayList<>(toUpdate.types));
-        }
     }
 }

@@ -26,6 +26,7 @@ import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.ISSTableSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.serializers.MarshalException;
 
 //有6个子类:
@@ -46,8 +47,7 @@ public interface OnDiskAtom
      * For a standard column, this is the same as timestamp().
      * For a super column, this is the min/max column timestamp of the sub columns.
      */
-    public long minTimestamp();
-    public long maxTimestamp();
+    public long timestamp();
     public int getLocalDeletionTime(); // for tombstone GC, so int is sufficient granularity
 
     public void validateFields(CFMetaData metadata) throws MarshalException;
@@ -66,7 +66,7 @@ public interface OnDiskAtom
         //org.apache.cassandra.db.Column
         //org.apache.cassandra.db.RangeTombstone
         //所以下面的代码分开处理
-        public void serializeForSSTable(OnDiskAtom atom, DataOutput out) throws IOException
+        public void serializeForSSTable(OnDiskAtom atom, DataOutputPlus out) throws IOException
         {
             if (atom instanceof Cell)
             {

@@ -19,23 +19,18 @@ package org.apache.cassandra.db.filter;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
-import java.util.Iterator;
 import java.util.List;
-import java.util.NavigableMap;
-import java.util.NavigableSet;
 
-import com.google.common.collect.AbstractIterator;
-
-import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.memory.AbstractAllocator;
-import org.apache.cassandra.utils.memory.PoolAllocator;
 
 //代表列名区间
 public class ColumnSlice
@@ -62,7 +57,7 @@ public class ColumnSlice
     //name在[start, finish]这个闭区间或者在[start, 无穷大)这个区间中
     public boolean includes(Comparator<Composite> cmp, Composite name)
     {
-        return cmp.compare(start, name) <= 0 && (finish.isEmpty() || cmp.compare(finish, name) >= 0);
+        return (start.isEmpty() || cmp.compare(start, name) <= 0) && (finish.isEmpty() || cmp.compare(finish, name) >= 0);
     }
 
     //name在finish之后就说明当前的ColumnSlice在name之前
@@ -73,74 +68,101 @@ public class ColumnSlice
 
     public boolean intersects(List<ByteBuffer> minCellNames, List<ByteBuffer> maxCellNames, CellNameType comparator, boolean reversed)
     {
-        assert minCellNames.size() == maxCellNames.size();
-
         Composite sStart = reversed ? finish : start;
         Composite sEnd = reversed ? start : finish;
 
-        for (int i = 0; i < minCellNames.size(); i++)
+        if (compare(sStart, maxCellNames, comparator, true) > 0 || compare(sEnd, minCellNames, comparator, false) < 0)
+            return false;
+
+        // We could safely return true here, but there's a minor optimization: if the first component is restricted
+        // to a single value, we can check that the second component falls within the min/max for that component
+        // (and repeat for all components).
+        for (int i = 0; i < minCellNames.size() && i < maxCellNames.size(); i++)
         {
             AbstractType<?> t = comparator.subtype(i);
-            if (  (i < sEnd.size() && t.compare(sEnd.get(i), minCellNames.get(i)) < 0)
-               || (i < sStart.size() && t.compare(sStart.get(i), maxCellNames.get(i)) > 0))
+            ByteBuffer s = i < sStart.size() ? sStart.get(i) : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+            ByteBuffer f = i < sEnd.size() ? sEnd.get(i) : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+
+            // we already know the first component falls within its min/max range (otherwise we wouldn't get here)
+            if (i > 0 && (i < sEnd.size() && t.compare(f, minCellNames.get(i)) < 0 ||
+                          i < sStart.size() && t.compare(s, maxCellNames.get(i)) > 0))
                 return false;
+
+            // if this component isn't equal in the start and finish, we don't need to check any more
+            if (i >= sStart.size() || i >= sEnd.size() || t.compare(s, f) != 0)
+                break;
+        }
+
+        return true;
+    }
+
+    /** Helper method for intersects() */
+    private int compare(Composite sliceBounds, List<ByteBuffer> sstableBounds, CellNameType comparator, boolean isSliceStart)
+    {
+        for (int i = 0; i < sstableBounds.size(); i++)
+        {
+            if (i >= sliceBounds.size())
+            {
+                // When isSliceStart is true, we're comparing the end of the slice against the min cell name for the sstable,
+                // so the slice is something like [(1, 0), (1, 0)], and the sstable max is something like (1, 0, 1).
+                // We want to return -1 (slice start is smaller than max column name) so that we say the slice intersects.
+                // The opposite is true when dealing with the end slice.  For example, with the same slice and a min
+                // cell name of (1, 0, 1), we want to return 1 (slice end is bigger than min column name).
+                return isSliceStart ? -1 : 1;
+            }
+
+            int comparison = comparator.subtype(i).compare(sliceBounds.get(i), sstableBounds.get(i));
+            if (comparison != 0)
+                return comparison;
+        }
+
+        // the slice bound and sstable bound have been equal in all components so far
+        if (sliceBounds.size() > sstableBounds.size())
+        {
+            // We have the opposite situation from the one described above.  With a slice of [(1, 0), (1, 0)],
+            // and a min/max cell name of (1), we want to say the slice start is smaller than the max and the slice
+            // end is larger than the min.
+            return isSliceStart ? -1 : 1;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Validates that the provided slice array contains only non-overlapped slices valid for a query {@code reversed}
+     * or not on a table using {@code comparator}.
+     */
+    public static boolean validateSlices(ColumnSlice[] slices, CellNameType type, boolean reversed)
+    {
+        Comparator<Composite> comparator = reversed ? type.reverseComparator() : type;
+
+        for (int i = 0; i < slices.length; i++)
+        {
+            Composite start = slices[i].start;
+            Composite finish = slices[i].finish;
+
+            if (start.isEmpty() || finish.isEmpty())
+            {
+                if (start.isEmpty() && i > 0)
+                    return false;
+
+                if (finish.isEmpty())
+                    return i == slices.length - 1;
+            }
+            else
+            {
+                // !finish.isEmpty() is imposed by prior loop
+                if (i > 0 && comparator.compare(slices[i - 1].finish, start) >= 0)
+                    return false;
+
+                if (comparator.compare(start, finish) > 0)
+                    return false;
+            }
         }
         return true;
     }
 
-    @Override
-    public final int hashCode()
-    {
-        int hashCode = 31 + start.hashCode();
-        return 31*hashCode + finish.hashCode();
-    }
-
-    @Override
-    public final boolean equals(Object o)
-    {
-        if(!(o instanceof ColumnSlice))
-            return false;
-        ColumnSlice that = (ColumnSlice)o;
-        return start.equals(that.start) && finish.equals(that.finish);
-    }
-
-    @Override
-    public String toString()
-    {
-        return "[" + ByteBufferUtil.bytesToHex(start.toByteBuffer()) + ", " + ByteBufferUtil.bytesToHex(finish.toByteBuffer()) + "]";
-    }
-
-    public static class Serializer implements IVersionedSerializer<ColumnSlice>
-    {
-        private final CType type;
-
-        public Serializer(CType type)
-        {
-            this.type = type;
-        }
-
-        public void serialize(ColumnSlice cs, DataOutput out, int version) throws IOException
-        {
-            ISerializer<Composite> serializer = type.serializer();
-            serializer.serialize(cs.start, out);
-            serializer.serialize(cs.finish, out);
-        }
-
-        public ColumnSlice deserialize(DataInput in, int version) throws IOException
-        {
-            ISerializer<Composite> serializer = type.serializer();
-            Composite start = serializer.deserialize(in);
-            Composite finish = serializer.deserialize(in);
-            return new ColumnSlice(start, finish);
-        }
-
-        public long serializedSize(ColumnSlice cs, int version)
-        {
-            ISerializer<Composite> serializer = type.serializer();
-            return serializer.serializedSize(cs.start, TypeSizes.NATIVE) + serializer.serializedSize(cs.finish, TypeSizes.NATIVE);
-        }
-    }
-
+//<<<<<<< HEAD
 //    public static class NavigableMapIterator extends AbstractIterator<Cell>
 //    {
 //        private final NavigableMap<CellName, Cell> map;
@@ -190,144 +212,134 @@ public class ColumnSlice
 //            return computeNext();
 //        }
 //    }
-
-    public static class NavigableSetIterator extends AbstractIterator<Cell>
+//
+//    public static class NavigableSetIterator extends AbstractIterator<Cell>
+//=======
+    /**
+     * Takes an array of slices (potentially overlapping and in any order, though each individual slice must have
+     * its start before or equal its end in {@code comparator} orde) and return an equivalent array of non-overlapping
+     * slices in {@code comparator order}.
+     *
+     * @param slices an array of slices. This may be modified by this method.
+     * @param comparator the order in which to sort the slices.
+     * @return the smallest possible array of non-overlapping slices in {@code compator} order. If the original
+     * slices are already non-overlapping and in comparator order, this may or may not return the provided slices
+     * directly.
+     */
+    public static ColumnSlice[] deoverlapSlices(ColumnSlice[] slices, final Comparator<Composite> comparator)
     {
-        private final NavigableSet<Cell> set;
-        private final ColumnSlice[] slices;
+        if (slices.length <= 1)
+            return slices;
 
-        private int idx = 0;
-        private Iterator<Cell> currentSlice;
-
-        public NavigableSetIterator(NavigableSet<Cell> set, ColumnSlice[] slices)
+        Arrays.sort(slices, new Comparator<ColumnSlice>()
         {
-            this.set = set;
-            this.slices = slices;
-        }
-
-        protected Cell computeNext()
-        {
-            if (currentSlice == null)
+            @Override
+            public int compare(ColumnSlice s1, ColumnSlice s2)
             {
-                if (idx >= slices.length)
-                    return endOfData();
-
-                ColumnSlice slice = slices[idx++];
-                // We specialize the case of start == "" and finish = "" because it is slightly more efficient,
-                // but also they have a specific meaning (namely, they always extend to the beginning/end of the range).
-                if (slice.start.isEmpty())
+                if (s1.start.isEmpty() || s2.start.isEmpty())
                 {
-                    if (slice.finish.isEmpty())
-                        currentSlice = set.iterator();
-                    else
-                        currentSlice = set.headSet(fakeCell(slice.finish), true).iterator();
-                }
-                else if (slice.finish.isEmpty())
-                {
-                    currentSlice = set.tailSet(fakeCell(slice.start), true).iterator();
+                    if (s1.start.isEmpty() != s2.start.isEmpty())
+                        return s1.start.isEmpty() ? -1 : 1;
                 }
                 else
                 {
-                    currentSlice = set.subSet(fakeCell(slice.start), true, fakeCell(slice.finish), true).iterator();
+                    int c = comparator.compare(s1.start, s2.start);
+                    if (c != 0)
+                        return c;
                 }
+
+                // For the finish, empty always means greater
+                return s1.finish.isEmpty() || s2.finish.isEmpty()
+                     ? (s1.finish.isEmpty() ? 1 : -1)
+                     : comparator.compare(s1.finish, s2.finish);
+            }
+        });
+
+        List<ColumnSlice> slicesCopy = new ArrayList<>(slices.length);
+
+        ColumnSlice last = slices[0];
+
+        for (int i = 1; i < slices.length; i++)
+        {
+            ColumnSlice s2 = slices[i];
+
+            boolean includesStart = last.includes(comparator, s2.start);
+            boolean includesFinish = s2.finish.isEmpty() ? last.finish.isEmpty() : last.includes(comparator, s2.finish);
+
+            if (includesStart && includesFinish)
+                continue;
+
+            if (!includesStart && !includesFinish)
+            {
+                slicesCopy.add(last);
+                last = s2;
+                continue;
             }
 
-            if (currentSlice.hasNext())
-                return currentSlice.next();
+            if (includesStart)
+            {
+                last = new ColumnSlice(last.start, s2.finish);
+                continue;
+            }
 
-            currentSlice = null;
-            return computeNext();
+            assert !includesFinish;
         }
+
+        slicesCopy.add(last);
+
+        return slicesCopy.toArray(new ColumnSlice[slicesCopy.size()]);
     }
 
-    private static Cell fakeCell(Composite name)
+    @Override
+    public final int hashCode()
     {
-        return new Cell(new FakeCellName(name), ByteBufferUtil.EMPTY_BYTE_BUFFER);
+        int hashCode = 31 + start.hashCode();
+        return 31*hashCode + finish.hashCode();
     }
 
-    /*
-    * We need to take a slice (headMap/tailMap/subMap) of a CellName map
-    * based on a Composite. While CellName and Composite are comparable
-    * and so this should work, I haven't found how to generify it properly.
-    * So instead we create a "fake" CellName object that just encapsulate
-    * the prefix. I might not be a valid CellName with respect to the CF
-    * CellNameType, but this doesn't matter here (since we only care about
-    * comparison). This is arguably a bit of a hack.
-    */
-    private static class FakeCellName extends AbstractComposite implements CellName
+    @Override
+    public final boolean equals(Object o)
     {
-        private final Composite prefix;
+        if(!(o instanceof ColumnSlice))
+            return false;
+        ColumnSlice that = (ColumnSlice)o;
+        return start.equals(that.start) && finish.equals(that.finish);
+    }
 
-        private FakeCellName(Composite prefix)
+    @Override
+    public String toString()
+    {
+        return "[" + ByteBufferUtil.bytesToHex(start.toByteBuffer()) + ", " + ByteBufferUtil.bytesToHex(finish.toByteBuffer()) + "]";
+    }
+
+    public static class Serializer implements IVersionedSerializer<ColumnSlice>
+    {
+        private final CType type;
+
+        public Serializer(CType type)
         {
-            this.prefix = prefix;
+            this.type = type;
         }
 
-        public int size()
+        public void serialize(ColumnSlice cs, DataOutputPlus out, int version) throws IOException
         {
-            return prefix.size();
+            ISerializer<Composite> serializer = type.serializer();
+            serializer.serialize(cs.start, out);
+            serializer.serialize(cs.finish, out);
         }
 
-        public boolean isStatic()
+        public ColumnSlice deserialize(DataInput in, int version) throws IOException
         {
-            return prefix.isStatic();
+            ISerializer<Composite> serializer = type.serializer();
+            Composite start = serializer.deserialize(in);
+            Composite finish = serializer.deserialize(in);
+            return new ColumnSlice(start, finish);
         }
 
-        public ByteBuffer get(int i)
+        public long serializedSize(ColumnSlice cs, int version)
         {
-            return prefix.get(i);
-        }
-
-        public Composite.EOC eoc()
-        {
-            return prefix.eoc();
-        }
-
-        public int clusteringSize()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public ColumnIdentifier cql3ColumnName()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public ByteBuffer collectionElement()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public boolean isCollectionCell()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public boolean isSameCQL3RowAs(CellNameType type, CellName other)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public CellName copy(AbstractAllocator allocator)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public long excessHeapSizeExcludingData()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void free(PoolAllocator<?> allocator)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public long unsharedHeapSize()
-        {
-            throw new UnsupportedOperationException();
+            ISerializer<Composite> serializer = type.serializer();
+            return serializer.serializedSize(cs.start, TypeSizes.NATIVE) + serializer.serializedSize(cs.finish, TypeSizes.NATIVE);
         }
     }
 }

@@ -23,7 +23,7 @@ import java.util.*;
 import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
-import org.apache.cassandra.serializers.TypeSerializer;
+import org.apache.cassandra.serializers.CollectionSerializer;
 import org.apache.cassandra.serializers.MapSerializer;
 import org.apache.cassandra.utils.Pair;
 
@@ -76,9 +76,45 @@ public class MapType<K, V> extends CollectionType<Map<K, V>>
     }
 
     @Override
-    public TypeSerializer<Map<K, V>> getSerializer()
+    public int compare(ByteBuffer o1, ByteBuffer o2)
+    {
+        // Note that this is only used if the collection is inside an UDT
+        if (!o1.hasRemaining() || !o2.hasRemaining())
+            return o1.hasRemaining() ? 1 : o2.hasRemaining() ? -1 : 0;
+
+        ByteBuffer bb1 = o1.duplicate();
+        ByteBuffer bb2 = o2.duplicate();
+
+        int size1 = CollectionSerializer.readCollectionSize(bb1, 3);
+        int size2 = CollectionSerializer.readCollectionSize(bb2, 3);
+
+        for (int i = 0; i < Math.min(size1, size2); i++)
+        {
+            ByteBuffer k1 = CollectionSerializer.readValue(bb1, 3);
+            ByteBuffer k2 = CollectionSerializer.readValue(bb2, 3);
+            int cmp = keys.compare(k1, k2);
+            if (cmp != 0)
+                return cmp;
+
+            ByteBuffer v1 = CollectionSerializer.readValue(bb1, 3);
+            ByteBuffer v2 = CollectionSerializer.readValue(bb2, 3);
+            cmp = values.compare(v1, v2);
+            if (cmp != 0)
+                return cmp;
+        }
+
+        return size1 == size2 ? 0 : (size1 < size2 ? -1 : 1);
+    }
+
+    @Override
+    public MapSerializer<K, V> getSerializer()
     {
         return serializer;
+    }
+
+    public boolean isByteOrderComparable()
+    {
+        return keys.isByteOrderComparable();
     }
 
     protected void appendToStringBuilder(StringBuilder sb)
@@ -86,23 +122,14 @@ public class MapType<K, V> extends CollectionType<Map<K, V>>
         sb.append(getClass().getName()).append(TypeParser.stringifyTypeParameters(Arrays.asList(keys, values)));
     }
 
-    /**
-     * Creates the same output than serialize, but from the internal representation.
-     */
-    public ByteBuffer serialize(List<Cell> cells)
+    public List<ByteBuffer> serializedValues(List<Cell> cells)
     {
-        cells = enforceLimit(cells);
-
-        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>(2 * cells.size());
-        int size = 0;
+        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>(cells.size() * 2);
         for (Cell c : cells)
         {
-            ByteBuffer key = c.name().collectionElement();
-            ByteBuffer value = c.value();
-            bbs.add(key);
-            bbs.add(value);
-            size += 4 + key.remaining() + value.remaining();
+            bbs.add(c.name().collectionElement());
+            bbs.add(c.value());
         }
-        return pack(bbs, cells.size(), size);
+        return bbs;
     }
 }

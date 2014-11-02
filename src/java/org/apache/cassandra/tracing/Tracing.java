@@ -95,15 +95,15 @@ public class Tracing
 
     private static void addColumn(ColumnFamily cf, CellName name, ByteBuffer value)
     {
-        cf.addColumn(new ExpiringCell(name, value, System.currentTimeMillis(), TTL));
+        cf.addColumn(new BufferExpiringCell(name, value, System.currentTimeMillis(), TTL));
     }
 
     public void addParameterColumns(ColumnFamily cf, Map<String, String> rawPayload)
     {
         for (Map.Entry<String, String> entry : rawPayload.entrySet())
         {
-            cf.addColumn(new ExpiringCell(buildName(CFMetaData.TraceSessionsCf, "parameters", entry.getKey()),
-                                          bytes(entry.getValue()), System.currentTimeMillis(), TTL));
+            cf.addColumn(new BufferExpiringCell(buildName(CFMetaData.TraceSessionsCf, "parameters", entry.getKey()),
+                                                bytes(entry.getValue()), System.currentTimeMillis(), TTL));
         }
     }
 
@@ -142,9 +142,10 @@ public class Tracing
         return sessionId;
     }
 
-    public void stopNonLocal(TraceState state)
+    public void doneWithNonLocalSession(TraceState state)
     {
-        sessions.remove(state.sessionId);
+        if (state.releaseReference() == 0)
+            sessions.remove(state.sessionId);
     }
 
     /**
@@ -220,8 +221,9 @@ public class Tracing
                 ColumnFamily cf = ArrayBackedSortedColumns.factory.create(cfMeta);
                 addColumn(cf, buildName(cfMeta, "coordinator"), FBUtilities.getBroadcastAddress());
                 addParameterColumns(cf, parameters);
-                addColumn(cf, buildName(cfMeta, "request"), request);
-                addColumn(cf, buildName(cfMeta, "started_at"), started_at);
+                addColumn(cf, buildName(cfMeta, bytes("request")), request);
+                addColumn(cf, buildName(cfMeta, bytes("started_at")), started_at);
+                addParameterColumns(cf, parameters);
                 mutateWithCatch(new Mutation(TRACE_KS, sessionIdBytes, cf));
             }
         });
@@ -243,7 +245,7 @@ public class Tracing
         assert sessionBytes.length == 16;
         UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
         TraceState ts = sessions.get(sessionId);
-        if (ts != null)
+        if (ts != null && ts.acquireReference())
             return ts;
 
         if (message.verb == MessagingService.Verb.REQUEST_RESPONSE)

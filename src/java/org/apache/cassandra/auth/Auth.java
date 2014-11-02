@@ -42,7 +42,6 @@ import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
 
 //对应system_auth.users表
 //    CREATE TABLE system_auth.users (
@@ -150,19 +149,17 @@ public class Auth
         // the delay is here to give the node some time to see its peers - to reduce
         // "Skipped default superuser setup: some nodes were not ready" log spam.
         // It's the only reason for the delay.
+
         //当前节点是种子节点或者禁用自动引导时如果没有用户就新增一个cassandra默认超级用户
-        if (DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()) || !DatabaseDescriptor.isAutoBootstrap())
-        {
-            StorageService.tasks.schedule(new Runnable()
+        StorageService.tasks.schedule(new Runnable()
+                                      {
+                                          public void run()
                                           {
-                                              public void run()
-                                              {
-                                                  setupDefaultSuperuser(); //插入cassandra这个默认的超级用户
-                                              }
-                                          },
-                                          SUPERUSER_SETUP_DELAY,
-                                          TimeUnit.MILLISECONDS);
-        }
+                                              setupDefaultSuperuser(); //插入cassandra这个默认的超级用户
+                                          }
+                                      },
+                                      SUPERUSER_SETUP_DELAY,
+                                      TimeUnit.MILLISECONDS);
 
         try
         {
@@ -181,7 +178,7 @@ public class Auth
         if (username.equals(DEFAULT_SUPERUSER_NAME))
             return ConsistencyLevel.QUORUM;
         else
-            return ConsistencyLevel.ONE;
+            return ConsistencyLevel.LOCAL_ONE;
     }
 
     private static void setupAuthKeyspace()
@@ -191,7 +188,7 @@ public class Auth
             try
             {
                 KSMetaData ksm = KSMetaData.newKeyspace(AUTH_KS, SimpleStrategy.class.getName(), ImmutableMap.of("replication_factor", "1"), true);
-                MigrationManager.announceNewKeyspace(ksm, 0);
+                MigrationManager.announceNewKeyspace(ksm, 0, false);
             }
             catch (Exception e)
             {
@@ -215,7 +212,7 @@ public class Auth
                 CFStatement parsed = (CFStatement)QueryProcessor.parseStatement(cql);
                 parsed.prepareKeyspace(AUTH_KS);
                 CreateTableStatement statement = (CreateTableStatement) parsed.prepare().statement;
-                CFMetaData cfm = statement.getCFMetaData().clone(CFMetaData.generateLegacyCfId(AUTH_KS, name));
+                CFMetaData cfm = statement.getCFMetaData().copy(CFMetaData.generateLegacyCfId(AUTH_KS, name));
                 assert cfm.cfName.equals(name);
                 MigrationManager.announceNewColumnFamily(cfm);
             }
@@ -238,7 +235,7 @@ public class Auth
                                                      USERS_CF,
                                                      DEFAULT_SUPERUSER_NAME,
                                                      true),
-                                       ConsistencyLevel.QUORUM);
+                                       ConsistencyLevel.ONE);
                 logger.info("Created default superuser '{}'", DEFAULT_SUPERUSER_NAME);
             }
         }
@@ -253,7 +250,8 @@ public class Auth
         // Try looking up the 'cassandra' default super user first, to avoid the range query if possible.
         String defaultSUQuery = String.format("SELECT * FROM %s.%s WHERE name = '%s'", AUTH_KS, USERS_CF, DEFAULT_SUPERUSER_NAME);
         String allUsersQuery = String.format("SELECT * FROM %s.%s LIMIT 1", AUTH_KS, USERS_CF);
-        return !QueryProcessor.process(defaultSUQuery, ConsistencyLevel.QUORUM).isEmpty()
+        return !QueryProcessor.process(defaultSUQuery, ConsistencyLevel.ONE).isEmpty()
+            || !QueryProcessor.process(defaultSUQuery, ConsistencyLevel.QUORUM).isEmpty()
             || !QueryProcessor.process(allUsersQuery, ConsistencyLevel.QUORUM).isEmpty();
     }
 
@@ -269,8 +267,8 @@ public class Auth
         {
             //QueryOptions中的List<ByteBuffer> values相当于prepare语句的参数值
             ResultMessage.Rows rows = selectUserStatement.execute(QueryState.forInternalCalls(),
-                                                                  new QueryOptions(consistencyForUser(username),
-                                                                                   Lists.newArrayList(ByteBufferUtil.bytes(username))));
+                                                                  QueryOptions.forInternalCalls(consistencyForUser(username),
+                                                                                                Lists.newArrayList(ByteBufferUtil.bytes(username))));
             return UntypedResultSet.create(rows.result);
         }
         catch (RequestValidationException e)
@@ -300,6 +298,14 @@ public class Auth
             DatabaseDescriptor.getAuthorizer().revokeAll(DataResource.columnFamily(ksName, cfName));
         }
 
+        public void onDropUserType(String ksName, String userType)
+        {
+        }
+
+        public void onDropFunction(String namespace, String functionName)
+        {
+        }
+
         public void onCreateKeyspace(String ksName)
         {
         }
@@ -308,11 +314,27 @@ public class Auth
         {
         }
 
+        public void onCreateUserType(String ksName, String userType)
+        {
+        }
+
+        public void onCreateFunction(String namespace, String functionName)
+        {
+        }
+
         public void onUpdateKeyspace(String ksName)
         {
         }
 
         public void onUpdateColumnFamily(String ksName, String cfName)
+        {
+        }
+
+        public void onUpdateUserType(String ksName, String userType)
+        {
+        }
+
+        public void onUpdateFunction(String namespace, String functionName)
         {
         }
     }

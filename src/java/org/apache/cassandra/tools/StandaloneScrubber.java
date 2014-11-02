@@ -54,7 +54,7 @@ public class StandaloneScrubber
             DatabaseDescriptor.loadSchemas();
 
             if (Schema.instance.getCFMetaData(options.keyspaceName, options.cfName) == null)
-                throw new IllegalArgumentException(String.format("Unknown keyspace/columnFamily %s.%s",
+                throw new IllegalArgumentException(String.format("Unknown keyspace/table %s.%s",
                                                                  options.keyspaceName,
                                                                  options.cfName));
 
@@ -115,17 +115,6 @@ public class StandaloneScrubber
                         finally
                         {
                             scrubber.close();
-                        }
-
-                        if (manifest != null)
-                        {
-                            if (scrubber.getNewInOrderSSTable() != null)
-                                manifest.add(scrubber.getNewInOrderSSTable());
-
-                            List<SSTableReader> added = scrubber.getNewSSTable() == null
-                                ? Collections.<SSTableReader>emptyList()
-                                : Collections.singletonList(scrubber.getNewSSTable());
-                            manifest.replace(Collections.singletonList(sstable), added);
                         }
 
                         // Remove the sstable (it's been copied by scrub and snapshotted)
@@ -244,7 +233,7 @@ public class StandaloneScrubber
             String usage = String.format("%s [options] <keyspace> <column_family>", TOOL_NAME);
             StringBuilder header = new StringBuilder();
             header.append("--\n");
-            header.append("Scrub the sstable for the provided column family." );
+            header.append("Scrub the sstable for the provided table." );
             header.append("\n--\n");
             header.append("Options are:");
             new HelpFormatter().printHelp(usage, header.toString(), options, "");

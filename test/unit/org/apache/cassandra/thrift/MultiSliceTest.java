@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.cassandra.thrift;
 
 import java.io.IOException;
@@ -11,25 +28,33 @@ import java.util.List;
 import junit.framework.Assert;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.EmbeddedCassandraService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.thrift.TException;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class MultiSliceTest extends SchemaLoader
+public class MultiSliceTest
 {
     private static CassandraServer server;
-    
+    public static final String KEYSPACE1 = "MultiSliceTest";
+    public static final String CF_STANDARD = "Standard1";
+
     @BeforeClass
-    public static void setup() throws IOException, TException 
+    public static void defineSchema() throws ConfigurationException, IOException, TException
     {
-        Schema.instance.clear(); // Schema are now written on disk and will be reloaded
+        SchemaLoader.prepareServer();
         new EmbeddedCassandraService().start();
-        ThriftSessionManager.instance.setCurrentSocket(new InetSocketAddress(9160));        
+        ThriftSessionManager.instance.setCurrentSocket(new InetSocketAddress(9160));
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD));
         server = new CassandraServer();
-        server.set_keyspace("Keyspace1");
+        server.set_keyspace(KEYSPACE1);
     }
 
     private static MultiSliceRequest makeMultiSliceRequest(ByteBuffer key)
@@ -114,9 +139,21 @@ public class MultiSliceTest extends SchemaLoader
         req.setCount(6);
         req.reversed = true;
         req.setColumn_slices(Arrays.asList(columnSliceFrom("e", "a"), columnSliceFrom("g", "d")));
-        assertColumnNameMatches(Arrays.asList("g", "e", "d", "c", "b", "a"), server.get_multi_slice(req)); 
+        assertColumnNameMatches(Arrays.asList("g", "f", "e", "d", "c", "b"), server.get_multi_slice(req));
     }
-    
+
+    @Test
+    public void test_with_overlap_with_count() throws TException
+    {
+        ColumnParent cp = new ColumnParent("Standard1");
+        ByteBuffer key = ByteBuffer.wrap("overlap_reversed_count".getBytes());
+        addTheAlphabetToRow(key, cp);
+        MultiSliceRequest req = makeMultiSliceRequest(key);
+        req.setCount(6);
+        req.setColumn_slices(Arrays.asList(columnSliceFrom("a", "e"), columnSliceFrom("d", "g"), columnSliceFrom("d", "g")));
+        assertColumnNameMatches(Arrays.asList("a", "b", "c", "d", "e", "f"), server.get_multi_slice(req));
+    }
+
     private static void addTheAlphabetToRow(ByteBuffer key, ColumnParent parent) 
             throws InvalidRequestException, UnavailableException, TimedOutException
     {
@@ -135,7 +172,7 @@ public class MultiSliceTest extends SchemaLoader
         for (int i = 0 ; i< expected.size() ; i++)
         {
             Assert.assertEquals(actual.get(i) +" did not equal "+ expected.get(i), 
-                    new String(actual.get(i).getColumn().getName()), expected.get(i));
+                    expected.get(i), new String(actual.get(i).getColumn().getName()));
         }
     }
     

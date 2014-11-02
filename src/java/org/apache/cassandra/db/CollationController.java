@@ -17,10 +17,18 @@
  */
 package org.apache.cassandra.db;
 
-import java.util.*;
+import java.io.Closeable;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.TreeSet;
 
+import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Iterators;
 
+import net.nicoulaj.compilecommand.annotations.Inline;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy;
 import org.apache.cassandra.db.composites.CellName;
@@ -30,6 +38,8 @@ import org.apache.cassandra.db.marshal.CounterColumnType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.SearchIterator;
+import org.apache.cassandra.utils.memory.HeapAllocator;
 
 //校对控制器
 public class CollationController
@@ -47,12 +57,12 @@ public class CollationController
         this.gcBefore = gcBefore;
     }
 
-    public ColumnFamily getTopLevelColumns()
+    public ColumnFamily getTopLevelColumns(boolean copyOnHeap)
     {
         return filter.filter instanceof NamesQueryFilter
                && cfs.metadata.getDefaultValidator() != CounterColumnType.instance
-               ? collectTimeOrderedData()
-               : collectAllData();
+               ? collectTimeOrderedData(copyOnHeap)
+               : collectAllData(copyOnHeap);
     }
 
     /**
@@ -60,26 +70,36 @@ public class CollationController
      * Once we have data for all requests columns that is newer than the newest remaining maxtimestamp,
      * we stop.
      */
-    private ColumnFamily collectTimeOrderedData()
+    @Inline
+    private ColumnFamily collectTimeOrderedData(boolean copyOnHeap)
     {
         final ColumnFamily container = ArrayBackedSortedColumns.factory.create(cfs.metadata, filter.filter.isReversed());
         List<OnDiskAtomIterator> iterators = new ArrayList<>();
+        boolean isEmpty = true;
         Tracing.trace("Acquiring sstable references");
-        ColumnFamilyStore.ViewFragment view = cfs.markReferenced(filter.key);
+        ColumnFamilyStore.ViewFragment view = cfs.select(cfs.viewFilter(filter.key));
 
         try
         {
             Tracing.trace("Merging memtable contents");
+            long mostRecentRowTombstone = Long.MIN_VALUE;
             for (Memtable memtable : view.memtables)
             {
-                OnDiskAtomIterator iter = filter.getMemtableColumnIterator(memtable);
-                if (iter != null)
+                ColumnFamily cf = memtable.getColumnFamily(filter.key);
+                if (cf != null)
                 {
-                    iterators.add(iter);
-                    filter.delete(container.deletionInfo(), iter.getColumnFamily());
+                    filter.delete(container.deletionInfo(), cf);
+                    isEmpty = false;
+                    Iterator<Cell> iter = filter.getIterator(cf);
                     while (iter.hasNext())
-                        container.addAtom(iter.next());
+                    {
+                        Cell cell = iter.next();
+                        if (copyOnHeap)
+                            cell = cell.localCopy(cfs.metadata, HeapAllocator.instance);
+                        container.addColumn(cell);
+                    }
                 }
+                mostRecentRowTombstone = container.deletionInfo().getTopLevelDeletion().markedForDeleteAt;
             }
 
             // avoid changing the filter columns of the original filter
@@ -92,7 +112,6 @@ public class CollationController
             Collections.sort(view.sstables, SSTableReader.maxTimestampComparator);
 
             // read sorted sstables
-            long mostRecentRowTombstone = Long.MIN_VALUE;
             for (SSTableReader sstable : view.sstables)
             {
                 // if we've already seen a row tombstone with a timestamp greater
@@ -109,21 +128,20 @@ public class CollationController
                 Tracing.trace("Merging data from sstable {}", sstable.descriptor.generation);
                 OnDiskAtomIterator iter = reducedFilter.getSSTableColumnIterator(sstable);
                 iterators.add(iter);
+                isEmpty = false;
                 if (iter.getColumnFamily() != null)
                 {
-                    ColumnFamily cf = iter.getColumnFamily();
-                    if (cf.isMarkedForDelete())
-                        mostRecentRowTombstone = cf.deletionInfo().getTopLevelDeletion().markedForDeleteAt;
-                    container.delete(cf);
+                    container.delete(iter.getColumnFamily());
                     sstablesIterated++;
                     while (iter.hasNext())
                         container.addAtom(iter.next());
                 }
+                mostRecentRowTombstone = container.deletionInfo().getTopLevelDeletion().markedForDeleteAt;
             }
 
             // we need to distinguish between "there is no data at all for this row" (BF will let us rebuild that efficiently)
             // and "there used to be data, but it's gone now" (we should cache the empty CF so we don't need to rebuild that slower)
-            if (iterators.isEmpty())
+            if (isEmpty)
                 return null;
 
             // do a final collate.  toCollate is boilerplate required to provide a CloseableIterator
@@ -137,7 +155,7 @@ public class CollationController
                 && cfs.getCompactionStrategy() instanceof SizeTieredCompactionStrategy)
             {
                 Tracing.trace("Defragmenting requested data");
-                Mutation mutation = new Mutation(cfs.keyspace.getName(), filter.key.key, returnCF.cloneMe());
+                Mutation mutation = new Mutation(cfs.keyspace.getName(), filter.key.getKey(), returnCF.cloneMe());
                 // skipping commitlog and index updates is fine since we're just de-fragmenting existing data
                 Keyspace.open(mutation.getKeyspaceName()).apply(mutation, false, false);
             }
@@ -149,7 +167,6 @@ public class CollationController
         {
             for (OnDiskAtomIterator iter : iterators)
                 FileUtils.closeQuietly(iter);
-            SSTableReader.releaseReferences(view.sstables);
         }
     }
 
@@ -161,10 +178,11 @@ public class CollationController
         if (container == null)
             return;
 
-        for (Iterator<CellName> iterator = ((NamesQueryFilter) filter.filter).columns.iterator(); iterator.hasNext(); )
+        SearchIterator<CellName, Cell> searchIter = container.searchIterator();
+        for (Iterator<CellName> iterator = ((NamesQueryFilter) filter.filter).columns.iterator(); iterator.hasNext() && searchIter.hasNext(); )
         {
             CellName filterColumn = iterator.next();
-            Cell cell = container.getColumn(filterColumn);
+            Cell cell = searchIter.next(filterColumn);
             if (cell != null && cell.timestamp() > sstableTimestamp)
                 iterator.remove();
         }
@@ -174,11 +192,11 @@ public class CollationController
      * Collects data the brute-force way: gets an iterator for the filter in question
      * from every memtable and sstable, then merges them together.
      */
-    private ColumnFamily collectAllData()
+    private ColumnFamily collectAllData(boolean copyOnHeap)
     {
         Tracing.trace("Acquiring sstable references");
-        ColumnFamilyStore.ViewFragment view = cfs.markReferenced(filter.key);
-        List<OnDiskAtomIterator> iterators = new ArrayList<>(Iterables.size(view.memtables) + view.sstables.size());
+        ColumnFamilyStore.ViewFragment view = cfs.select(cfs.viewFilter(filter.key));
+        List<Iterator<? extends OnDiskAtom>> iterators = new ArrayList<>(Iterables.size(view.memtables) + view.sstables.size());
         ColumnFamily returnCF = ArrayBackedSortedColumns.factory.create(cfs.metadata, filter.filter.isReversed());
         DeletionInfo returnDeletionInfo = returnCF.deletionInfo();
         try
@@ -186,10 +204,21 @@ public class CollationController
             Tracing.trace("Merging memtable tombstones");
             for (Memtable memtable : view.memtables)
             {
-                OnDiskAtomIterator iter = filter.getMemtableColumnIterator(memtable);
-                if (iter != null)
+                final ColumnFamily cf = memtable.getColumnFamily(filter.key);
+                if (cf != null)
                 {
-                    filter.delete(returnDeletionInfo, iter.getColumnFamily());
+                    filter.delete(returnDeletionInfo, cf);
+                    Iterator<Cell> iter = filter.getIterator(cf);
+                    if (copyOnHeap)
+                    {
+                        iter = Iterators.transform(iter, new Function<Cell, Cell>()
+                        {
+                            public Cell apply(Cell cell)
+                            {
+                                return cell.localCopy(cf.metadata, HeapAllocator.instance);
+                            }
+                        });
+                    }
                     iterators.add(iter);
                 }
             }
@@ -203,7 +232,7 @@ public class CollationController
              *   timestamp(tombstone) > maxTimestamp_s0
              * since we necessarily have
              *   timestamp(tombstone) <= maxTimestamp_s1
-             * In othere words, iterating in maxTimestamp order allow to do our mostRecentTombstone elimination
+             * In other words, iterating in maxTimestamp order allow to do our mostRecentTombstone elimination
              * in one pass, and minimize the number of sstables for which we read a rowTombstone.
              */
             Collections.sort(view.sstables, SSTableReader.maxTimestampComparator);
@@ -288,9 +317,9 @@ public class CollationController
         }
         finally
         {
-            for (OnDiskAtomIterator iter : iterators)
-                FileUtils.closeQuietly(iter);
-            SSTableReader.releaseReferences(view.sstables);
+            for (Object iter : iterators)
+                if (iter instanceof Closeable)
+                    FileUtils.closeQuietly((Closeable) iter);
         }
     }
 

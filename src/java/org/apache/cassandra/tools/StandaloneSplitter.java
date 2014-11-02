@@ -19,7 +19,6 @@
 package org.apache.cassandra.tools;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.*;
 
 import org.apache.commons.cli.*;
@@ -45,7 +44,7 @@ public class StandaloneSplitter
     private static final String NO_SNAPSHOT_OPTION = "no-snapshot";
     private static final String SIZE_OPTION = "size";
 
-    public static void main(String args[]) throws IOException
+    public static void main(String args[])
     {
         Options options = Options.parseArgs(args);
         try
@@ -79,7 +78,7 @@ public class StandaloneSplitter
                 if (cfName == null)
                     cfName = desc.cfname;
                 else if (!cfName.equals(desc.cfname))
-                    throw new IllegalArgumentException("All sstables must be part of the same column family");
+                    throw new IllegalArgumentException("All sstables must be part of the same table");
 
                 Set<Component> components = new HashSet<Component>(Arrays.asList(new Component[]{
                     Component.DATA,
@@ -140,10 +139,6 @@ public class StandaloneSplitter
                 try
                 {
                     new SSTableSplitter(cfs, sstable, options.sizeInMB).split();
-
-                    // Remove the sstable
-                    sstable.markObsolete();
-                    sstable.releaseReference();
                 }
                 catch (Exception e)
                 {

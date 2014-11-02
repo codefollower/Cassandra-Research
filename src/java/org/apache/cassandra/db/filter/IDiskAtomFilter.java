@@ -18,18 +18,18 @@
 package org.apache.cassandra.db.filter;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.Iterator;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
-import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileDataInput;
 
 /**
@@ -45,7 +45,9 @@ public interface IDiskAtomFilter
      * returns an iterator that returns columns from the given columnFamily
      * matching the Filter criteria in sorted order.
      */
-    public OnDiskAtomIterator getColumnFamilyIterator(DecoratedKey key, ColumnFamily cf);
+    public Iterator<Cell> getColumnIterator(ColumnFamily cf);
+
+    public OnDiskAtomIterator getColumnIterator(DecoratedKey key, ColumnFamily cf);
 
     /**
      * Get an iterator that returns columns from the given SSTable using the opened file
@@ -78,7 +80,7 @@ public interface IDiskAtomFilter
     public ColumnCounter columnCounter(CellNameType comparator, long now);
 
     public IDiskAtomFilter cloneShallow();
-    public boolean maySelectPrefix(Comparator<Composite> cmp, Composite prefix);
+    public boolean maySelectPrefix(CType type, Composite prefix);
 
     public boolean shouldInclude(SSTableReader sstable);
 
@@ -101,7 +103,7 @@ public interface IDiskAtomFilter
             this.type = type;
         }
 
-        public void serialize(IDiskAtomFilter filter, DataOutput out, int version) throws IOException
+        public void serialize(IDiskAtomFilter filter, DataOutputPlus out, int version) throws IOException
         {
             if (filter instanceof SliceQueryFilter)
             {

@@ -20,17 +20,17 @@ package org.apache.cassandra.db.index;
 import java.nio.ByteBuffer;
 import java.util.concurrent.Future;
 
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.marshal.*;
-import org.apache.cassandra.dht.*;
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.dht.LocalPartitioner;
+import org.apache.cassandra.dht.LocalToken;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.memory.AbstractAllocator;
+import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 
 /**
  * Implements a secondary index for a column family using a second column family
@@ -71,7 +71,13 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     @Override
     public DecoratedKey getIndexKeyFor(ByteBuffer value)
     {
-        return new DecoratedKey(new LocalToken(getIndexKeyComparator(), value), value);
+        return new BufferDecoratedKey(new LocalToken(getIndexKeyComparator(), value), value);
+    }
+
+    @Override
+    String indexTypeForGrouping()
+    {
+        return "_internal_";
     }
 
     protected abstract CellName makeIndexColumnName(ByteBuffer rowKey, Cell cell);
@@ -91,7 +97,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
     public void delete(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
     {
-        if (cell.isMarkedForDelete(System.currentTimeMillis()))
+        if (!cell.isLive())
             return;
 
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
@@ -114,14 +120,14 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         if (cell instanceof ExpiringCell)
         {
             ExpiringCell ec = (ExpiringCell) cell;
-            cfi.addColumn(new ExpiringCell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, ec.timestamp(), ec.getTimeToLive(), ec.getLocalDeletionTime()));
+            cfi.addColumn(new BufferExpiringCell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, ec.timestamp(), ec.getTimeToLive(), ec.getLocalDeletionTime()));
         }
         else
         {
-            cfi.addColumn(new Cell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp()));
+            cfi.addColumn(new BufferCell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp()));
         }
         if (logger.isDebugEnabled())
-            logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.key), cfi);
+            logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.getKey()), cfi);
 
         //从上面的valueKey和name对应rowKey作为一个Column放到ColumnFamily看出来
         //这里会保存valueKey和name，所以当按索引字段查找时，就能从valueKey中找到对应的name(就是rowKey)
@@ -130,11 +136,12 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     }
 
     public void update(ByteBuffer rowKey, Cell oldCol, Cell col, OpOrder.Group opGroup)
-    {        
+    {
         // insert the new value before removing the old one, so we never have a period
         // where the row is invisible to both queries (the opposite seems preferable); see CASSANDRA-5540                    
         insert(rowKey, col, opGroup);
-        delete(rowKey, oldCol, opGroup);
+        if (SecondaryIndexManager.shouldCleanupOldValue(oldCol, col))
+            delete(rowKey, oldCol, opGroup);
     }
 
     public void removeIndex(ByteBuffer columnName)
@@ -171,11 +178,6 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     public String getIndexName()
     {
         return indexCfs.name;
-    }
-
-    public AbstractAllocator getOnHeapAllocator()
-    {
-        return indexCfs.getDataTracker().getView().getCurrentMemtable().getAllocator();
     }
 
     public void reload()

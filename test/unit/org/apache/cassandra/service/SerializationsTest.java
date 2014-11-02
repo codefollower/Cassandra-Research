@@ -32,6 +32,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.io.util.DataOutputStreamAndChannel;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.NodePair;
@@ -54,7 +55,7 @@ public class SerializationsTest extends AbstractSerializationsTester
 
     private void testRepairMessageWrite(String fileName, RepairMessage... messages) throws IOException
     {
-        try (DataOutputStream out = getOutput(fileName))
+        try (DataOutputStreamAndChannel out = getOutput(fileName))
         {
             for (RepairMessage message : messages)
             {
@@ -92,17 +93,18 @@ public class SerializationsTest extends AbstractSerializationsTester
 
     private void testValidationCompleteWrite() throws IOException
     {
+        IPartitioner p = new RandomPartitioner();
         // empty validation
+        MerkleTree mt = new MerkleTree(p, FULL_RANGE, MerkleTree.RECOMMENDED_DEPTH, (int) Math.pow(2, 15));
         Validator v0 = new Validator(DESC, FBUtilities.getBroadcastAddress(),  -1);
-        ValidationComplete c0 = new ValidationComplete(DESC, v0.tree);
+        ValidationComplete c0 = new ValidationComplete(DESC, mt);
 
         // validation with a tree
-        IPartitioner p = new RandomPartitioner();
-        MerkleTree mt = new MerkleTree(p, FULL_RANGE, MerkleTree.RECOMMENDED_DEPTH, Integer.MAX_VALUE);
+        mt = new MerkleTree(p, FULL_RANGE, MerkleTree.RECOMMENDED_DEPTH, Integer.MAX_VALUE);
         for (int i = 0; i < 10; i++)
             mt.split(p.getRandomToken());
-        Validator v1 = new Validator(DESC, FBUtilities.getBroadcastAddress(), mt, -1);
-        ValidationComplete c1 = new ValidationComplete(DESC, v1.tree);
+        Validator v1 = new Validator(DESC, FBUtilities.getBroadcastAddress(), -1);
+        ValidationComplete c1 = new ValidationComplete(DESC, mt);
 
         // validation failed
         ValidationComplete c3 = new ValidationComplete(DESC);

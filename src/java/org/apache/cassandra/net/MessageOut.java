@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.net;
 
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Collections;
@@ -31,6 +30,7 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
@@ -100,7 +100,7 @@ public class MessageOut<T>
         return sbuf.toString();
     }
 
-    public void serialize(DataOutputStream out, int version) throws IOException
+    public void serialize(DataOutputPlus out, int version) throws IOException
     {
         CompactEndpointSerializationHelper.serialize(from, out);
 

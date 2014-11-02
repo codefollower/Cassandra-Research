@@ -48,7 +48,7 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
     public static CellNameType buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
     {
         int prefixSize = columnDef.position();
-        List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(prefixSize + 2);
+        List<AbstractType<?>> types = new ArrayList<>(prefixSize + 2);
         types.add(SecondaryIndex.keyComparator);
         for (int i = 0; i < prefixSize; i++)
             types.add(baseMetadata.comparator.subtype(i));
@@ -73,7 +73,14 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
         builder.add(rowKey);
         for (int i = 0; i < Math.min(columnDef.position(), cellName.size()); i++)
             builder.add(cellName.get(i));
-        builder.add(cellName.get(columnDef.position() + 1));
+
+        // When indexing, cellName is a full name including the collection
+        // key. When searching, restricted clustering columns are included
+        // but the collection key is not. In this case, don't try to add an
+        // element to the builder for it, as it will just end up null and
+        // error out when retrieving cells from the index cf (CASSANDRA-7525)
+        if (cellName.size() >= columnDef.position() + 1)
+            builder.add(cellName.get(columnDef.position() + 1));
         return builder.build();
     }
 
@@ -98,11 +105,7 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
     public boolean isStale(IndexedEntry entry, ColumnFamily data, long now)
     {
         CellName name = data.getComparator().create(entry.indexedEntryPrefix, columnDef, entry.indexedEntryCollectionKey);
-        Cell liveCell = data.getColumn(name);
-        if (liveCell == null || liveCell.isMarkedForDelete(now))
-            return true;
-
-        ByteBuffer liveValue = liveCell.value();
-        return ((CollectionType)columnDef.type).valueComparator().compare(entry.indexValue.key, liveValue) != 0;
+        Cell cell = data.getColumn(name);
+        return cell == null || !cell.isLive(now) || ((CollectionType) columnDef.type).valueComparator().compare(entry.indexValue.getKey(), cell.value()) != 0;
     }
 }

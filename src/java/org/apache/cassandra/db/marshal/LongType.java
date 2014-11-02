@@ -38,14 +38,8 @@ public class LongType extends AbstractType<Long>
 
     public static int compareLongs(ByteBuffer o1, ByteBuffer o2)
     {
-        if (o1.remaining() == 0)
-        {
-            return o2.remaining() == 0 ? 0 : -1;
-        }
-        if (o2.remaining() == 0)
-        {
-            return 1;
-        }
+        if (!o1.hasRemaining() || !o2.hasRemaining())
+            return o1.hasRemaining() ? 1 : o2.hasRemaining() ? -1 : 0;
 
         int diff = o1.get(o1.position()) - o2.get(o2.position());
         if (diff != 0)
@@ -74,6 +68,12 @@ public class LongType extends AbstractType<Long>
         return decompose(longType);
     }
 
+    @Override
+    public boolean isValueCompatibleWithInternal(AbstractType<?> otherType)
+    {
+        return this == otherType || otherType == DateType.instance || otherType == TimestampType.instance;
+    }
+
     public CQL3Type asCQL3Type()
     {
         return CQL3Type.Native.BIGINT;
@@ -83,4 +83,5 @@ public class LongType extends AbstractType<Long>
     {
         return LongSerializer.instance;
     }
+
 }

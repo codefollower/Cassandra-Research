@@ -18,11 +18,9 @@
 package org.apache.cassandra.io.sstable.metadata;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
@@ -31,6 +29,7 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.StreamingHistogram;
@@ -53,6 +52,7 @@ public class StatsMetadata extends MetadataComponent
     public final int sstableLevel;
     public final List<ByteBuffer> maxColumnNames;
     public final List<ByteBuffer> minColumnNames;
+    public final boolean hasLegacyCounterShards;
     public final long repairedAt;
 
     public StatsMetadata(EstimatedHistogram estimatedRowSize,
@@ -66,6 +66,7 @@ public class StatsMetadata extends MetadataComponent
                          int sstableLevel,
                          List<ByteBuffer> minColumnNames,
                          List<ByteBuffer> maxColumnNames,
+                         boolean hasLegacyCounterShards,
                          long repairedAt)
     {
         this.estimatedRowSize = estimatedRowSize;
@@ -79,6 +80,7 @@ public class StatsMetadata extends MetadataComponent
         this.sstableLevel = sstableLevel;
         this.minColumnNames = minColumnNames;
         this.maxColumnNames = maxColumnNames;
+        this.hasLegacyCounterShards = hasLegacyCounterShards;
         this.repairedAt = repairedAt;
     }
 
@@ -122,8 +124,9 @@ public class StatsMetadata extends MetadataComponent
                                  compressionRatio,
                                  estimatedTombstoneDropTime,
                                  newLevel,
-                                 maxColumnNames,
                                  minColumnNames,
+                                 maxColumnNames,
+                                 hasLegacyCounterShards,
                                  repairedAt);
     }
 
@@ -138,8 +141,9 @@ public class StatsMetadata extends MetadataComponent
                                  compressionRatio,
                                  estimatedTombstoneDropTime,
                                  sstableLevel,
-                                 maxColumnNames,
                                  minColumnNames,
+                                 maxColumnNames,
+                                 hasLegacyCounterShards,
                                  newRepairedAt);
     }
 
@@ -163,6 +167,7 @@ public class StatsMetadata extends MetadataComponent
                        .append(repairedAt, that.repairedAt)
                        .append(maxColumnNames, that.maxColumnNames)
                        .append(minColumnNames, that.minColumnNames)
+                       .append(hasLegacyCounterShards, that.hasLegacyCounterShards)
                        .build();
     }
 
@@ -182,6 +187,7 @@ public class StatsMetadata extends MetadataComponent
                        .append(repairedAt)
                        .append(maxColumnNames)
                        .append(minColumnNames)
+                       .append(hasLegacyCounterShards)
                        .build();
     }
 
@@ -204,10 +210,11 @@ public class StatsMetadata extends MetadataComponent
             size += 4;
             for (ByteBuffer columnName : component.maxColumnNames)
                 size += 2 + columnName.remaining(); // with short length
+            size += TypeSizes.NATIVE.sizeof(component.hasLegacyCounterShards);
             return size;
         }
 
-        public void serialize(StatsMetadata component, DataOutput out) throws IOException
+        public void serialize(StatsMetadata component, DataOutputPlus out) throws IOException
         {
             EstimatedHistogram.serializer.serialize(component.estimatedRowSize, out);
             EstimatedHistogram.serializer.serialize(component.estimatedColumnCount, out);
@@ -225,6 +232,7 @@ public class StatsMetadata extends MetadataComponent
             out.writeInt(component.maxColumnNames.size());
             for (ByteBuffer columnName : component.maxColumnNames)
                 ByteBufferUtil.writeWithShortLength(columnName, out);
+            out.writeBoolean(component.hasLegacyCounterShards);
         }
 
         public StatsMetadata deserialize(Descriptor.Version version, DataInput in) throws IOException
@@ -234,35 +242,28 @@ public class StatsMetadata extends MetadataComponent
             ReplayPosition replayPosition = ReplayPosition.serializer.deserialize(in);
             long minTimestamp = in.readLong();
             long maxTimestamp = in.readLong();
-            int maxLocalDeletionTime = version.tracksMaxLocalDeletionTime ? in.readInt() : Integer.MAX_VALUE;
+            int maxLocalDeletionTime = in.readInt();
             double compressionRatio = in.readDouble();
             StreamingHistogram tombstoneHistogram = StreamingHistogram.serializer.deserialize(in);
             int sstableLevel = in.readInt();
             long repairedAt = 0;
             if (version.hasRepairedAt)
                 repairedAt = in.readLong();
-            List<ByteBuffer> minColumnNames;
-            List<ByteBuffer> maxColumnNames;
-            if (version.tracksMaxMinColumnNames)
-            {
-                int colCount = in.readInt();
-                minColumnNames = new ArrayList<>(colCount);
-                for (int i = 0; i < colCount; i++)
-                {
-                    minColumnNames.add(ByteBufferUtil.readWithShortLength(in));
-                }
-                colCount = in.readInt();
-                maxColumnNames = new ArrayList<>(colCount);
-                for (int i = 0; i < colCount; i++)
-                {
-                    maxColumnNames.add(ByteBufferUtil.readWithShortLength(in));
-                }
-            }
-            else
-            {
-                minColumnNames = Collections.emptyList();
-                maxColumnNames = Collections.emptyList();
-            }
+
+            int colCount = in.readInt();
+            List<ByteBuffer> minColumnNames = new ArrayList<>(colCount);
+            for (int i = 0; i < colCount; i++)
+                minColumnNames.add(ByteBufferUtil.readWithShortLength(in));
+
+            colCount = in.readInt();
+            List<ByteBuffer> maxColumnNames = new ArrayList<>(colCount);
+            for (int i = 0; i < colCount; i++)
+                maxColumnNames.add(ByteBufferUtil.readWithShortLength(in));
+
+            boolean hasLegacyCounterShards = true;
+            if (version.tracksLegacyCounterShards)
+                hasLegacyCounterShards = in.readBoolean();
+
             return new StatsMetadata(rowSizes,
                                      columnCounts,
                                      replayPosition,
@@ -274,6 +275,7 @@ public class StatsMetadata extends MetadataComponent
                                      sstableLevel,
                                      minColumnNames,
                                      maxColumnNames,
+                                     hasLegacyCounterShards,
                                      repairedAt);
         }
     }

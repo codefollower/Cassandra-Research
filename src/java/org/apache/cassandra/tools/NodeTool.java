@@ -24,18 +24,21 @@ import java.net.UnknownHostException;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
+
 import javax.management.openmbean.TabularData;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Maps;
-
 import com.yammer.metrics.reporting.JmxReporter;
+
 import io.airlift.command.*;
+
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutorMBean;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStoreMBean;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.compaction.CompactionManagerMBean;
@@ -111,6 +114,7 @@ public class NodeTool
                 RemoveNode.class,
                 Repair.class,
                 SetCacheCapacity.class,
+                SetHintedHandoffThrottleInKB.class,
                 SetCompactionThreshold.class,
                 SetCompactionThroughput.class,
                 SetStreamThroughput.class,
@@ -136,7 +140,8 @@ public class NodeTool
                 Drain.class,
                 TruncateHints.class,
                 TpStats.class,
-                TakeToken.class
+                SetLoggingLevel.class,
+                GetLoggingLevels.class
         );
 
         Cli<Runnable> parser = Cli.<Runnable>builder("nodetool")
@@ -186,7 +191,7 @@ public class NodeTool
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
             writer.append(sdf.format(new Date())).append(": ").append(cmdLine).append(System.lineSeparator());
         }
-        catch (IOException ioe)
+        catch (IOException | IOError ioe)
         {
             //quietly ignore any errors about not being able to write out history
         }
@@ -237,7 +242,8 @@ public class NodeTool
             try (NodeProbe probe = connect())
             {
                 execute(probe);
-            } catch (IOException e)
+            } 
+            catch (IOException e)
             {
                 throw new RuntimeException("Error while closing JMX connection", e);
             }
@@ -417,13 +423,20 @@ public class NodeTool
         @Arguments(description = "Specify a keyspace for accurate ownership information (topology awareness)")
         private String keyspace = null;
 
+        @Option(title = "resolve_ip", name = {"-r", "--resolve-ip"}, description = "Show node domain names instead of IPs")
+        private boolean resolveIp = false;
+
         @Override
         public void execute(NodeProbe probe)
         {
             Map<String, String> tokensToEndpoints = probe.getTokenToEndpointMap();
             LinkedHashMultimap<String, String> endpointsToTokens = LinkedHashMultimap.create();
+            boolean haveVnodes = false;
             for (Map.Entry<String, String> entry : tokensToEndpoints.entrySet())
+            {
+                haveVnodes |= endpointsToTokens.containsKey(entry.getValue());
                 endpointsToTokens.put(entry.getValue(), entry.getKey());
+            }
 
             int maxAddressLength = Collections.max(endpointsToTokens.keys(), new Comparator<String>()
             {
@@ -447,26 +460,11 @@ public class NodeTool
                 ownerships = probe.getOwnership();
                 System.out.printf("Note: Ownership information does not include topology; for complete information, specify a keyspace%n");
             }
-            try
-            {
-                System.out.println();
-                Map<String, Map<InetAddress, Float>> perDcOwnerships = Maps.newLinkedHashMap();
-                // get the different datasets and map to tokens
-                for (Map.Entry<InetAddress, Float> ownership : ownerships.entrySet())
-                {
-                    String dc = probe.getEndpointSnitchInfoProxy().getDatacenter(ownership.getKey().getHostAddress());
-                    if (!perDcOwnerships.containsKey(dc))
-                        perDcOwnerships.put(dc, new LinkedHashMap<InetAddress, Float>());
-                    perDcOwnerships.get(dc).put(ownership.getKey(), ownership.getValue());
-                }
-                for (Map.Entry<String, Map<InetAddress, Float>> entry : perDcOwnerships.entrySet())
-                    printDc(probe, format, entry.getKey(), endpointsToTokens, entry.getValue());
-            } catch (UnknownHostException e)
-            {
-                throw new RuntimeException(e);
-            }
+            System.out.println();
+            for (Entry<String, SetHostStat> entry : getOwnershipByDc(probe, resolveIp, tokensToEndpoints, ownerships).entrySet())
+                printDc(probe, format, entry.getKey(), endpointsToTokens, entry.getValue());
 
-            if (DatabaseDescriptor.getNumTokens() > 1)
+            if (haveVnodes)
             {
                 System.out.println("  Warning: \"nodetool ring\" is used to output all the tokens of a node.");
                 System.out.println("  To view status related info of a node use \"nodetool status\" instead.\n");
@@ -476,7 +474,7 @@ public class NodeTool
         private void printDc(NodeProbe probe, String format,
                              String dc,
                              LinkedHashMultimap<String, String> endpointsToTokens,
-                             Map<InetAddress, Float> filteredOwnerships)
+                             SetHostStat hoststats)
         {
             Collection<String> liveNodes = probe.getLiveNodes();
             Collection<String> deadNodes = probe.getUnreachableNodes();
@@ -492,55 +490,52 @@ public class NodeTool
             List<String> tokens = new ArrayList<>();
             String lastToken = "";
 
-            for (Map.Entry<InetAddress, Float> entry : filteredOwnerships.entrySet())
+            for (HostStat stat : hoststats)
             {
-                tokens.addAll(endpointsToTokens.get(entry.getKey().getHostAddress()));
+                tokens.addAll(endpointsToTokens.get(stat.endpoint.getHostAddress()));
                 lastToken = tokens.get(tokens.size() - 1);
             }
 
-
             System.out.printf(format, "Address", "Rack", "Status", "State", "Load", "Owns", "Token");
 
-            if (filteredOwnerships.size() > 1)
+            if (hoststats.size() > 1)
                 System.out.printf(format, "", "", "", "", "", "", lastToken);
             else
                 System.out.println();
 
-            for (Map.Entry<InetAddress, Float> entry : filteredOwnerships.entrySet())
+            for (HostStat stat : hoststats)
             {
-                String endpoint = entry.getKey().getHostAddress();
-                for (String token : endpointsToTokens.get(endpoint))
+                String endpoint = stat.endpoint.getHostAddress();
+                String rack;
+                try
                 {
-                    String rack;
-                    try
-                    {
-                        rack = probe.getEndpointSnitchInfoProxy().getRack(endpoint);
-                    } catch (UnknownHostException e)
-                    {
-                        rack = "Unknown";
-                    }
-
-                    String status = liveNodes.contains(endpoint)
-                                    ? "Up"
-                                    : deadNodes.contains(endpoint)
-                                      ? "Down"
-                                      : "?";
-
-                    String state = "Normal";
-
-                    if (joiningNodes.contains(endpoint))
-                        state = "Joining";
-                    else if (leavingNodes.contains(endpoint))
-                        state = "Leaving";
-                    else if (movingNodes.contains(endpoint))
-                        state = "Moving";
-
-                    String load = loadMap.containsKey(endpoint)
-                                  ? loadMap.get(endpoint)
-                                  : "?";
-                    String owns = new DecimalFormat("##0.00%").format(entry.getValue());
-                    System.out.printf(format, endpoint, rack, status, state, load, owns, token);
+                    rack = probe.getEndpointSnitchInfoProxy().getRack(endpoint);
                 }
+                catch (UnknownHostException e)
+                {
+                    rack = "Unknown";
+                }
+
+                String status = liveNodes.contains(endpoint)
+                        ? "Up"
+                        : deadNodes.contains(endpoint)
+                                ? "Down"
+                                : "?";
+
+                String state = "Normal";
+
+                if (joiningNodes.contains(endpoint))
+                    state = "Joining";
+                else if (leavingNodes.contains(endpoint))
+                    state = "Leaving";
+                else if (movingNodes.contains(endpoint))
+                    state = "Moving";
+
+                String load = loadMap.containsKey(endpoint)
+                        ? loadMap.get(endpoint)
+                        : "?";
+                String owns = stat.owns != null ? new DecimalFormat("##0.00%").format(stat.owns) : "?";
+                System.out.printf(format, stat.ipOrDns(), rack, status, state, load, owns, stat.token);
             }
             System.out.println();
         }
@@ -610,13 +605,13 @@ public class NodeTool
         }
     }
 
-    @Command(name = "cfstats", description = "Print statistics on column families")
+    @Command(name = "cfstats", description = "Print statistics on tables")
     public static class CfStats extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace.cfname>...]", description = "List of column families (or keyspace) names")
+        @Arguments(usage = "[<keyspace.table>...]", description = "List of tables (or keyspace) names")
         private List<String> cfnames = new ArrayList<>();
 
-        @Option(name = "-i", description = "Ignore the list of column families and display the remaining cfs")
+        @Option(name = "-i", description = "Ignore the list of tables and display the remaining cfs")
         private boolean ignore = false;
 
         @Override
@@ -747,8 +742,12 @@ public class NodeTool
                     System.out.println("\t\tCompacted partition minimum bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MinRowSize"));
                     System.out.println("\t\tCompacted partition maximum bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MaxRowSize"));
                     System.out.println("\t\tCompacted partition mean bytes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MeanRowSize"));
-                    System.out.println("\t\tAverage live cells per slice (last five minutes): " + ((JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "LiveScannedHistogram")).getMean());
-                    System.out.println("\t\tAverage tombstones per slice (last five minutes): " + ((JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "TombstoneScannedHistogram")).getMean());
+                    JmxReporter.HistogramMBean histogram = (JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "LiveScannedHistogram");
+                    System.out.println("\t\tAverage live cells per slice (last five minutes): " + histogram.getMean());
+                    System.out.println("\t\tMaximum live cells per slice (last five minutes): " + histogram.getMax());
+                    histogram = (JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "TombstoneScannedHistogram");
+                    System.out.println("\t\tAverage tombstones per slice (last five minutes): " + histogram.getMean());
+                    System.out.println("\t\tMaximum tombstones per slice (last five minutes): " + histogram.getMax());
 
                     System.out.println("");
                 }
@@ -829,15 +828,15 @@ public class NodeTool
             {
                 for (String ks : filter.keySet())
                     if (verifier.get(ks).size() > 0)
-                        throw new IllegalArgumentException("Unknown column families: " + verifier.get(ks).toString() + " in keyspace: " + ks);
+                        throw new IllegalArgumentException("Unknown tables: " + verifier.get(ks).toString() + " in keyspace: " + ks);
             }
         }
     }
 
-    @Command(name = "cfhistograms", description = "Print statistic histograms for a given column family")
+    @Command(name = "cfhistograms", description = "Print statistic histograms for a given table")
     public static class CfHistograms extends NodeToolCmd
     {
-        @Arguments(usage = "<keyspace> <cfname>", description = "The keyspace and column family name")
+        @Arguments(usage = "<keyspace> <table>", description = "The keyspace and table name")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -901,7 +900,7 @@ public class NodeTool
     @Command(name = "cleanup", description = "Triggers the immediate cleanup of keys no longer belonging to a node. By default, clean all keyspaces")
     public static class Cleanup extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -917,7 +916,7 @@ public class NodeTool
 
                 try
                 {
-                    probe.forceKeyspaceCleanup(keyspace, cfnames);
+                    probe.forceKeyspaceCleanup(System.out, keyspace, cfnames);
                 } catch (Exception e)
                 {
                     throw new RuntimeException("Error occurred during cleanup", e);
@@ -962,10 +961,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "compact", description = "Force a (major) compaction on one or more column families")
+    @Command(name = "compact", description = "Force a (major) compaction on one or more tables")
     public static class Compact extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -987,10 +986,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "flush", description = "Flush one or more column families")
+    @Command(name = "flush", description = "Flush one or more tables")
     public static class Flush extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1012,10 +1011,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "scrub", description = "Scrub (rebuild sstables for) one or more column families")
+    @Command(name = "scrub", description = "Scrub (rebuild sstables for) one or more tables")
     public static class Scrub extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Option(title = "disable_snapshot",
@@ -1038,7 +1037,7 @@ public class NodeTool
             {
                 try
                 {
-                    probe.scrub(disableSnapshot, skipCorrupted, keyspace, cfnames);
+                    probe.scrub(System.out, disableSnapshot, skipCorrupted, keyspace, cfnames);
                 } catch (Exception e)
                 {
                     throw new RuntimeException("Error occurred during flushing", e);
@@ -1047,10 +1046,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "disableautocompaction", description = "Disable autocompaction for the given keyspace and column family")
+    @Command(name = "disableautocompaction", description = "Disable autocompaction for the given keyspace and table")
     public static class DisableAutoCompaction extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1072,10 +1071,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "enableautocompaction", description = "Enable autocompaction for the given keyspace and column family")
+    @Command(name = "enableautocompaction", description = "Enable autocompaction for the given keyspace and table")
     public static class EnableAutoCompaction extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1097,10 +1096,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "upgradesstables", description = "Rewrite sstables (for the requested column families) that are not on the current version (thus upgrading them to said current version)")
+    @Command(name = "upgradesstables", description = "Rewrite sstables (for the requested tables) that are not on the current version (thus upgrading them to said current version)")
     public static class UpgradeSSTable extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
         @Option(title = "include_all", name = {"-a", "--include-all-sstables"}, description = "Use -a to include all sstables, even those already on the current version")
@@ -1116,7 +1115,7 @@ public class NodeTool
             {
                 try
                 {
-                    probe.upgradeSSTables(keyspace, !includeAll, cfnames);
+                    probe.upgradeSSTables(System.out, keyspace, !includeAll, cfnames);
                 } catch (Exception e)
                 {
                     throw new RuntimeException("Error occurred during enabling auto-compaction", e);
@@ -1134,26 +1133,56 @@ public class NodeTool
             int compactionThroughput = probe.getCompactionThroughput();
             CompactionManagerMBean cm = probe.getCompactionManagerProxy();
             System.out.println("pending tasks: " + probe.getCompactionMetric("PendingTasks"));
-            if (cm.getCompactions().size() > 0)
-                System.out.printf("%25s%16s%16s%16s%16s%10s%10s%n", "compaction type", "keyspace", "table", "completed", "total", "unit", "progress");
             long remainingBytes = 0;
-            for (Map<String, String> c : cm.getCompactions())
+            if (cm.getCompactions().size() > 0)
             {
-                String percentComplete = new Long(c.get("total")) == 0
-                                         ? "n/a"
-                                         : new DecimalFormat("0.00").format((double) new Long(c.get("completed")) / new Long(c.get("total")) * 100) + "%";
-                System.out.printf("%25s%16s%16s%16s%16s%10s%10s%n", c.get("taskType"), c.get("keyspace"), c.get("columnfamily"), c.get("completed"), c.get("total"), c.get("unit"), percentComplete);
-                if (c.get("taskType").equals(OperationType.COMPACTION.toString()))
-                    remainingBytes += (new Long(c.get("total")) - new Long(c.get("completed")));
-            }
-            long remainingTimeInSecs = compactionThroughput == 0 || remainingBytes == 0
-                                       ? -1
-                                       : (remainingBytes) / (1024L * 1024L * compactionThroughput);
-            String remainingTime = remainingTimeInSecs < 0
-                                   ? "n/a"
-                                   : format("%dh%02dm%02ds", remainingTimeInSecs / 3600, (remainingTimeInSecs % 3600) / 60, (remainingTimeInSecs % 60));
+                List<String[]> lines = new ArrayList<>();
+                int[] columnSizes = new int[] { 0, 0, 0, 0, 0, 0, 0 };
 
-            System.out.printf("%25s%10s%n", "Active compaction remaining time : ", remainingTime);
+                addLine(lines, columnSizes, "compaction type", "keyspace", "table", "completed", "total", "unit", "progress");
+                for (Map<String, String> c : cm.getCompactions())
+                {
+                    long total = Long.parseLong(c.get("total"));
+                    long completed = Long.parseLong(c.get("completed"));
+                    String taskType = c.get("taskType");
+                    String keyspace = c.get("keyspace");
+                    String columnFamily = c.get("columnfamily");
+                    String unit = c.get("unit");
+                    String percentComplete = total == 0 ? "n/a" : new DecimalFormat("0.00").format((double) completed / total * 100) + "%";
+                    addLine(lines, columnSizes, taskType, keyspace, columnFamily, Long.toString(completed), Long.toString(total), unit, percentComplete);
+                    if (taskType.equals(OperationType.COMPACTION.toString()))
+                        remainingBytes += total - completed;
+                }
+
+                StringBuilder buffer = new StringBuilder();
+                for (int columnSize : columnSizes) {
+                    buffer.append("%");
+                    buffer.append(columnSize + 3);
+                    buffer.append("s");
+                }
+                buffer.append("%n");
+                String format = buffer.toString();
+
+                for (String[] line : lines)
+                {
+                    System.out.printf(format, line[0], line[1], line[2], line[3], line[4], line[5], line[6]);
+                }
+
+                String remainingTime = "n/a";
+                if (compactionThroughput != 0)
+                {
+                    long remainingTimeInSecs = remainingBytes / (1024L * 1024L * compactionThroughput);
+                    remainingTime = format("%dh%02dm%02ds", remainingTimeInSecs / 3600, (remainingTimeInSecs % 3600) / 60, (remainingTimeInSecs % 60));
+                }
+                System.out.printf("%25s%10s%n", "Active compaction remaining time : ", remainingTime);
+            }
+        }
+
+        private void addLine(List<String[]> lines, int[] columnSizes, String... columns) {
+            lines.add(columns);
+            for (int i = 0; i < columns.length; i++) {
+                columnSizes[i] = Math.max(columnSizes[i], columns[i].length());
+            }
         }
     }
 
@@ -1290,10 +1319,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "getcompactionthreshold", description = "Print min and max compaction thresholds for a given column family")
+    @Command(name = "getcompactionthreshold", description = "Print min and max compaction thresholds for a given table")
     public static class GetCompactionThreshold extends NodeToolCmd
     {
-        @Arguments(usage = "<keyspace> <cfname>", description = "The keyspace with a column family")
+        @Arguments(usage = "<keyspace> <table>", description = "The keyspace with a table")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1333,7 +1362,7 @@ public class NodeTool
     @Command(name = "getendpoints", description = "Print the end points that owns the key")
     public static class GetEndpoints extends NodeToolCmd
     {
-        @Arguments(usage = "<keyspace> <cfname> <key>", description = "The keyspace, the column family, and the key for which we need to find the endpoint")
+        @Arguments(usage = "<keyspace> <table> <key>", description = "The keyspace, the table, and the key for which we need to find the endpoint")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1355,7 +1384,7 @@ public class NodeTool
     @Command(name = "getsstables", description = "Print the sstable filenames that own the key")
     public static class GetSSTables extends NodeToolCmd
     {
-        @Arguments(usage = "<keyspace> <cfname> <key>", description = "The keyspace, the column family, and the key")
+        @Arguments(usage = "<keyspace> <table> <key>", description = "The keyspace, the table, and the key")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1414,26 +1443,6 @@ public class NodeTool
         }
     }
 
-    @Command(name = "taketoken", description = "Move the token(s) from the existing owner(s) to this node.  For vnodes only.  Use \\\\ to escape negative tokens.")
-    public static class TakeToken extends NodeToolCmd
-    {
-        @Arguments(usage = "<token, ...>", description = "Token(s) to take", required = true)
-        private List<String> tokens = new ArrayList<String>();
-
-        @Override
-        public void execute(NodeProbe probe)
-        {
-            try
-            {
-                probe.takeTokens(tokens);
-            }
-            catch (IOException e)
-            {
-                throw new RuntimeException("Error taking tokens", e);
-            }
-        }
-    }
-
     @Command(name = "join", description = "Join the ring")
     public static class Join extends NodeToolCmd
     {
@@ -1455,7 +1464,7 @@ public class NodeTool
     @Command(name = "move", description = "Move node on the token ring to a new token")
     public static class Move extends NodeToolCmd
     {
-        @Arguments(usage = "<new token>", description = "The new token. (for negative tokens)", required = true)
+        @Arguments(usage = "<new token>", description = "The new token.", required = true)
         private String newToken = EMPTY;
 
         @Override
@@ -1538,7 +1547,7 @@ public class NodeTool
     @Command(name = "refresh", description = "Load newly placed SSTables to the system without restart")
     public static class Refresh extends NodeToolCmd
     {
-        @Arguments(usage = "<keyspace> <cfname>", description = "The keyspace and column family name")
+        @Arguments(usage = "<keyspace> <table>", description = "The keyspace and table name")
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1585,14 +1594,14 @@ public class NodeTool
         }
     }
 
-    @Command(name = "repair", description = "Repair one or more column families")
+    @Command(name = "repair", description = "Repair one or more tables")
     public static class Repair extends NodeToolCmd
     {
-        @Arguments(usage = "[<keyspace> <cfnames>...]", description = "The keyspace followed by one or many column families")
+        @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
         private List<String> args = new ArrayList<>();
 
-        @Option(title = "parallel", name = {"-par", "--parallel"}, description = "Use -par to carry out a parallel repair")
-        private boolean parallel = false;
+        @Option(title = "seqential", name = {"-seq", "--sequential"}, description = "Use -seq to carry out a sequential repair")
+        private boolean sequential = false;
 
         @Option(title = "local_dc", name = {"-local", "--in-local-dc"}, description = "Use -local to only repair against nodes in the same datacenter")
         private boolean localDC = false;
@@ -1612,14 +1621,17 @@ public class NodeTool
         @Option(title = "primary_range", name = {"-pr", "--partitioner-range"}, description = "Use -pr to repair only the first range returned by the partitioner")
         private boolean primaryRange = false;
 
-        @Option(title = "incremental_repair", name = {"-inc", "--incremental"}, description = "Use -inc to use the new incremental repair")
-        private boolean incrementalRepair = false;
+        @Option(title = "full", name = {"-full", "--full"}, description = "Use -full to issue a full repair.")
+        private boolean fullRepair = false;
 
         @Override
         public void execute(NodeProbe probe)
         {
             List<String> keyspaces = parseOptionalKeyspace(args, probe);
             String[] cfnames = parseOptionalColumnFamilies(args);
+
+            if (primaryRange && (localDC || !specificHosts.isEmpty() || !specificHosts.isEmpty()))
+                throw new RuntimeException("Primary range repair should be performed on all nodes in the cluster.");
 
             for (String keyspace : keyspaces)
             {
@@ -1634,9 +1646,9 @@ public class NodeTool
                     else if(!specificHosts.isEmpty())
                         hosts = newArrayList(specificHosts);
                     if (!startToken.isEmpty() || !endToken.isEmpty())
-                        probe.forceRepairRangeAsync(System.out, keyspace, !parallel, dataCenters,hosts, startToken, endToken, !incrementalRepair);
+                        probe.forceRepairRangeAsync(System.out, keyspace, sequential, dataCenters,hosts, startToken, endToken, fullRepair);
                     else
-                        probe.forceRepairAsync(System.out, keyspace, !parallel, dataCenters, hosts, primaryRange, !incrementalRepair, cfnames);
+                        probe.forceRepairAsync(System.out, keyspace, sequential, dataCenters, hosts, primaryRange, fullRepair, cfnames);
                 } catch (Exception e)
                 {
                     throw new RuntimeException("Error occurred during repair", e);
@@ -1662,10 +1674,10 @@ public class NodeTool
         }
     }
 
-    @Command(name = "setcompactionthreshold", description = "Set min and max compaction thresholds for a given column family")
+    @Command(name = "setcompactionthreshold", description = "Set min and max compaction thresholds for a given table")
     public static class SetCompactionThreshold extends NodeToolCmd
     {
-        @Arguments(title = "<keyspace> <cfname> <minthreshold> <maxthreshold>", usage = "<keyspace> <cfname> <minthreshold> <maxthreshold>", description = "The keyspace, the column family, min and max threshold", required = true)
+        @Arguments(title = "<keyspace> <table> <minthreshold> <maxthreshold>", usage = "<keyspace> <table> <minthreshold> <maxthreshold>", description = "The keyspace, the table, min and max threshold", required = true)
         private List<String> args = new ArrayList<>();
 
         @Override
@@ -1696,6 +1708,19 @@ public class NodeTool
         }
     }
 
+    @Command(name = "sethintedhandoffthrottlekb", description =  "Set hinted handoff throttle in kb per second, per delivery thread.")
+    public static class SetHintedHandoffThrottleInKB extends NodeToolCmd
+    {
+        @Arguments(title = "throttle_in_kb", usage = "<value_in_kb_per_sec>", description = "Value in KB per second", required = true)
+        private Integer throttleInKB = null;
+
+        @Override
+        public void execute(NodeProbe probe)
+        {
+            probe.setHintedHandoffThrottleInKB(throttleInKB);
+        }
+    }
+
     @Command(name = "setstreamthroughput", description = "Set the MB/s throughput cap for streaming in the system, or 0 to disable throttling")
     public static class SetStreamThroughput extends NodeToolCmd
     {
@@ -1723,13 +1748,13 @@ public class NodeTool
         }
     }
 
-    @Command(name = "snapshot", description = "Take a snapshot of specified keyspaces or a snapshot of the specified column family")
+    @Command(name = "snapshot", description = "Take a snapshot of specified keyspaces or a snapshot of the specified table")
     public static class Snapshot extends NodeToolCmd
     {
         @Arguments(usage = "[<keyspaces...>]", description = "List of keyspaces. By default, all keyspaces")
         private List<String> keyspaces = new ArrayList<>();
 
-        @Option(title = "cfname", name = {"-cf", "--column-family"}, description = "The column family name (you must specify one and only one keyspace for using this option)")
+        @Option(title = "table", name = {"-cf", "--column-family", "--table"}, description = "The table name (you must specify one and only one keyspace for using this option)")
         private String columnFamily = null;
 
         @Option(title = "tag", name = {"-t", "--tag"}, description = "The name of the snapshot")
@@ -1835,21 +1860,23 @@ public class NodeTool
             hostIDMap = probe.getHostIdMap();
             epSnitchInfo = probe.getEndpointSnitchInfoProxy();
 
-            SetHostStat ownerships;
+            Map<InetAddress, Float> ownerships;
             try
             {
-                ownerships = new SetHostStat(probe.effectiveOwnership(keyspace));
+                ownerships = probe.effectiveOwnership(keyspace);
                 hasEffectiveOwns = true;
-            } catch (IllegalStateException e)
+            }
+            catch (IllegalStateException e)
             {
-                ownerships = new SetHostStat(probe.getOwnership());
+                ownerships = probe.getOwnership();
+                System.out.printf("Note: Ownership information does not include topology; for complete information, specify a keyspace%n");
             }
 
-            // More tokens then nodes (aka vnodes)?
-            if (new HashSet<>(tokensToEndpoints.values()).size() < tokensToEndpoints.keySet().size())
-                isTokenPerNode = false;
+            Map<String, SetHostStat> dcs = getOwnershipByDc(probe, resolveIp, tokensToEndpoints, ownerships);
 
-            Map<String, SetHostStat> dcs = getOwnershipByDc(probe, ownerships);
+            // More tokens than nodes (aka vnodes)?
+            if (dcs.values().size() < tokensToEndpoints.keySet().size())
+                isTokenPerNode = false;
 
             findMaxAddressLength(dcs);
 
@@ -1867,9 +1894,16 @@ public class NodeTool
 
                 printNodesHeader(hasEffectiveOwns, isTokenPerNode);
 
-                // Nodes
-                for (HostStat entry : dc.getValue())
-                    printNode(probe, entry, hasEffectiveOwns, isTokenPerNode);
+                ArrayListMultimap<InetAddress, HostStat> hostToTokens = ArrayListMultimap.create();
+                for (HostStat stat : dc.getValue())
+                    hostToTokens.put(stat.endpoint, stat);
+
+                for (InetAddress endpoint : hostToTokens.keySet())
+                {
+                    Float owns = ownerships.get(endpoint);
+                    List<HostStat> tokens = hostToTokens.get(endpoint);
+                    printNode(endpoint.getHostAddress(), owns, tokens, hasEffectiveOwns, isTokenPerNode);
+                }
             }
 
         }
@@ -1897,11 +1931,10 @@ public class NodeTool
                 System.out.printf(fmt, "-", "-", "Address", "Load", "Tokens", owns, "Host ID", "Rack");
         }
 
-        private void printNode(NodeProbe probe, HostStat hostStat, boolean hasEffectiveOwns, boolean isTokenPerNode)
+        private void printNode(String endpoint, Float owns, List<HostStat> tokens, boolean hasEffectiveOwns, boolean isTokenPerNode)
         {
             String status, state, load, strOwns, hostID, rack, fmt;
             fmt = getFormat(hasEffectiveOwns, isTokenPerNode);
-            String endpoint = hostStat.ip;
             if (liveNodes.contains(endpoint)) status = "U";
             else if (unreachableNodes.contains(endpoint)) status = "D";
             else status = "?";
@@ -1911,7 +1944,7 @@ public class NodeTool
             else state = "N";
 
             load = loadMap.containsKey(endpoint) ? loadMap.get(endpoint) : "?";
-            strOwns = new DecimalFormat("##0.0%").format(hostStat.owns);
+            strOwns = owns != null ? new DecimalFormat("##0.0%").format(owns) : "?";
             hostID = hostIDMap.get(endpoint);
 
             try
@@ -1922,14 +1955,11 @@ public class NodeTool
                 throw new RuntimeException(e);
             }
 
+            String endpointDns = tokens.get(0).ipOrDns();
             if (isTokenPerNode)
-            {
-                System.out.printf(fmt, status, state, hostStat.ipOrDns(), load, strOwns, hostID, probe.getTokens(endpoint).get(0), rack);
-            } else
-            {
-                int tokens = probe.getTokens(endpoint).size();
-                System.out.printf(fmt, status, state, hostStat.ipOrDns(), load, tokens, strOwns, hostID, rack);
-            }
+                System.out.printf(fmt, status, state, endpointDns, load, strOwns, hostID, tokens.get(0).token, rack);
+            else
+                System.out.printf(fmt, status, state, endpointDns, load, tokens.size(), strOwns, hostID, rack);
         }
 
         private String getFormat(
@@ -1944,7 +1974,7 @@ public class NodeTool
                 buf.append(addressPlaceholder);               // address
                 buf.append("%-9s  ");                         // load
                 if (!isTokenPerNode)
-                    buf.append("%-6s  ");                     // "Tokens"
+                    buf.append("%-11s  ");                     // "Tokens"
                 if (hasEffectiveOwns)
                     buf.append("%-16s  ");                    // "Owns (effective)"
                 else
@@ -1959,78 +1989,78 @@ public class NodeTool
 
             return format;
         }
+    }
 
-        private Map<String, SetHostStat> getOwnershipByDc(NodeProbe probe, SetHostStat ownerships)
+    private static Map<String, SetHostStat> getOwnershipByDc(NodeProbe probe, boolean resolveIp, 
+                                                             Map<String, String> tokenToEndpoint,
+                                                             Map<InetAddress, Float> ownerships)
+    {
+        Map<String, SetHostStat> ownershipByDc = Maps.newLinkedHashMap();
+        EndpointSnitchInfoMBean epSnitchInfo = probe.getEndpointSnitchInfoProxy();
+        try
         {
-            Map<String, SetHostStat> ownershipByDc = Maps.newLinkedHashMap();
-            EndpointSnitchInfoMBean epSnitchInfo = probe.getEndpointSnitchInfoProxy();
-
-            try
+            for (Entry<String, String> tokenAndEndPoint : tokenToEndpoint.entrySet())
             {
-                for (HostStat ownership : ownerships)
-                {
-                    String dc = epSnitchInfo.getDatacenter(ownership.ip);
-                    if (!ownershipByDc.containsKey(dc))
-                        ownershipByDc.put(dc, new SetHostStat());
-                    ownershipByDc.get(dc).add(ownership);
-                }
-            } catch (UnknownHostException e)
-            {
-                throw new RuntimeException(e);
-            }
-
-            return ownershipByDc;
-        }
-
-        class SetHostStat implements Iterable<HostStat>
-        {
-            final List<HostStat> hostStats = new ArrayList<>();
-
-            public SetHostStat()
-            {
-            }
-
-            public SetHostStat(Map<InetAddress, Float> ownerships)
-            {
-                for (Map.Entry<InetAddress, Float> entry : ownerships.entrySet())
-                {
-                    hostStats.add(new HostStat(entry));
-                }
-            }
-
-            @Override
-            public Iterator<HostStat> iterator()
-            {
-                return hostStats.iterator();
-            }
-
-            public void add(HostStat entry)
-            {
-                hostStats.add(entry);
+                String dc = epSnitchInfo.getDatacenter(tokenAndEndPoint.getValue());
+                if (!ownershipByDc.containsKey(dc))
+                    ownershipByDc.put(dc, new SetHostStat(resolveIp));
+                ownershipByDc.get(dc).add(tokenAndEndPoint.getKey(), tokenAndEndPoint.getValue(), ownerships);
             }
         }
-
-        class HostStat
+        catch (UnknownHostException e)
         {
-            public final String ip;
-            public final String dns;
-            public final Float owns;
+            throw new RuntimeException(e);
+        }
+        return ownershipByDc;
+    }
 
-            public HostStat(Map.Entry<InetAddress, Float> ownership)
-            {
-                this.ip = ownership.getKey().getHostAddress();
-                this.dns = ownership.getKey().getHostName();
-                this.owns = ownership.getValue();
-            }
+    static class SetHostStat implements Iterable<HostStat>
+    {
+        final List<HostStat> hostStats = new ArrayList<HostStat>();
+        final boolean resolveIp;
 
-            public String ipOrDns()
-            {
-                if (resolveIp)
-                {
-                    return dns;
-                }
-                return ip;
-            }
+        public SetHostStat(boolean resolveIp)
+        {
+            this.resolveIp = resolveIp;
+        }
+
+        public int size()
+        {
+            return hostStats.size();
+        }
+
+        @Override
+        public Iterator<HostStat> iterator()
+        {
+            return hostStats.iterator();
+        }
+
+        public void add(String token, String host, Map<InetAddress, Float> ownerships) throws UnknownHostException
+        {
+            InetAddress endpoint = InetAddress.getByName(host);
+            Float owns = ownerships.get(endpoint);
+            hostStats.add(new HostStat(token, endpoint, resolveIp, owns));
+        }
+    }
+
+    static class HostStat
+    {
+        public final InetAddress endpoint;
+        public final boolean resolveIp;
+        public final Float owns;
+        public final String token;
+
+        public HostStat(String token, InetAddress endpoint, boolean resolveIp, Float owns)
+        {
+            this.token = token;
+            this.endpoint = endpoint;
+            this.resolveIp = resolveIp;
+            this.owns = owns;
+        }
+
+        public String ipOrDns()
+        {
+            return resolveIp ? endpoint.getHostName() : endpoint.getHostAddress();
         }
     }
 
@@ -2139,24 +2169,17 @@ public class NodeTool
         }
     }
 
-    @Command(name = "rebuild_index", description = "A full rebuilds of native secondry index for a given column family")
+    @Command(name = "rebuild_index", description = "A full rebuild of native secondary indexes for a given table")
     public static class RebuildIndex extends NodeToolCmd
     {
-        @Arguments(usage = "<keyspace> <cfname> [<indexName...>]", description = "The keyspace and column family name followed by an optional list of index names (IndexNameExample: Standard3.IdxName Standard3.IdxName1)")
+        @Arguments(usage = "<keyspace> <table> <indexName...>", description = "The keyspace and table name followed by a list of index names (IndexNameExample: Standard3.IdxName Standard3.IdxName1)")
         List<String> args = new ArrayList<>();
 
         @Override
         public void execute(NodeProbe probe)
         {
-            checkArgument(args.size() >= 2, "rebuild_index requires ks and cf args");
-
-            List<String> indexNames = new ArrayList<>();
-            if (args.size() > 2)
-            {
-                indexNames.addAll(args.subList(2, args.size()));
-            }
-
-            probe.rebuildIndex(args.get(0), args.get(1), toArray(indexNames, String.class));
+            checkArgument(args.size() >= 3, "rebuild_index requires ks, cf and idx args");
+            probe.rebuildIndex(args.get(0), args.get(1), toArray(args.subList(2, args.size()), String.class));
         }
     }
 
@@ -2243,7 +2266,7 @@ public class NodeTool
         }
     }
 
-    @Command(name = "drain", description = "Drain the node (stop accepting writes and flush all column families)")
+    @Command(name = "drain", description = "Drain the node (stop accepting writes and flush all tables)")
     public static class Drain extends NodeToolCmd
     {
         @Override
@@ -2254,7 +2277,7 @@ public class NodeTool
                 probe.drain();
             } catch (IOException | InterruptedException | ExecutionException e)
             {
-                throw new RuntimeException("Error occured during flushing", e);
+                throw new RuntimeException("Error occurred during flushing", e);
             }
         }
     }
@@ -2301,6 +2324,34 @@ public class NodeTool
                 probe.truncateHints();
             else
                 probe.truncateHints(endpoint);
+        }
+    }
+    
+    @Command(name = "setlogginglevel", description = "Set the log level threshold for a given class. If both class and level are empty/null, it will reset to the initial configuration")
+    public static class SetLoggingLevel extends NodeToolCmd
+    {
+        @Arguments(usage = "<class> <level>", description = "The class to change the level for and the log level threshold to set (can be empty)")
+        private List<String> args = new ArrayList<>();
+
+        @Override
+        public void execute(NodeProbe probe)
+        {
+            String classQualifier = args.size() >= 1 ? args.get(0) : EMPTY;
+            String level = args.size() == 2 ? args.get(1) : EMPTY;
+            probe.setLoggingLevel(classQualifier, level);
+        }
+    }
+    
+    @Command(name = "getlogginglevels", description = "Get the runtime logging levels")
+    public static class GetLoggingLevels extends NodeToolCmd
+    {
+        @Override
+        public void execute(NodeProbe probe)
+        {
+            // what if some one set a very long logger name? 50 space may not be enough...
+            System.out.printf("%n%-50s%10s%n", "Logger Name", "Log Level");
+            for (Map.Entry<String, String> entry : probe.getLoggingLevels().entrySet())
+                System.out.printf("%-50s%10s%n", entry.getKey(), entry.getValue());
         }
     }
 

@@ -20,11 +20,10 @@ package org.apache.cassandra.cql3;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * Static helper methods and classes for user types.
@@ -35,7 +34,11 @@ public abstract class UserTypes
 
     public static ColumnSpecification fieldSpecOf(ColumnSpecification column, int field)
     {
-        return new ColumnSpecification(column.ksName, column.cfName, new ColumnIdentifier(column.name + "." + field, true), ((UserType)column.type).types.get(field));
+        UserType ut = (UserType)column.type;
+        return new ColumnSpecification(column.ksName,
+                                       column.cfName,
+                                       new ColumnIdentifier(column.name + "." + UTF8Type.instance.compose(ut.fieldName(field)), true),
+                                       ut.fieldType(field));
     }
 
     public static class Literal implements Term.Raw
@@ -54,18 +57,32 @@ public abstract class UserTypes
             UserType ut = (UserType)receiver.type;
             boolean allTerminal = true;
             List<Term> values = new ArrayList<>(entries.size());
-            for (int i = 0; i < ut.types.size(); i++)
+            int foundValues = 0;
+            for (int i = 0; i < ut.size(); i++)
             {
-                ColumnIdentifier field = new ColumnIdentifier(ut.columnNames.get(i), UTF8Type.instance);
-                Term value = entries.get(field).prepare(keyspace, fieldSpecOf(receiver, i));
+                ColumnIdentifier field = new ColumnIdentifier(ut.fieldName(i), UTF8Type.instance);
+                Term.Raw raw = entries.get(field);
+                if (raw == null)
+                    raw = Constants.NULL_LITERAL;
+                else
+                    ++foundValues;
+                Term value = raw.prepare(keyspace, fieldSpecOf(receiver, i));
 
                 if (value instanceof Term.NonTerminal)
                     allTerminal = false;
 
                 values.add(value);
             }
+            if (foundValues != entries.size())
+            {
+                // We had some field that are not part of the type
+                for (ColumnIdentifier id : entries.keySet())
+                    if (!ut.fieldNames().contains(id.bytes))
+                        throw new InvalidRequestException(String.format("Unknown field '%s' in value of user defined type %s", id, ut.getNameAsString()));
+            }
+
             DelayedValue value = new DelayedValue(((UserType)receiver.type), values);
-            return allTerminal ? value.bind(Collections.<ByteBuffer>emptyList()) : value;
+            return allTerminal ? value.bind(QueryOptions.DEFAULT) : value;
         }
 
         private void validateAssignableTo(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
@@ -74,12 +91,12 @@ public abstract class UserTypes
                 throw new InvalidRequestException(String.format("Invalid user type literal for %s of type %s", receiver, receiver.type.asCQL3Type()));
 
             UserType ut = (UserType)receiver.type;
-            for (int i = 0; i < ut.types.size(); i++)
+            for (int i = 0; i < ut.size(); i++)
             {
-                ColumnIdentifier field = new ColumnIdentifier(ut.columnNames.get(i), UTF8Type.instance);
+                ColumnIdentifier field = new ColumnIdentifier(ut.fieldName(i), UTF8Type.instance);
                 Term.Raw value = entries.get(field);
                 if (value == null)
-                    throw new InvalidRequestException(String.format("Invalid user type literal for %s: missing field %s", receiver, field));
+                    continue;
 
                 ColumnSpecification fieldSpec = fieldSpecOf(receiver, i);
                 if (!value.isAssignableTo(keyspace, fieldSpec))
@@ -140,38 +157,35 @@ public abstract class UserTypes
 
         public void collectMarkerSpecification(VariableSpecifications boundNames)
         {
-            for (int i = 0; i < type.types.size(); i++)
+            for (int i = 0; i < type.size(); i++)
                 values.get(i).collectMarkerSpecification(boundNames);
         }
 
-        private ByteBuffer[] bindInternal(List<ByteBuffer> variables) throws InvalidRequestException
+        private ByteBuffer[] bindInternal(QueryOptions options) throws InvalidRequestException
         {
-            ByteBuffer[] buffers = new ByteBuffer[values.size()];
-            for (int i = 0; i < type.types.size(); i++)
-            {
-                ByteBuffer buffer = values.get(i).bindAndGet(variables);
-                if (buffer == null)
-                    throw new InvalidRequestException("null is not supported inside user type literals");
-                if (buffer.remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
-                    throw new InvalidRequestException(String.format("Value for field %s is too long. User type fields are limited to %d bytes but %d bytes provided",
-                                                                    UTF8Type.instance.getString(type.columnNames.get(i)),
-                                                                    FBUtilities.MAX_UNSIGNED_SHORT,
-                                                                    buffer.remaining()));
+            int version = options.getProtocolVersion();
 
-                buffers[i] = buffer;
+            ByteBuffer[] buffers = new ByteBuffer[values.size()];
+            for (int i = 0; i < type.size(); i++)
+            {
+                buffers[i] = values.get(i).bindAndGet(options);
+                // Inside UDT values, we must force the serialization of collections to v3 whatever protocol
+                // version is in use since we're going to store directly that serialized value.
+                if (version < 3 && type.fieldType(i).isCollection() && buffers[i] != null)
+                    buffers[i] = ((CollectionType)type.fieldType(i)).getSerializer().reserializeToV3(buffers[i]);
             }
             return buffers;
         }
 
-        public Constants.Value bind(List<ByteBuffer> variables) throws InvalidRequestException
+        public Constants.Value bind(QueryOptions options) throws InvalidRequestException
         {
-            return new Constants.Value(bindAndGet(variables));
+            return new Constants.Value(bindAndGet(options));
         }
 
         @Override
-        public ByteBuffer bindAndGet(List<ByteBuffer> variables) throws InvalidRequestException
+        public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException
         {
-            return CompositeType.build(bindInternal(variables));
+            return UserType.buildValue(bindInternal(options));
         }
     }
 }

@@ -18,10 +18,7 @@
 package org.apache.cassandra.db.filter;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.List;
-import java.util.SortedSet;
-import java.util.TreeSet;
+import java.util.*;
 
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.slf4j.Logger;
@@ -34,7 +31,6 @@ import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 
 /**
  * Extends a column filter (IFilter) to include a number of IndexExpression.
@@ -253,7 +249,10 @@ public abstract class ExtendedFilter
              * 2) We don't yet allow non-indexed range slice with filters in CQL3 (i.e. this will never be
              * called by CFS.filter() for composites).
              */
-            if (!needsExtraQuery(rowKey.key, data))
+            assert !(cfs.getComparator().isCompound()) : "Sequential scan with filters is not supported (if you just created an index, you "
+                                                         + "need to wait for the creation to be propagated to all nodes before querying it)";
+
+            if (!needsExtraQuery(rowKey.getKey(), data))
                 return null;
 
             // Note: for counters we must be careful to not add a column that was already there (to avoid overcount). That is
@@ -275,8 +274,8 @@ public abstract class ExtendedFilter
                 return data;
 
             ColumnFamily pruned = data.cloneMeShallow();
-            IDiskAtomFilter filter = dataRange.columnFilter(rowKey.key);
-            OnDiskAtomIterator iter = filter.getColumnFamilyIterator(rowKey, data);
+            IDiskAtomFilter filter = dataRange.columnFilter(rowKey.getKey());
+            Iterator<Cell> iter = filter.getColumnIterator(data);
             filter.collectReducedColumns(pruned, QueryFilter.gatherTombstones(pruned, iter), cfs.gcBefore(timestamp), timestamp);
             return pruned;
         }
@@ -308,7 +307,7 @@ public abstract class ExtendedFilter
                         continue;
                     }
 
-                    dataValue = extractDataValue(def, rowKey.key, data, prefix);
+                    dataValue = extractDataValue(def, rowKey.getKey(), data, prefix);
                     validator = def.type;
                 }
 
@@ -325,6 +324,19 @@ public abstract class ExtendedFilter
         private static boolean collectionSatisfies(ColumnDefinition def, ColumnFamily data, Composite prefix, IndexExpression expr, ByteBuffer collectionElement)
         {
             assert def.type.isCollection();
+
+            if (expr.operator == IndexExpression.Operator.CONTAINS)
+            {
+                // get a slice of the collection cells
+                Iterator<Cell> iter = data.iterator(new ColumnSlice[]{ data.getComparator().create(prefix, def).slice() });
+                while (iter.hasNext())
+                {
+                    if (((CollectionType) def.type).valueComparator().compare(iter.next().value(), expr.value) == 0)
+                        return true;
+                }
+
+                return false;
+            }
 
             CollectionType type = (CollectionType)def.type;
             switch (type.kind)

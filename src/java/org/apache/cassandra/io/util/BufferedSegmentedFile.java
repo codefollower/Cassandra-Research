@@ -40,6 +40,11 @@ public class BufferedSegmentedFile extends SegmentedFile
             long length = new File(path).length();
             return new BufferedSegmentedFile(path, length);
         }
+
+        public SegmentedFile openEarly(String path)
+        {
+            return complete(path);
+        }
     }
 
     //每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置

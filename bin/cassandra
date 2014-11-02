@@ -134,6 +134,8 @@ launch_service()
     props="$3"
     class="$4"
     cassandra_parms="-Dlogback.configurationFile=logback.xml"
+    cassandra_parms="$cassandra_parms -Dcassandra.logdir=$CASSANDRA_HOME/logs"
+    cassandra_parms="$cassandra_parms -Dcassandra.storagedir=$cassandra_storagedir"
 
     if [ "x$pidpath" != "x" ]; then
         cassandra_parms="$cassandra_parms -Dcassandra-pidfile=$pidpath"
@@ -200,6 +202,13 @@ while true; do
         ;;
     esac
 done
+
+# see CASSANDRA-7254
+"$JAVA" -cp $CLASSPATH $JVM_OPTS 2>&1 | grep -q 'Error: Exception thrown by the agent : java.lang.NullPointerException'
+if [ $? -ne "1" ]; then 
+    echo Unable to bind JMX, is Cassandra already running?
+    exit 1;
+fi
 
 # Start up the service
 launch_service "$pidfile" "$foreground" "$properties" "$classname"

@@ -17,6 +17,9 @@
  */
 package org.apache.cassandra.cql3;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.marshal.*;
@@ -231,7 +234,63 @@ public interface CQL3Type
             return name;
         }
     }
- 
+
+    public static class Tuple implements CQL3Type
+    {
+        private final TupleType type;
+
+        private Tuple(TupleType type)
+        {
+            this.type = type;
+        }
+
+        public static Tuple create(TupleType type)
+        {
+            return new Tuple(type);
+        }
+
+        public boolean isCollection()
+        {
+            return false;
+        }
+
+        public AbstractType<?> getType()
+        {
+            return type;
+        }
+
+        @Override
+        public final boolean equals(Object o)
+        {
+            if(!(o instanceof Tuple))
+                return false;
+
+            Tuple that = (Tuple)o;
+            return type.equals(that.type);
+        }
+
+        @Override
+        public final int hashCode()
+        {
+            return type.hashCode();
+        }
+
+        @Override
+        public String toString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.append("tuple<");
+            for (int i = 0; i < type.size(); i++)
+            {
+                if (i > 0)
+                    sb.append(", ");
+                sb.append(type.type(i).asCQL3Type());
+            }
+            sb.append(">");
+            return sb.toString();
+        }
+    }
+
     // For UserTypes, we need to know the current keyspace to resolve the
     // actual type used, so Raw is a "not yet prepared" CQL3Type.
     public abstract class Raw
@@ -286,6 +345,15 @@ public interface CQL3Type
                 throw new InvalidRequestException("counters are not allowed inside a collection");
 
             return new RawCollection(CollectionType.Kind.SET, null, t);
+        }
+
+        public static Raw tuple(List<CQL3Type.Raw> ts) throws InvalidRequestException
+        {
+            for (int i = 0; i < ts.size(); i++)
+                if (ts.get(i).isCounter())
+                    throw new InvalidRequestException("counters are not allowed inside tuples");
+
+            return new RawTuple(ts);
         }
 
         private static class RawType extends Raw
@@ -358,7 +426,6 @@ public interface CQL3Type
 
         private static class RawUT extends Raw
         {
-
             private final UTName name;
 
             private RawUT(UTName name)
@@ -368,7 +435,19 @@ public interface CQL3Type
 
             public CQL3Type prepare(String keyspace) throws InvalidRequestException
             {
-                name.setKeyspace(keyspace);
+                if (name.hasKeyspace())
+                {
+                    // The provided keyspace is the one of the current statement this is part of. If it's different from the keyspace of
+                    // the UTName, we reject since we want to limit user types to their own keyspace (see #6643)
+                    if (!keyspace.equals(name.getKeyspace()))
+                        throw new InvalidRequestException(String.format("Statement on keyspace %s cannot refer to a user type in keyspace %s; "
+                                                                        + "user types can only be used in the keyspace they are defined in",
+                                                                        keyspace, name.getKeyspace()));
+                }
+                else
+                {
+                    name.setKeyspace(keyspace);
+                }
 
                 KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
                 if (ksm == null)
@@ -385,6 +464,44 @@ public interface CQL3Type
             {
                 return name.toString();
             }
-    }
+        }
+
+        private static class RawTuple extends Raw
+        {
+            private final List<CQL3Type.Raw> types;
+
+            private RawTuple(List<CQL3Type.Raw> types)
+            {
+                this.types = types;
+            }
+
+            public boolean isCollection()
+            {
+                return false;
+            }
+
+            public CQL3Type prepare(String keyspace) throws InvalidRequestException
+            {
+                List<AbstractType<?>> ts = new ArrayList<>(types.size());
+                for (CQL3Type.Raw t : types)
+                    ts.add(t.prepare(keyspace).getType());
+                return new Tuple(new TupleType(ts));
+            }
+
+            @Override
+            public String toString()
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.append("tuple<");
+                for (int i = 0; i < types.size(); i++)
+                {
+                    if (i > 0)
+                        sb.append(", ");
+                    sb.append(types.get(i));
+                }
+                sb.append(">");
+                return sb.toString();
+            }
+        }
     }
 }

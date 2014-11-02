@@ -18,9 +18,10 @@
 package org.apache.cassandra.db;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
-import java.util.*;
+import java.security.MessageDigest;
+import java.util.Comparator;
+import java.util.Iterator;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.Iterators;
@@ -29,7 +30,10 @@ import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ObjectSizes;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
  * A combination of a top-level (or row) tombstone and range tombstones describing the deletions
@@ -99,14 +103,22 @@ public class DeletionInfo implements IMeasurableMemory
         return new DeletionInfo(topLevel, ranges == null ? null : ranges.copy());
     }
 
+    public DeletionInfo copy(AbstractAllocator allocator)
+    {
+
+        RangeTombstoneList rangesCopy = null;
+        if (ranges != null)
+             rangesCopy = ranges.copy(allocator);
+
+        return new DeletionInfo(topLevel, rangesCopy);
+    }
+
     /**
      * Returns whether this DeletionInfo is live, that is deletes no columns.
      */
     public boolean isLive()
     {
-        return topLevel.markedForDeleteAt == Long.MIN_VALUE
-            && topLevel.localDeletionTime == Integer.MAX_VALUE
-            && (ranges == null || ranges.isEmpty());
+        return topLevel.isLive() && (ranges == null || ranges.isEmpty());
     }
 
     /**
@@ -117,20 +129,19 @@ public class DeletionInfo implements IMeasurableMemory
      */
     public boolean isDeleted(Cell cell)
     {
-        return isDeleted(cell.name(), cell.timestamp());
-    }
-
-    public boolean isDeleted(Composite name, long timestamp)
-    {
         // We do rely on this test: if topLevel.markedForDeleteAt is MIN_VALUE, we should not
         // consider the column deleted even if timestamp=MIN_VALUE, otherwise this break QueryFilter.isRelevant
         if (isLive())
             return false;
 
-        if (timestamp <= topLevel.markedForDeleteAt)
+        if (cell.timestamp() <= topLevel.markedForDeleteAt)
             return true;
 
-        return ranges != null && ranges.isDeleted(name, timestamp);
+        // No matter what the counter cell's timestamp is, a tombstone always takes precedence. See CASSANDRA-7346.
+        if (!topLevel.isLive() && cell instanceof CounterCell)
+            return true;
+
+        return ranges != null && ranges.isDeleted(cell);
     }
 
     /**
@@ -165,6 +176,35 @@ public class DeletionInfo implements IMeasurableMemory
             if (ranges.isEmpty())
                 ranges = null;
         }
+    }
+
+    /**
+     * Evaluates difference between this deletion info and superset for read repair
+     *
+     * @return the difference between the two, or LIVE if no difference
+     */
+    public DeletionInfo diff(DeletionInfo superset)
+    {
+        RangeTombstoneList rangeDiff = superset.ranges == null || superset.ranges.isEmpty()
+                                     ? null
+                                     : ranges == null ? superset.ranges : ranges.diff(superset.ranges);
+
+        return topLevel.markedForDeleteAt != superset.topLevel.markedForDeleteAt || rangeDiff != null
+             ? new DeletionInfo(superset.topLevel, rangeDiff)
+             : DeletionInfo.live();
+    }
+
+
+    /**
+     * Digests deletion info. Used to trigger read repair on mismatch.
+     */
+    public void updateDigest(MessageDigest digest)
+    {
+        if (topLevel.markedForDeleteAt != Long.MIN_VALUE)
+            digest.update(ByteBufferUtil.bytes(topLevel.markedForDeleteAt));
+
+        if (ranges != null)
+            ranges.updateDigest(digest);
     }
 
     /**
@@ -255,11 +295,6 @@ public class DeletionInfo implements IMeasurableMemory
     public Iterator<RangeTombstone> rangeIterator(Composite start, Composite finish)
     {
         return ranges == null ? Iterators.<RangeTombstone>emptyIterator() : ranges.iterator(start, finish);
-    }
-
-    public DeletionTime deletionTimeFor(Composite name)
-    {
-        return ranges == null ? null : ranges.searchDeletionTime(name);
     }
 
     public RangeTombstone rangeCovering(Composite name)
@@ -359,7 +394,7 @@ public class DeletionInfo implements IMeasurableMemory
             this.rtlSerializer = new RangeTombstoneList.Serializer(type);
         }
 
-        public void serialize(DeletionInfo info, DataOutput out, int version) throws IOException
+        public void serialize(DeletionInfo info, DataOutputPlus out, int version) throws IOException
         {
             DeletionTime.serializer.serialize(info.topLevel, out);
             rtlSerializer.serialize(info.ranges, out, version);
@@ -410,12 +445,11 @@ public class DeletionInfo implements IMeasurableMemory
 
         public boolean isDeleted(Cell cell)
         {
-            return isDeleted(cell.name(), cell.timestamp());
-        }
+            if (cell.timestamp() <= topLevel.markedForDeleteAt)
+                return true;
 
-        public boolean isDeleted(Composite name, long timestamp)
-        {
-            if (timestamp <= topLevel.markedForDeleteAt)
+            // No matter what the counter cell's timestamp is, a tombstone always takes precedence. See CASSANDRA-7346.
+            if (!topLevel.isLive() && cell instanceof CounterCell)
                 return true;
 
             /*
@@ -423,13 +457,13 @@ public class DeletionInfo implements IMeasurableMemory
              * is always in forward sorted order.
              */
             if (reversed)
-                 return DeletionInfo.this.isDeleted(name, timestamp);
+                 return DeletionInfo.this.isDeleted(cell);
 
             // Maybe create the tester if we hadn't yet and we now have some ranges (see above).
             if (tester == null && ranges != null)
                 tester = ranges.inOrderTester();
 
-            return tester != null && tester.isDeleted(name, timestamp);
+            return tester != null && tester.isDeleted(cell);
         }
     }
 }

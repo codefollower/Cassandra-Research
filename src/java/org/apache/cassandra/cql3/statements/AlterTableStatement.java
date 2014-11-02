@@ -29,7 +29,7 @@ import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 
 import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
 
@@ -75,10 +75,10 @@ public class AlterTableStatement extends SchemaAlteringStatement
     }
 
     //参见my.test.cql3.statements.TableTest.test_AlterTableStatement()的测试
-    public void announceMigration() throws RequestValidationException
+    public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
         CFMetaData meta = validateColumnFamily(keyspace(), columnFamily());
-        CFMetaData cfm = meta.clone();
+        CFMetaData cfm = meta.copy();
 
         //ALTER COLUMN FAMILY <CF> WITH时columnName为null，其他都不为null
         CQL3Type validator = this.validator == null ? null : this.validator.prepare(keyspace());
@@ -88,8 +88,15 @@ public class AlterTableStatement extends SchemaAlteringStatement
             case ADD:
                 if (cfm.comparator.isDense())
                     throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table");
-                if (isStatic && !cfm.comparator.isCompound())
-                    throw new InvalidRequestException("Static columns are not allowed in COMPACT STORAGE tables");
+
+                if (isStatic)
+                {
+                    if (!cfm.comparator.isCompound())
+                        throw new InvalidRequestException("Static columns are not allowed in COMPACT STORAGE tables");
+                    if (cfm.clusteringColumns().isEmpty())
+                        throw new InvalidRequestException("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
+                }
+
                 if (def != null)
                 {
                     switch (def.kind)
@@ -109,6 +116,18 @@ public class AlterTableStatement extends SchemaAlteringStatement
                         throw new InvalidRequestException("Cannot use collection types with non-composite PRIMARY KEY");
                     if (cfm.isSuper())
                         throw new InvalidRequestException("Cannot use collection types with Super column family");
+
+
+                    // If there used to be a collection column with the same name (that has been dropped), it will
+                    // still be appear in the ColumnToCollectionType because or reasons explained on #6276. The same
+                    // reason mean that we can't allow adding a new collection with that name (see the ticket for details).
+                    if (cfm.comparator.hasCollections())
+                    {
+                        CollectionType previous = cfm.comparator.collectionType() == null ? null : cfm.comparator.collectionType().defined.get(columnName.bytes);
+                        if (previous != null && !type.isCompatibleWith(previous))
+                            throw new InvalidRequestException(String.format("Cannot add a collection with the name %s " +
+                                        "because a collection with the same name and a different type has already been used in the past", columnName));
+                    }
 
                     cfm.comparator = cfm.comparator.addOrUpdateCollection(columnName, (CollectionType)type);
                 }
@@ -228,7 +247,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
             case OPTS:
                 //在CqlParser中传进来的不会为null，也不可能是empty
                 if (cfProps == null)
-                    throw new InvalidRequestException(String.format("ALTER COLUMNFAMILY WITH invoked, but no parameters found"));
+                    throw new InvalidRequestException(String.format("ALTER TABLE WITH invoked, but no parameters found"));
 
                 cfProps.validate();
                 cfProps.applyToCFMetadata(cfm);
@@ -239,7 +258,8 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 break;
         }
 
-        MigrationManager.announceColumnFamilyUpdate(cfm, false);
+        MigrationManager.announceColumnFamilyUpdate(cfm, false, isLocalOnly);
+        return true;
     }
 
     public String toString()
@@ -251,8 +271,8 @@ public class AlterTableStatement extends SchemaAlteringStatement
                              validator);
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
-        return ResultMessage.SchemaChange.Change.UPDATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TABLE, keyspace(), columnFamily());
     }
 }

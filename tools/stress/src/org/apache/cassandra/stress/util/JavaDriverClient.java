@@ -17,16 +17,16 @@
  */
 package org.apache.cassandra.stress.util;
 
-import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import javax.net.ssl.SSLContext;
 
 import com.datastax.driver.core.*;
 import org.apache.cassandra.config.EncryptionOptions;
 import org.apache.cassandra.security.SSLFactory;
-import org.apache.cassandra.utils.FBUtilities;
-import org.jboss.netty.logging.InternalLoggerFactory;
-import org.jboss.netty.logging.Slf4JLoggerFactory;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+import io.netty.util.internal.logging.Slf4JLoggerFactory;
 
 public class JavaDriverClient
 {
@@ -42,6 +42,8 @@ public class JavaDriverClient
     private Cluster cluster;
     private Session session;
 
+    private static final ConcurrentMap<String, PreparedStatement> stmts = new ConcurrentHashMap<>();
+
     public JavaDriverClient(String host, int port)
     {
         this(host, port, new EncryptionOptions.ClientEncryptionOptions());
@@ -56,7 +58,18 @@ public class JavaDriverClient
 
     public PreparedStatement prepare(String query)
     {
-        return getSession().prepare(query);
+        PreparedStatement stmt = stmts.get(query);
+        if (stmt != null)
+            return stmt;
+        synchronized (stmts)
+        {
+            stmt = stmts.get(query);
+            if (stmt != null)
+                return stmt;
+            stmt = getSession().prepare(query);
+            stmts.put(query, stmt);
+        }
+        return stmt;
     }
 
     public void connect(ProtocolOptions.Compression compression) throws Exception
@@ -103,11 +116,11 @@ public class JavaDriverClient
         return getSession().execute(stmt);
     }
 
-    public ResultSet executePrepared(PreparedStatement stmt, List<ByteBuffer> queryParams, org.apache.cassandra.db.ConsistencyLevel consistency)
+    public ResultSet executePrepared(PreparedStatement stmt, List<Object> queryParams, org.apache.cassandra.db.ConsistencyLevel consistency)
     {
 
         stmt.setConsistencyLevel(from(consistency));
-        BoundStatement bstmt = stmt.bind((Object[]) queryParams.toArray(new ByteBuffer[queryParams.size()]));
+        BoundStatement bstmt = stmt.bind((Object[]) queryParams.toArray(new Object[queryParams.size()]));
         return getSession().execute(bstmt);
     }
 
@@ -118,7 +131,7 @@ public class JavaDriverClient
      * @param cl
      * @return
      */
-    ConsistencyLevel from(org.apache.cassandra.db.ConsistencyLevel cl)
+    public static ConsistencyLevel from(org.apache.cassandra.db.ConsistencyLevel cl)
     {
         switch (cl)
         {

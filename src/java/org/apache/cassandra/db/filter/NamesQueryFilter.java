@@ -18,7 +18,6 @@
 package org.apache.cassandra.db.filter;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -35,10 +34,13 @@ import org.apache.cassandra.db.columniterator.SSTableNamesIterator;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileDataInput;
+import org.apache.cassandra.utils.SearchIterator;
 
 //按指定的一些可能不连续的列名来过滤
 //例如，如果有a到z这些列名，可以按[a, g, i]来提取其中三列
@@ -72,10 +74,17 @@ public class NamesQueryFilter implements IDiskAtomFilter
        return new NamesQueryFilter(newColumns, countCQL3Rows);
     }
 
-    public OnDiskAtomIterator getColumnFamilyIterator(DecoratedKey key, ColumnFamily cf)
+    @SuppressWarnings("unchecked")
+    public Iterator<Cell> getColumnIterator(ColumnFamily cf)
     {
         assert cf != null;
-        return new ByNameColumnIterator(columns.iterator(), cf, key);
+        return (Iterator<Cell>) (Iterator<?>) new ByNameColumnIterator(columns.iterator(), null, cf);
+    }
+
+    public OnDiskAtomIterator getColumnIterator(DecoratedKey key, ColumnFamily cf)
+    {
+        assert cf != null;
+        return new ByNameColumnIterator(columns.iterator(), key, cf);
     }
 
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
@@ -92,12 +101,12 @@ public class NamesQueryFilter implements IDiskAtomFilter
     {
         DeletionInfo.InOrderTester tester = container.inOrderDeletionTester();
         while (reducedColumns.hasNext())
-            container.addIfRelevant(reducedColumns.next(), tester, gcBefore);
+            container.maybeAppendColumn(reducedColumns.next(), tester, gcBefore);
     }
 
     public Comparator<Cell> getColumnComparator(CellNameType comparator)
     {
-        return comparator.columnComparator();
+        return comparator.columnComparator(false);
     }
 
     @Override
@@ -133,11 +142,11 @@ public class NamesQueryFilter implements IDiskAtomFilter
         return count;
     }
 
-    public boolean maySelectPrefix(Comparator<Composite> cmp, Composite prefix)
+    public boolean maySelectPrefix(CType type, Composite prefix)
     {
         for (CellName column : columns)
         {
-            if (prefix.isPrefixOf(column))
+            if (prefix.isPrefixOf(type, column))
                 return true;
         }
         return false;
@@ -185,13 +194,27 @@ public class NamesQueryFilter implements IDiskAtomFilter
     {
         private final ColumnFamily cf;
         private final DecoratedKey key;
-        private final Iterator<CellName> iter;
+        private final Iterator<CellName> names;
+        private final SearchIterator<CellName, Cell> cells;
 
-        public ByNameColumnIterator(Iterator<CellName> iter, ColumnFamily cf, DecoratedKey key)
+        public ByNameColumnIterator(Iterator<CellName> names, DecoratedKey key, ColumnFamily cf)
         {
-            this.iter = iter;
+            this.names = names;
             this.cf = cf;
             this.key = key;
+            this.cells = cf.searchIterator();
+        }
+
+        protected OnDiskAtom computeNext()
+        {
+            while (names.hasNext() && cells.hasNext())
+            {
+                CellName current = names.next();
+                Cell cell = cells.next(current);
+                if (cell != null)
+                    return cell;
+            }
+            return endOfData();
         }
 
         public ColumnFamily getColumnFamily()
@@ -202,18 +225,6 @@ public class NamesQueryFilter implements IDiskAtomFilter
         public DecoratedKey getKey()
         {
             return key;
-        }
-
-        protected OnDiskAtom computeNext()
-        {
-            while (iter.hasNext())
-            {
-                CellName current = iter.next();
-                Cell cell = cf.getColumn(current);
-                if (cell != null)
-                    return cell;
-            }
-            return endOfData();
         }
 
         public void close() throws IOException { }
@@ -228,7 +239,7 @@ public class NamesQueryFilter implements IDiskAtomFilter
             this.type = type;
         }
 
-        public void serialize(NamesQueryFilter f, DataOutput out, int version) throws IOException
+        public void serialize(NamesQueryFilter f, DataOutputPlus out, int version) throws IOException
         {
             out.writeInt(f.columns.size());
             ISerializer<CellName> serializer = type.cellSerializer();
@@ -242,7 +253,7 @@ public class NamesQueryFilter implements IDiskAtomFilter
         public NamesQueryFilter deserialize(DataInput in, int version) throws IOException
         {
             int size = in.readInt();
-            SortedSet<CellName> columns = new TreeSet<CellName>(type);
+            SortedSet<CellName> columns = new TreeSet<>(type);
             ISerializer<CellName> serializer = type.cellSerializer();
             for (int i = 0; i < size; ++i)
                 columns.add(serializer.deserialize(in));
@@ -265,7 +276,7 @@ public class NamesQueryFilter implements IDiskAtomFilter
     public Iterator<RangeTombstone> getRangeTombstoneIterator(final ColumnFamily source)
     {
         if (!source.deletionInfo().hasRanges())
-            return Iterators.<RangeTombstone>emptyIterator();
+            return Iterators.emptyIterator();
 
         return new AbstractIterator<RangeTombstone>()
         {

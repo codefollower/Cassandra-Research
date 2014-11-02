@@ -22,12 +22,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.udf.UDFunction;
+import org.apache.cassandra.cql3.udf.UDFRegistry;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.db.marshal.SetType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.serializers.MarshalException;
 
 public class FunctionCall extends Term.NonTerminal
 {
@@ -46,25 +50,41 @@ public class FunctionCall extends Term.NonTerminal
             t.collectMarkerSpecification(boundNames);
     }
 
-    public Term.Terminal bind(List<ByteBuffer> values) throws InvalidRequestException
+    public Term.Terminal bind(QueryOptions options) throws InvalidRequestException
     {
-        return makeTerminal(fun, bindAndGet(values));
+        return makeTerminal(fun, bindAndGet(options), options.getProtocolVersion());
     }
 
-    public ByteBuffer bindAndGet(List<ByteBuffer> values) throws InvalidRequestException
+    public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException
     {
         List<ByteBuffer> buffers = new ArrayList<ByteBuffer>(terms.size());
         for (Term t : terms)
         {
             // For now, we don't allow nulls as argument as no existing function needs it and it
             // simplify things.
-            ByteBuffer val = t.bindAndGet(values);
+            ByteBuffer val = t.bindAndGet(options);
             if (val == null)
                 throw new InvalidRequestException(String.format("Invalid null value for argument to %s", fun));
             buffers.add(val);
         }
+        return executeInternal(fun, buffers);
+    }
 
-        return fun.execute(buffers);
+    private static ByteBuffer executeInternal(Function fun, List<ByteBuffer> params) throws InvalidRequestException
+    {
+        ByteBuffer result = fun.execute(params);
+        try
+        {
+            // Check the method didn't lied on it's declared return type
+            if (result != null)
+                fun.returnType().validate(result);
+            return result;
+        }
+        catch (MarshalException e)
+        {
+            throw new RuntimeException(String.format("Return of function %s (%s) is not a valid value for its declared return type %s", 
+                                                     fun, ByteBufferUtil.bytesToHex(result), fun.returnType().asCQL3Type()));
+        }
     }
 
     public boolean containsBindMarker()
@@ -77,34 +97,49 @@ public class FunctionCall extends Term.NonTerminal
         return false;
     }
 
-    private static Term.Terminal makeTerminal(Function fun, ByteBuffer result) throws InvalidRequestException
+    private static Term.Terminal makeTerminal(Function fun, ByteBuffer result, int version) throws InvalidRequestException
     {
         if (!(fun.returnType() instanceof CollectionType))
             return new Constants.Value(result);
 
         switch (((CollectionType)fun.returnType()).kind)
         {
-            case LIST: return Lists.Value.fromSerialized(result, (ListType)fun.returnType());
-            case SET:  return Sets.Value.fromSerialized(result, (SetType)fun.returnType());
-            case MAP:  return Maps.Value.fromSerialized(result, (MapType)fun.returnType());
+            case LIST: return Lists.Value.fromSerialized(result, (ListType)fun.returnType(), version);
+            case SET:  return Sets.Value.fromSerialized(result, (SetType)fun.returnType(), version);
+            case MAP:  return Maps.Value.fromSerialized(result, (MapType)fun.returnType(), version);
         }
         throw new AssertionError();
     }
 
     public static class Raw implements Term.Raw
     {
+        private final String namespace;
         private final String functionName;
         private final List<Term.Raw> terms;
 
-        public Raw(String functionName, List<Term.Raw> terms)
+        public Raw(String namespace, String functionName, List<Term.Raw> terms)
         {
+            this.namespace = namespace;
             this.functionName = functionName;
             this.terms = terms;
         }
 
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
-            Function fun = Functions.get(keyspace, functionName, terms, receiver);
+            Function fun = null;
+            if (namespace.isEmpty())
+                fun = Functions.get(keyspace, functionName, terms, receiver);
+
+            if (fun == null)
+            {
+                UDFunction udf = UDFRegistry.resolveFunction(namespace, functionName, receiver.ksName, receiver.cfName, terms);
+                if (udf != null)
+                    // got a user defined function to call
+                    fun = udf.create(terms);
+            }
+
+            if (fun == null)
+                throw new InvalidRequestException(String.format("Unknown function %s called", namespace.isEmpty() ? functionName : namespace + "::" + functionName));
 
             List<Term> parameters = new ArrayList<Term>(terms.size());
             boolean allTerminal = true;
@@ -119,7 +154,7 @@ public class FunctionCall extends Term.NonTerminal
             // If all parameters are terminal and the function is pure, we can
             // evaluate it now, otherwise we'd have to wait execution time
             return allTerminal && fun.isPure()
-                ? makeTerminal(fun, execute(fun, parameters))
+                ? makeTerminal(fun, execute(fun, parameters), QueryOptions.DEFAULT.getProtocolVersion())
                 : new FunctionCall(fun, parameters);
         }
 
@@ -130,9 +165,10 @@ public class FunctionCall extends Term.NonTerminal
             for (Term t : parameters)
             {
                 assert t instanceof Term.Terminal;
-                buffers.add(((Term.Terminal)t).get());
+                buffers.add(((Term.Terminal)t).get(QueryOptions.DEFAULT));
             }
-            return fun.execute(buffers);
+
+            return executeInternal(fun, buffers);
         }
 
         public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
@@ -142,17 +178,20 @@ public class FunctionCall extends Term.NonTerminal
             // is used as argument of another, existing, function. In that case, we return true here because we'll catch
             // the fact that the method is undefined latter anyway and with a more helpful error message that if we were
             // to return false here.
-            return returnType == null || receiver.type.asCQL3Type().equals(returnType.asCQL3Type());
+            return returnType == null || receiver.type.isValueCompatibleWith(returnType);
         }
 
         @Override
         public String toString()
         {
             StringBuilder sb = new StringBuilder();
+            if (!namespace.isEmpty())
+                sb.append(namespace).append("::");
             sb.append(functionName).append("(");
             for (int i = 0; i < terms.size(); i++)
             {
-                if (i > 0) sb.append(", ");
+                if (i > 0)
+                    sb.append(", ");
                 sb.append(terms.get(i));
             }
             return sb.append(")").toString();

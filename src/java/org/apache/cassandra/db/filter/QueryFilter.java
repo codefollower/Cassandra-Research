@@ -17,16 +17,23 @@
  */
 package org.apache.cassandra.db.filter;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.SortedSet;
 
-import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.ColumnFamily;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionInfo;
+import org.apache.cassandra.db.OnDiskAtom;
+import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
+import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.io.util.FileDataInput;
-import org.apache.cassandra.utils.memory.HeapAllocator;
 import org.apache.cassandra.utils.MergeIterator;
 
 public class QueryFilter
@@ -44,18 +51,10 @@ public class QueryFilter
         this.timestamp = timestamp;
     }
 
-    public OnDiskAtomIterator getMemtableColumnIterator(Memtable memtable)
-    {
-        ColumnFamily cf = memtable.getColumnFamily(key);
-        if (cf == null)
-            return null;
-        return getColumnFamilyIterator(cf);
-    }
-
-    public OnDiskAtomIterator getColumnFamilyIterator(ColumnFamily cf)
+    public Iterator<Cell> getIterator(ColumnFamily cf)
     {
         assert cf != null;
-        return filter.getColumnFamilyIterator(key, cf);
+        return filter.getColumnIterator(cf);
     }
 
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable)
@@ -63,52 +62,64 @@ public class QueryFilter
         return filter.getSSTableColumnIterator(sstable, key);
     }
 
-    public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)
-    {
-        return filter.getSSTableColumnIterator(sstable, file, key, indexEntry);
-    }
-
-    public void collateOnDiskAtom(final ColumnFamily returnCF, List<? extends Iterator<? extends OnDiskAtom>> toCollate, final int gcBefore)
+    public void collateOnDiskAtom(ColumnFamily returnCF,
+                                  List<? extends Iterator<? extends OnDiskAtom>> toCollate,
+                                  int gcBefore)
     {
         collateOnDiskAtom(returnCF, toCollate, filter, gcBefore, timestamp);
     }
 
-    public static void collateOnDiskAtom(final ColumnFamily returnCF, List<? extends Iterator<? extends OnDiskAtom>> toCollate, IDiskAtomFilter filter, int gcBefore, long timestamp)
+    public static void collateOnDiskAtom(ColumnFamily returnCF,
+                                         List<? extends Iterator<? extends OnDiskAtom>> toCollate,
+                                         IDiskAtomFilter filter,
+                                         int gcBefore,
+                                         long timestamp)
     {
-        List<Iterator<Cell>> filteredIterators = new ArrayList<Iterator<Cell>>(toCollate.size());
+        List<Iterator<Cell>> filteredIterators = new ArrayList<>(toCollate.size());
         for (Iterator<? extends OnDiskAtom> iter : toCollate)
             filteredIterators.add(gatherTombstones(returnCF, iter));
         collateColumns(returnCF, filteredIterators, filter, gcBefore, timestamp);
     }
 
-    /**
-     * When there is only a single source of atoms, we can skip the collate step
-     */
+    // When there is only a single source of atoms, we can skip the collate step
     public void collateOnDiskAtom(ColumnFamily returnCF, Iterator<? extends OnDiskAtom> toCollate, int gcBefore)
     {
-        Iterator<Cell> columns = gatherTombstones(returnCF, toCollate);
-        filter.collectReducedColumns(returnCF, columns, gcBefore, timestamp);
+        filter.collectReducedColumns(returnCF, gatherTombstones(returnCF, toCollate), gcBefore, timestamp);
     }
 
-    public void collateColumns(final ColumnFamily returnCF, List<? extends Iterator<Cell>> toCollate, int gcBefore)
+    public void collateColumns(ColumnFamily returnCF, List<? extends Iterator<Cell>> toCollate, int gcBefore)
     {
         collateColumns(returnCF, toCollate, filter, gcBefore, timestamp);
     }
 
     //把toCollate中的放到returnCF中
-    public static void collateColumns(final ColumnFamily returnCF, List<? extends Iterator<Cell>> toCollate, IDiskAtomFilter filter, int gcBefore, long timestamp)
+    public static void collateColumns(ColumnFamily returnCF,
+                                      List<? extends Iterator<Cell>> toCollate,
+                                      IDiskAtomFilter filter,
+                                      int gcBefore,
+                                      long timestamp)
     {
-        final Comparator<Cell> fcomp = filter.getColumnComparator(returnCF.getComparator());
+        Comparator<Cell> comparator = filter.getColumnComparator(returnCF.getComparator());
+
+        Iterator<Cell> reduced = toCollate.size() == 1
+                               ? toCollate.get(0)
+                               : MergeIterator.get(toCollate, comparator, getReducer(comparator));
+
+        filter.collectReducedColumns(returnCF, reduced, gcBefore, timestamp);
+    }
+
+    private static MergeIterator.Reducer<Cell, Cell> getReducer(final Comparator<Cell> comparator)
+    {
         // define a 'reduced' iterator that merges columns w/ the same name, which
         // greatly simplifies computing liveColumns in the presence of tombstones.
-        MergeIterator.Reducer<Cell, Cell> reducer = new MergeIterator.Reducer<Cell, Cell>()
+        return new MergeIterator.Reducer<Cell, Cell>()
         {
             Cell current;
 
             public void reduce(Cell next) //Column next是从toCollate中取的
             {
-                assert current == null || fcomp.compare(current, next) == 0;
-                current = current == null ? next : current.reconcile(next, HeapAllocator.instance);
+                assert current == null || comparator.compare(current, next) == 0;
+                current = current == null ? next : current.reconcile(next);
             }
 
             protected Cell getReduced()
@@ -118,10 +129,13 @@ public class QueryFilter
                 current = null;
                 return toReturn;
             }
-        };
-        Iterator<Cell> reduced = MergeIterator.get(toCollate, fcomp, reducer);
 
-        filter.collectReducedColumns(returnCF, reduced, gcBefore, timestamp);
+            @Override
+            public boolean trivialReduceIsTrivial()
+            {
+                return true;
+            }
+        };
     }
 
     /**

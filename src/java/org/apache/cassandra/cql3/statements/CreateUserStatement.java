@@ -32,12 +32,14 @@ public class CreateUserStatement extends AuthenticationStatement
     private final String username;
     private final UserOptions opts;
     private final boolean superuser;
+    private final boolean ifNotExists;
 
-    public CreateUserStatement(String username, UserOptions opts, boolean superuser)
+    public CreateUserStatement(String username, UserOptions opts, boolean superuser, boolean ifNotExists)
     {
         this.username = username;
         this.opts = opts;
         this.superuser = superuser;
+        this.ifNotExists = ifNotExists;
     }
 
     public void validate(ClientState state) throws RequestValidationException
@@ -50,7 +52,7 @@ public class CreateUserStatement extends AuthenticationStatement
         // validate login here before checkAccess to avoid leaking user existence to anonymous users.
         state.ensureNotAnonymous();
 
-        if (Auth.isExistingUser(username))
+        if (!ifNotExists && Auth.isExistingUser(username))
             throw new InvalidRequestException(String.format("User %s already exists", username));
     }
 
@@ -67,6 +69,10 @@ public class CreateUserStatement extends AuthenticationStatement
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
         //往system_auth.credentials表中新增一条记录
+        // not rejected in validate()
+        if (ifNotExists && Auth.isExistingUser(username))
+            return null;
+
         DatabaseDescriptor.getAuthenticator().create(username, opts.getOptions());
         //往system_auth.users表中也增加一条记录
         Auth.insertUser(username, superuser);

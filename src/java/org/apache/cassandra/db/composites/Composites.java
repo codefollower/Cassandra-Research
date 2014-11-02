@@ -18,11 +18,12 @@
 package org.apache.cassandra.db.composites;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.memory.PoolAllocator;
 
 public abstract class Composites
 {
@@ -39,6 +40,7 @@ public abstract class Composites
 
         public Composite build() { return EMPTY; }
         public Composite buildWith(ByteBuffer value) { throw new IllegalStateException(); }
+        public Composite buildWith(List<ByteBuffer> values) { throw new IllegalStateException(); }
     };
 
     private static class EmptyComposite implements Composite
@@ -55,7 +57,10 @@ public abstract class Composites
 
         public ByteBuffer get(int i)
         {
-            throw new IndexOutOfBoundsException();
+            if (i > 0)
+                throw new IndexOutOfBoundsException();
+
+            return ByteBufferUtil.EMPTY_BYTE_BUFFER;
         }
 
         public EOC eoc()
@@ -65,16 +70,25 @@ public abstract class Composites
 
         public Composite start()
         {
+            // Note that SimpleCType/AbstractSimpleCellNameType compare method
+            // indirectly rely on the fact that EMPTY == EMPTY.start() == EMPTY.end()
+            // (or more precisely on the fact that the EOC is NONE for all of those).
             return this;
         }
 
         public Composite end()
         {
+            // Note that SimpleCType/AbstractSimpleCellNameType compare method
+            // indirectly rely on the fact that EMPTY == EMPTY.start() == EMPTY.end()
+            // (or more precisely on the fact that the EOC is NONE for all of those).
             return this;
         }
 
         public Composite withEOC(EOC newEoc)
         {
+            // Note that SimpleCType/AbstractSimpleCellNameType compare method
+            // indirectly rely on the fact that EMPTY == EMPTY.start() == EMPTY.end()
+            // (or more precisely on the fact that the EOC is NONE for all of those).
             return this;
         }
 
@@ -103,20 +117,14 @@ public abstract class Composites
             return 0;
         }
 
-        public boolean isPrefixOf(Composite c)
+        public boolean isPrefixOf(CType type, Composite c)
         {
             return true;
         }
 
-        public Composite copy(AbstractAllocator allocator)
+        public Composite copy(CFMetaData cfm, AbstractAllocator allocator)
         {
             return this;
         }
-
-        @Override
-        public void free(PoolAllocator<?> allocator)
-        {
-        }
-
     }
 }

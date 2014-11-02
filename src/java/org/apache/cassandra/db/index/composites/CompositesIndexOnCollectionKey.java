@@ -99,8 +99,8 @@ public class CompositesIndexOnCollectionKey extends CompositesIndex
 
     public boolean isStale(IndexedEntry entry, ColumnFamily data, long now)
     {
-        CellName name = data.getComparator().create(entry.indexedEntryPrefix, columnDef, entry.indexValue.key);
-        Cell liveCell = data.getColumn(name);
-        return (liveCell == null || liveCell.isMarkedForDelete(now));
+        CellName name = data.getComparator().create(entry.indexedEntryPrefix, columnDef, entry.indexValue.getKey());
+        Cell cell = data.getColumn(name);
+        return cell == null || !cell.isLive(now);
     }
 }

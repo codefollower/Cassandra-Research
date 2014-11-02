@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 import org.apache.cassandra.io.util.Memory;
 
-public class RefCountedMemory extends Memory
+public class RefCountedMemory extends Memory implements AutoCloseable
 {
     @SuppressWarnings("unused")
     private volatile int references = 1; //用在UPDATER里，请忽视eclipse的警告
@@ -52,6 +52,23 @@ public class RefCountedMemory extends Memory
     public void unreference()
     {
         if (UPDATER.decrementAndGet(this) == 0)
-            free();
+            super.free();
+    }
+
+    public RefCountedMemory copy(long newSize)
+    {
+        RefCountedMemory copy = new RefCountedMemory(newSize);
+        copy.put(0, this, 0, Math.min(size(), newSize));
+        return copy;
+    }
+
+    public void free()
+    {
+        throw new AssertionError();
+    }
+
+    public void close()
+    {
+        unreference();
     }
 }

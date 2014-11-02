@@ -18,7 +18,6 @@
 package org.apache.cassandra.db;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -31,9 +30,12 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // TODO convert this to a Builder pattern instead of encouraging M.add directly,
 // which is less-efficient since we have to keep a mutable HashMap around
@@ -41,6 +43,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class Mutation implements IMutation
 {
     public static final MutationSerializer serializer = new MutationSerializer();
+    private static final Logger logger = LoggerFactory.getLogger(Mutation.class);
 
     public static final String FORWARD_TO = "FWD_TO";
     public static final String FORWARD_FROM = "FWD_FRM";
@@ -67,7 +70,7 @@ public class Mutation implements IMutation
     //rowKey(对应row.key.key)放在DecoratedKey中
     public Mutation(String keyspaceName, Row row)
     {
-        this(keyspaceName, row.key.key, row.cf);
+        this(keyspaceName, row.key.getKey(), row.cf);
     }
 
     protected Mutation(String keyspaceName, ByteBuffer key, Map<UUID, ColumnFamily> modifications)
@@ -80,6 +83,12 @@ public class Mutation implements IMutation
     public Mutation(ByteBuffer key, ColumnFamily cf)
     {
         this(cf.metadata().ksName, key, cf);
+    }
+
+    public Mutation copy()
+    {
+        Mutation copy = new Mutation(keyspaceName, key, new HashMap<>(modifications));
+        return copy;
     }
 
     public String getKeyspaceName()
@@ -119,7 +128,7 @@ public class Mutation implements IMutation
         ColumnFamily prev = modifications.put(columnFamily.id(), columnFamily);
         if (prev != null)
             // developer error
-            throw new IllegalArgumentException("ColumnFamily " + columnFamily + " already has modifications in this mutation: " + prev);
+            throw new IllegalArgumentException("Table " + columnFamily + " already has modifications in this mutation: " + prev);
     }
 
     /**
@@ -265,7 +274,7 @@ public class Mutation implements IMutation
 
     public static class MutationSerializer implements IVersionedSerializer<Mutation>
     {
-        public void serialize(Mutation mutation, DataOutput out, int version) throws IOException
+        public void serialize(Mutation mutation, DataOutputPlus out, int version) throws IOException
         {
             if (version < MessagingService.VERSION_20)
                 out.writeUTF(mutation.getKeyspaceName());

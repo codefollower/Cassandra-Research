@@ -18,154 +18,47 @@
 package org.apache.cassandra.stress;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.EnumMap;
 import java.util.List;
 
-import org.apache.cassandra.stress.generatedata.KeyGen;
-import org.apache.cassandra.stress.generatedata.RowGen;
-import org.apache.cassandra.stress.operations.CqlCounterAdder;
-import org.apache.cassandra.stress.operations.CqlCounterGetter;
-import org.apache.cassandra.stress.operations.CqlIndexedRangeSlicer;
-import org.apache.cassandra.stress.operations.CqlInserter;
-import org.apache.cassandra.stress.operations.CqlMultiGetter;
-import org.apache.cassandra.stress.operations.CqlRangeSlicer;
-import org.apache.cassandra.stress.operations.CqlReader;
-import org.apache.cassandra.stress.operations.ThriftCounterAdder;
-import org.apache.cassandra.stress.operations.ThriftCounterGetter;
-import org.apache.cassandra.stress.operations.ThriftIndexedRangeSlicer;
-import org.apache.cassandra.stress.operations.ThriftInserter;
-import org.apache.cassandra.stress.operations.ThriftMultiGetter;
-import org.apache.cassandra.stress.operations.ThriftRangeSlicer;
-import org.apache.cassandra.stress.operations.ThriftReader;
-import org.apache.cassandra.stress.settings.Command;
-import org.apache.cassandra.stress.settings.CqlVersion;
-import org.apache.cassandra.stress.settings.SettingsCommandMixed;
-import org.apache.cassandra.stress.settings.StressSettings;
+import org.apache.cassandra.stress.generate.Distribution;
+import org.apache.cassandra.stress.generate.Partition;
+import org.apache.cassandra.stress.generate.PartitionGenerator;
+import org.apache.cassandra.stress.settings.*;
 import org.apache.cassandra.stress.util.JavaDriverClient;
 import org.apache.cassandra.stress.util.ThriftClient;
 import org.apache.cassandra.stress.util.Timer;
-import org.apache.cassandra.thrift.ColumnParent;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.transport.SimpleClient;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 public abstract class Operation
 {
-    public final long index;
-    protected final State state;
+    public final StressSettings settings;
+    public final Timer timer;
+    public final PartitionGenerator generator;
+    public final Distribution partitionCount;
 
-    public Operation(State state, long idx)
+    protected List<Partition> partitions;
+
+    public Operation(Timer timer, PartitionGenerator generator, StressSettings settings, Distribution partitionCount)
     {
-        index = idx;
-        this.state = state;
+        this.generator = generator;
+        this.timer = timer;
+        this.settings = settings;
+        this.partitionCount = partitionCount;
     }
 
     public static interface RunOp
     {
         public boolean run() throws Exception;
-        public String key();
-        public int keyCount();
+        public int partitionCount();
+        public int rowCount();
     }
 
-    // one per thread!
-    public static final class State
+    protected void setPartitions(List<Partition> partitions)
     {
-
-        public final StressSettings settings;
-        public final Timer timer;
-        public final Command type;
-        public final KeyGen keyGen;
-        public final RowGen rowGen;
-        public final List<ColumnParent> columnParents;
-        public final StressMetrics metrics;
-        public final SettingsCommandMixed.CommandSelector commandSelector;
-        private final EnumMap<Command, State> substates;
-        private Object cqlCache;
-
-        public State(Command type, StressSettings settings, StressMetrics metrics)
-        {
-            this.type = type;
-            this.timer = metrics.getTiming().newTimer();
-            if (type == Command.MIXED)
-            {
-                commandSelector = ((SettingsCommandMixed) settings.command).selector();
-                substates = new EnumMap<>(Command.class);
-            }
-            else
-            {
-                commandSelector = null;
-                substates = null;
-            }
-            this.settings = settings;
-            this.keyGen = settings.keys.newKeyGen();
-            this.rowGen = settings.columns.newRowGen();
-            this.metrics = metrics;
-            if (!settings.columns.useSuperColumns)
-                columnParents = Collections.singletonList(new ColumnParent(settings.schema.columnFamily));
-            else
-            {
-                ColumnParent[] cp = new ColumnParent[settings.columns.superColumns];
-                for (int i = 0 ; i < cp.length ; i++)
-                    cp[i] = new ColumnParent("Super1").setSuper_column(ByteBufferUtil.bytes("S" + i));
-                columnParents = Arrays.asList(cp);
-            }
-        }
-
-        private State(Command type, State copy)
-        {
-            this.type = type;
-            this.timer = copy.timer;
-            this.rowGen = copy.rowGen;
-            this.keyGen = copy.keyGen;
-            this.columnParents = copy.columnParents;
-            this.metrics = copy.metrics;
-            this.settings = copy.settings;
-            this.substates = null;
-            this.commandSelector = null;
-        }
-
-        public boolean isCql3()
-        {
-            return settings.mode.cqlVersion == CqlVersion.CQL3;
-        }
-        public Object getCqlCache()
-        {
-            return cqlCache;
-        }
-        public void storeCqlCache(Object val)
-        {
-            cqlCache = val;
-        }
-
-        public State substate(Command command)
-        {
-            assert type == Command.MIXED;
-            State substate = substates.get(command);
-            if (substate == null)
-            {
-                substates.put(command, substate = new State(command, this));
-            }
-            return substate;
-        }
-
-    }
-
-    protected ByteBuffer getKey()
-    {
-        return state.keyGen.getKeys(1, index).get(0);
-    }
-
-    protected List<ByteBuffer> getKeys(int count)
-    {
-        return state.keyGen.getKeys(count, index);
-    }
-
-    protected List<ByteBuffer> generateColumnValues(ByteBuffer key)
-    {
-        return state.rowGen.generate(index, key);
+        this.partitions = partitions;
     }
 
     /**
@@ -185,13 +78,13 @@ public abstract class Operation
 
     public void timeWithRetry(RunOp run) throws IOException
     {
-        state.timer.start();
+        timer.start();
 
         boolean success = false;
         String exceptionMessage = null;
 
         int tries = 0;
-        for (; tries < state.settings.command.tries; tries++)
+        for (; tries < settings.command.tries; tries++)
         {
             try
             {
@@ -200,24 +93,46 @@ public abstract class Operation
             }
             catch (Exception e)
             {
-                System.err.println(e);
+                switch (settings.log.level)
+                {
+                    case MINIMAL:
+                        break;
+
+                    case NORMAL:
+                        System.err.println(e);
+                        break;
+
+                    case VERBOSE:
+                        e.printStackTrace(System.err);
+                        break;
+
+                    default:
+                        throw new AssertionError();
+                }
                 exceptionMessage = getExceptionMessage(e);
             }
         }
 
-        state.timer.stop(run.keyCount());
+        timer.stop(run.partitionCount(), run.rowCount());
 
         if (!success)
         {
-            error(String.format("Operation [%d] x%d key %s %s%n",
-                    index,
+            error(String.format("Operation x%d on key(s) %s: %s%n",
                     tries,
-                    run.key(),
+                    key(),
                     (exceptionMessage == null)
                         ? "Data returned was not validated"
                         : "Error executing: " + exceptionMessage));
         }
 
+    }
+
+    private String key()
+    {
+        List<String> keys = new ArrayList<>();
+        for (Partition partition : partitions)
+            keys.add(partition.getKeyAsString());
+        return keys.toString();
     }
 
     protected String getExceptionMessage(Exception e)
@@ -229,20 +144,10 @@ public abstract class Operation
 
     protected void error(String message) throws IOException
     {
-        if (!state.settings.command.ignoreErrors)
+        if (!settings.command.ignoreErrors)
             throw new IOException(message);
-        else
+        else if (settings.log.level.compareTo(SettingsLog.Level.MINIMAL) > 0)
             System.err.println(message);
-    }
-
-    public static ByteBuffer getColumnNameBytes(int i)
-    {
-        return ByteBufferUtil.bytes("C" + i);
-    }
-
-    public static String getColumnName(int i)
-    {
-        return "C" + i;
     }
 
 }

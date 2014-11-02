@@ -24,7 +24,7 @@ import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 
 public class DropTypeStatement extends SchemaAlteringStatement
 {
@@ -43,9 +43,6 @@ public class DropTypeStatement extends SchemaAlteringStatement
     {
         if (!name.hasKeyspace())
             name.setKeyspace(state.getKeyspace());
-
-        if (name.getKeyspace() == null)
-            throw new InvalidRequestException("You need to be logged in a keyspace or use a fully qualified user type name");
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -94,18 +91,19 @@ public class DropTypeStatement extends SchemaAlteringStatement
 
     private boolean isUsedBy(AbstractType<?> toCheck) throws RequestValidationException
     {
-        if (toCheck instanceof CompositeType)
+        if (toCheck instanceof UserType)
+        {
+            UserType ut = (UserType)toCheck;
+            if (name.getKeyspace().equals(ut.keyspace) && name.getUserTypeName().equals(ut.name))
+                return true;
+
+            for (AbstractType<?> subtype : ut.fieldTypes())
+                if (isUsedBy(subtype))
+                    return true;
+        }
+        else if (toCheck instanceof CompositeType)
         {
             CompositeType ct = (CompositeType)toCheck;
-
-            if ((ct instanceof UserType))
-            {
-                UserType ut = (UserType)ct;
-                if (name.getKeyspace().equals(ut.keyspace) && name.getUserTypeName().equals(ut.name))
-                    return true;
-            }
-
-            // Also reach into subtypes
             for (AbstractType<?> subtype : ct.types)
                 if (isUsedBy(subtype))
                     return true;
@@ -128,9 +126,9 @@ public class DropTypeStatement extends SchemaAlteringStatement
         return false;
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
-        return ResultMessage.SchemaChange.Change.UPDATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.DROPPED, Event.SchemaChange.Target.TYPE, keyspace(), name.getStringTypeName());
     }
 
     @Override
@@ -139,14 +137,17 @@ public class DropTypeStatement extends SchemaAlteringStatement
         return name.getKeyspace();
     }
 
-    public void announceMigration() throws InvalidRequestException, ConfigurationException
+    public boolean announceMigration(boolean isLocalOnly) throws InvalidRequestException, ConfigurationException
     {
         KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         assert ksm != null;
 
         UserType toDrop = ksm.userTypes.getType(name.getUserTypeName());
         // Can be null with ifExists
-        if (toDrop != null)
-            MigrationManager.announceTypeDrop(toDrop);
+        if (toDrop == null)
+            return false;
+
+        MigrationManager.announceTypeDrop(toDrop, isLocalOnly);
+        return true;
     }
 }

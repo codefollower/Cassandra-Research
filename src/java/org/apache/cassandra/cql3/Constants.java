@@ -18,7 +18,6 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
-import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,10 +52,16 @@ public abstract class Constants
         private final Term.Terminal NULL_VALUE = new Value(null)
         {
             @Override
-            public Terminal bind(List<ByteBuffer> values)
+            public Terminal bind(QueryOptions options)
             {
                 // We return null because that makes life easier for collections
                 return null;
+            }
+
+            @Override
+            public String toString()
+            {
+                return "null";
             }
         };
 
@@ -76,7 +81,7 @@ public abstract class Constants
         @Override
         public String toString()
         {
-            return null;
+            return "null";
         }
     };
 
@@ -126,7 +131,7 @@ public abstract class Constants
         public Value prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
             if (!isAssignableTo(keyspace, receiver))
-                throw new InvalidRequestException(String.format("Invalid %s constant (%s) for %s of type %s", type, text, receiver, receiver.type.asCQL3Type()));
+                throw new InvalidRequestException(String.format("Invalid %s constant (%s) for \"%s\" of type %s", type, text, receiver.name, receiver.type.asCQL3Type()));
 
             return new Value(parsedValue(receiver.type));
         }
@@ -247,15 +252,21 @@ public abstract class Constants
             this.bytes = bytes;
         }
 
-        public ByteBuffer get()
+        public ByteBuffer get(QueryOptions options)
         {
             return bytes;
         }
 
         @Override
-        public ByteBuffer bindAndGet(List<ByteBuffer> values)
+        public ByteBuffer bindAndGet(QueryOptions options)
         {
             return bytes;
+        }
+
+        @Override
+        public String toString()
+        {
+            return ByteBufferUtil.bytesToHex(bytes);
         }
     }
 
@@ -268,11 +279,11 @@ public abstract class Constants
         }
 
         @Override
-        public ByteBuffer bindAndGet(List<ByteBuffer> values) throws InvalidRequestException
+        public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException
         {
             try
             {
-                ByteBuffer value = values.get(bindIndex);
+                ByteBuffer value = options.getValues().get(bindIndex);
                 if (value != null)
                     receiver.type.validate(value);
                 return value;
@@ -283,9 +294,9 @@ public abstract class Constants
             }
         }
 
-        public Value bind(List<ByteBuffer> values) throws InvalidRequestException
+        public Value bind(QueryOptions options) throws InvalidRequestException
         {
-            ByteBuffer bytes = bindAndGet(values);
+            ByteBuffer bytes = bindAndGet(options);
             return bytes == null ? null : new Constants.Value(bytes);
         }
     }
@@ -302,8 +313,11 @@ public abstract class Constants
         {
             //对于COMPACT_VALUE列，cname为null
             CellName cname = cf.getComparator().create(prefix, column);
-            ByteBuffer value = t.bindAndGet(params.variables);
-            //生成一个org.apache.cassandra.db.Column或其子类的实例
+//<<<<<<< HEAD
+//            ByteBuffer value = t.bindAndGet(params.variables);
+//            //生成一个org.apache.cassandra.db.Column或其子类的实例
+//=======
+            ByteBuffer value = t.bindAndGet(params.options);
             cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
         }
     }
@@ -318,12 +332,12 @@ public abstract class Constants
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
         {
-            ByteBuffer bytes = t.bindAndGet(params.variables);
+            ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
                 throw new InvalidRequestException("Invalid null value for counter increment");
             long increment = ByteBufferUtil.toLong(bytes);
             CellName cname = cf.getComparator().create(prefix, column);
-            cf.addCounter(cname, increment);
+            cf.addColumn(params.makeCounter(cname, increment));
         }
     }
 
@@ -337,7 +351,7 @@ public abstract class Constants
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
         {
-            ByteBuffer bytes = t.bindAndGet(params.variables);
+            ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
                 throw new InvalidRequestException("Invalid null value for counter increment");
 
@@ -346,7 +360,7 @@ public abstract class Constants
                 throw new InvalidRequestException("The negation of " + increment + " overflows supported counter precision (signed 8 bytes integer)");
 
             CellName cname = cf.getComparator().create(prefix, column);
-            cf.addCounter(cname, -increment);
+            cf.addColumn(params.makeCounter(cname, -increment));
         }
     }
 

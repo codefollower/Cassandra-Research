@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.db;
 
+import static com.google.common.collect.Sets.newHashSet;
+
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOError;
@@ -39,25 +41,19 @@ import com.google.common.collect.ImmutableSet.Builder;
 import com.google.common.collect.Iterables;
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Uninterruptibles;
+
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.config.*;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.sstable.Component;
-import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.sstable.SSTable;
-import org.apache.cassandra.io.sstable.SSTableDeletingTask;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
-
-import static com.google.common.collect.Sets.newHashSet;
 
 /**
  * Encapsulate handling of paths to the data files.
@@ -92,14 +88,12 @@ public class Directories
     public static final String SECONDARY_INDEX_NAME_SEPARATOR = ".";
 
     public static final DataDirectory[] dataDirectories;
-    public static final DataDirectory flushDirectory;
     static
     {
         String[] locations = DatabaseDescriptor.getAllDataFileLocations();
         dataDirectories = new DataDirectory[locations.length];
         for (int i = 0; i < locations.length; ++i)
             dataDirectories[i] = new DataDirectory(new File(locations[i]));
-        flushDirectory = new DataDirectory(new File(DatabaseDescriptor.getFlushLocation()));
     }
 
 
@@ -178,7 +172,6 @@ public class Directories
 
     private final CFMetaData metadata;
     private final File[] dataPaths;
-    private final File flushPath;
 
     /**
      * Create Directories of given ColumnFamily.
@@ -192,14 +185,21 @@ public class Directories
         if (StorageService.instance.isClientMode())
         {
             dataPaths = null;
-            flushPath = null;
             return;
         }
 
         String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.cfId));
         int idx = metadata.cfName.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
         // secondary indicies go in the same directory as the base cf
-        String directoryName = idx > 0 ? metadata.cfName.substring(0, idx) + "-" + cfId : metadata.cfName + "-" + cfId;
+        String directoryName;
+        if (idx >= 0)
+        {
+            directoryName = metadata.cfName.substring(0, idx) + "-" + cfId + File.separator + metadata.cfName.substring(idx);
+        }
+        else
+        {
+             directoryName = metadata.cfName + "-" + cfId;
+        }
 
         this.dataPaths = new File[dataDirectories.length];
         // If upgraded from version less than 2.1, use existing directories
@@ -253,9 +253,7 @@ public class Directories
                 dataPaths[i] = new File(dataDirectories[i].location, join(metadata.ksName, directoryName));
         }
 
-        flushPath = new File(flushDirectory.location, join(metadata.ksName, directoryName));
-
-        for (File dir : allSSTablePaths())
+        for (File dir : dataPaths)
         {
             try
             {
@@ -271,26 +269,6 @@ public class Directories
     }
 
     /**
-     * @return an iterable of all possible sstable paths, including flush and post-compaction locations.
-     * Guaranteed to only return one copy of each path, even if there is no dedicated flush location and
-     * it shares with the others.
-     */
-    private Iterable<File> allSSTablePaths()
-    {
-        return ImmutableSet.<File>builder().add(dataPaths).add(flushPath).build();
-    }
-
-    /**
-     * @return an iterable of all possible sstable directories, including flush and post-compaction locations.
-     * Guaranteed to only return one copy of each directories, even if there is no dedicated flush location and
-     * it shares with the others.
-     */
-    private static Iterable<DataDirectory> allSSTableDirectories()
-    {
-        return ImmutableSet.<DataDirectory>builder().add(dataDirectories).add(flushDirectory).build();
-    }
-
-    /**
      * Returns SSTable location which is inside given data directory.
      *
      * @param dataDirectory
@@ -298,7 +276,7 @@ public class Directories
      */
     public File getLocationForDisk(DataDirectory dataDirectory)
     {
-        for (File dir : allSSTablePaths())
+        for (File dir : dataPaths)
         {
             if (dir.getAbsolutePath().startsWith(dataDirectory.location.getAbsolutePath()))
                 return dir;
@@ -308,7 +286,7 @@ public class Directories
 
     public Descriptor find(String filename)
     {
-        for (File dir : allSSTablePaths())
+        for (File dir : dataPaths)
         {
             if (new File(dir, filename).exists())
                 return Descriptor.fromFilename(dir, filename).left;
@@ -316,9 +294,9 @@ public class Directories
         return null;
     }
 
-    public File getDirectoryForCompactedSSTables()
+    public File getDirectoryForNewSSTables()
     {
-        File path = getCompactionLocationAsFile();
+        File path = getWriteableLocationAsFile();
 
         // Requesting GC has a chance to free space only if we're using mmap and a non SUN jvm
         if (path == null
@@ -331,15 +309,15 @@ public class Directories
             // Note: GCInspector will do this already, but only sun JVM supports GCInspector so far
             SSTableDeletingTask.rescheduleFailedTasks();
             Uninterruptibles.sleepUninterruptibly(10, TimeUnit.SECONDS);
-            path = getCompactionLocationAsFile();
+            path = getWriteableLocationAsFile();
         }
 
         return path;
     }
 
-    public File getCompactionLocationAsFile()
+    public File getWriteableLocationAsFile()
     {
-        return getLocationForDisk(getCompactionLocation());
+        return getLocationForDisk(getWriteableLocation());
     }
 
     /**
@@ -347,7 +325,7 @@ public class Directories
      *
      * @throws IOError if all directories are blacklisted.
      */
-    public DataDirectory getCompactionLocation()
+    public DataDirectory getWriteableLocation()
     {
         List<DataDirectory> candidates = new ArrayList<>();
 
@@ -377,21 +355,43 @@ public class Directories
         return candidates.get(0);
     }
 
-    public DataDirectory getFlushLocation()
-    {
-        return BlacklistedDirectories.isUnwritable(flushPath)
-               ? getCompactionLocation()
-               : flushDirectory;
-    }
-
     public static File getSnapshotDirectory(Descriptor desc, String snapshotName)
     {
-        return getOrCreate(desc.directory, SNAPSHOT_SUBDIR, snapshotName);
+        return getSnapshotDirectory(desc.directory, snapshotName);
+    }
+
+    public static File getSnapshotDirectory(File location, String snapshotName)
+    {
+        if (location.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR))
+        {
+            return getOrCreate(location.getParentFile(), SNAPSHOT_SUBDIR, snapshotName, location.getName());
+        }
+        else
+        {
+            return getOrCreate(location, SNAPSHOT_SUBDIR, snapshotName);
+        }
+    }
+
+    public File getSnapshotManifestFile(String snapshotName)
+    {
+         return new File(getDirectoryForNewSSTables(), join(SNAPSHOT_SUBDIR, snapshotName, "manifest.json"));
     }
 
     public static File getBackupsDirectory(Descriptor desc)
     {
-        return getOrCreate(desc.directory, BACKUPS_SUBDIR);
+        return getBackupsDirectory(desc.directory);
+    }
+
+    public static File getBackupsDirectory(File location)
+    {
+        if (location.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR))
+        {
+            return getOrCreate(location.getParentFile(), BACKUPS_SUBDIR, location.getName());
+        }
+        else
+        {
+            return getOrCreate(location, BACKUPS_SUBDIR);
+        }
     }
 
     public SSTableLister sstableLister()
@@ -495,14 +495,14 @@ public class Directories
             if (filtered)
                 return;
 
-            for (File location : allSSTablePaths())
+            for (File location : dataPaths)
             {
                 if (BlacklistedDirectories.isUnreadable(location))
                     continue;
 
                 if (snapshotName != null)
                 {
-                    new File(location, join(SNAPSHOT_SUBDIR, snapshotName)).listFiles(getFilter());
+                    getSnapshotDirectory(location, snapshotName).listFiles(getFilter());
                     continue;
                 }
 
@@ -510,33 +510,38 @@ public class Directories
                     location.listFiles(getFilter());
 
                 if (includeBackups)
-                    new File(location, BACKUPS_SUBDIR).listFiles(getFilter());
+                    getBackupsDirectory(location).listFiles(getFilter());
             }
             filtered = true;
         }
 
         private FileFilter getFilter()
         {
-            // Note: the prefix needs to include cfname + separator to distinguish between a cfs and it's secondary indexes
-            final String sstablePrefix = getSSTablePrefix();
             return new FileFilter()
             {
                 // This function always return false since accepts adds to the components map
                 public boolean accept(File file)
                 {
-                    // we are only interested in the SSTable files that belong to the specific ColumnFamily
-                    //过滤到二级索引相关的文件
-                    //二级索引相关的文件类似这样:
-                    //mytest-keysindextest.KeysIndexTest_index_f1-ja-1-CompressionInfo.db
-                    //而sstablePrefix="mytest-keysindextest-"，所以不满足startsWith
-                    if (file.isDirectory() || !file.getName().startsWith(sstablePrefix))
+//<<<<<<< HEAD
+//                    // we are only interested in the SSTable files that belong to the specific ColumnFamily
+//                    //过滤到二级索引相关的文件
+//                    //二级索引相关的文件类似这样:
+//                    //mytest-keysindextest.KeysIndexTest_index_f1-ja-1-CompressionInfo.db
+//                    //而sstablePrefix="mytest-keysindextest-"，所以不满足startsWith
+//                    if (file.isDirectory() || !file.getName().startsWith(sstablePrefix))
+//=======
+                    if (file.isDirectory())
                         return false;
 
                     Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(file.getParentFile(), file.getName());
                     if (pair == null)
                         return false;
 
-                    if (skipTemporary && pair.left.temporary)
+                    // we are only interested in the SSTable files that belong to the specific ColumnFamily
+                    if (!pair.left.ksname.equals(metadata.ksName) || !pair.left.cfname.equals(metadata.cfName))
+                        return false;
+
+                    if (skipTemporary && pair.left.type.isTemporary)
                         return false;
 
                     Set<Component> previous = components.get(pair.left);
@@ -561,7 +566,7 @@ public class Directories
     public Map<String, Pair<Long, Long>> getSnapshotDetails()
     {
         final Map<String, Pair<Long, Long>> snapshotSpaceMap = new HashMap<>();
-        for (final File dir : allSSTablePaths())
+        for (final File dir : dataPaths)
         {
             final File snapshotDir = new File(dir,SNAPSHOT_SUBDIR);
             if (snapshotDir.exists() && snapshotDir.isDirectory())
@@ -591,7 +596,7 @@ public class Directories
     }
     public boolean snapshotExists(String snapshotName)
     {
-        for (File dir : allSSTablePaths())
+        for (File dir : dataPaths)
         {
             File snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
             if (snapshotDir.exists())
@@ -619,7 +624,7 @@ public class Directories
     // The snapshot must exist
     public long snapshotCreationTime(String snapshotName)
     {
-        for (File dir : allSSTablePaths())
+        for (File dir : dataPaths)
         {
             File snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
             if (snapshotDir.exists())
@@ -631,14 +636,9 @@ public class Directories
     public long trueSnapshotsSize()
     {
         long result = 0L;
-        for (File dir : allSSTablePaths())
+        for (File dir : dataPaths)
             result += getTrueAllocatedSizeIn(new File(dir, join(SNAPSHOT_SUBDIR)));
         return result;
-    }
-
-    private String getSSTablePrefix()
-    {
-        return metadata.ksName + Component.separator + metadata.cfName + Component.separator;
     }
 
     public long getTrueAllocatedSizeIn(File input)
@@ -663,7 +663,7 @@ public class Directories
     public static List<File> getKSChildDirectories(String ksName)
     {
         List<File> result = new ArrayList<>();
-        for (DataDirectory dataDirectory : allSSTableDirectories())
+        for (DataDirectory dataDirectory : dataDirectories)
         {
             File ksDir = new File(dataDirectory.location, ksName);
             File[] cfDirs = ksDir.listFiles();
@@ -681,7 +681,7 @@ public class Directories
     public List<File> getCFDirectories()
     {
         List<File> result = new ArrayList<>();
-        for (File dataDirectory : allSSTablePaths())
+        for (File dataDirectory : dataPaths)
         {
             if (dataDirectory.isDirectory())
                 result.add(dataDirectory);
@@ -729,7 +729,6 @@ public class Directories
         private final AtomicLong size = new AtomicLong(0);
         private final Set<String> visited = newHashSet(); //count each file only once
         private final Set<String> alive;
-        private final String prefix = getSSTablePrefix();
 
         public TrueFilesSizeVisitor()
         {
@@ -742,8 +741,11 @@ public class Directories
 
         private boolean isAcceptable(Path file)
         {
-            String fileName = file.toFile().getName(); 
-            return fileName.startsWith(prefix)
+            String fileName = file.toFile().getName();
+            Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(file.getParent().toFile(), fileName);
+            return pair != null
+                    && pair.left.ksname.equals(metadata.ksName)
+                    && pair.left.cfname.equals(metadata.cfName)
                     && !visited.contains(fileName)
                     && !alive.contains(fileName);
         }

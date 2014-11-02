@@ -59,14 +59,14 @@ import org.apache.cassandra.service.*;
 import org.apache.cassandra.streaming.StreamState;
 import org.apache.cassandra.streaming.StreamManagerMBean;
 import org.apache.cassandra.streaming.management.StreamStateCompositeData;
-import org.apache.cassandra.utils.SimpleCondition;
+import org.apache.cassandra.utils.concurrent.SimpleCondition;
 
 /**
  * JMX client operations for Cassandra.
  */
 public class NodeProbe implements AutoCloseable
 {
-    private static final String fmtUrl = "service:jmx:rmi:///jndi/rmi://%s:%d/jmxrmi";
+    private static final String fmtUrl = "service:jmx:rmi:///jndi/rmi://[%s]:%d/jmxrmi";
     private static final String ssObjName = "org.apache.cassandra.db:type=StorageService";
     private static final int defaultPort = 7199;
     final String host;
@@ -186,20 +186,54 @@ public class NodeProbe implements AutoCloseable
         jmxc.close();
     }
 
-    public void forceKeyspaceCleanup(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    public CompactionManager.AllSSTableOpStatus forceKeyspaceCleanup(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
-        ssProxy.forceKeyspaceCleanup(keyspaceName, columnFamilies);
+        return ssProxy.forceKeyspaceCleanup(keyspaceName, columnFamilies);
     }
 
-    public void scrub(boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    public CompactionManager.AllSSTableOpStatus scrub(boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
-        ssProxy.scrub(disableSnapshot, skipCorrupted, keyspaceName, columnFamilies);
+        return ssProxy.scrub(disableSnapshot, skipCorrupted, keyspaceName, columnFamilies);
     }
 
-    public void upgradeSSTables(String keyspaceName, boolean excludeCurrentVersion, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    public CompactionManager.AllSSTableOpStatus upgradeSSTables(String keyspaceName, boolean excludeCurrentVersion, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
-        ssProxy.upgradeSSTables(keyspaceName, excludeCurrentVersion, columnFamilies);
+        return ssProxy.upgradeSSTables(keyspaceName, excludeCurrentVersion, columnFamilies);
     }
+
+    public void forceKeyspaceCleanup(PrintStream out, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    {
+        switch (forceKeyspaceCleanup(keyspaceName, columnFamilies))
+        {
+            case ABORTED:
+                failed = true;
+                out.println("Aborted cleaning up atleast one table in keyspace "+keyspaceName+", check server logs for more information.");
+                break;
+        }
+    }
+
+    public void scrub(PrintStream out, boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    {
+        switch (scrub(disableSnapshot, skipCorrupted, keyspaceName, columnFamilies))
+        {
+            case ABORTED:
+                failed = true;
+                out.println("Aborted scrubbing atleast one table in keyspace "+keyspaceName+", check server logs for more information.");
+                break;
+        }
+    }
+
+    public void upgradeSSTables(PrintStream out, String keyspaceName, boolean excludeCurrentVersion, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    {
+        switch (upgradeSSTables(keyspaceName, excludeCurrentVersion, columnFamilies))
+        {
+            case ABORTED:
+                failed = true;
+                out.println("Aborted upgrading sstables for atleast one table in keyspace "+keyspaceName+", check server logs for more information.");
+                break;
+        }
+    }
+
 
     public void forceKeyspaceCompaction(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
@@ -209,11 +243,6 @@ public class NodeProbe implements AutoCloseable
     public void forceKeyspaceFlush(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
         ssProxy.forceKeyspaceFlush(keyspaceName, columnFamilies);
-    }
-
-    public void forceKeyspaceRepair(String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, String... columnFamilies) throws IOException
-    {
-        ssProxy.forceKeyspaceRepair(keyspaceName, isSequential, isLocal, fullRepair, columnFamilies);
     }
 
     public void forceRepairAsync(final PrintStream out, final String keyspaceName, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, boolean primaryRange, boolean fullRepair, String... columnFamilies) throws IOException
@@ -270,16 +299,6 @@ public class NodeProbe implements AutoCloseable
                 out.println("Exception occurred during clean-up. " + e);
             }
         }
-    }
-
-    public void forceKeyspaceRepairPrimaryRange(String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, String... columnFamilies) throws IOException
-    {
-        ssProxy.forceKeyspaceRepairPrimaryRange(keyspaceName, isSequential, isLocal, fullRepair, columnFamilies);
-    }
-
-    public void forceKeyspaceRepairRange(String beginToken, String endToken, String keyspaceName, boolean isSequential, boolean isLocal, boolean fullRepair, String... columnFamilies) throws IOException
-    {
-        ssProxy.forceKeyspaceRepairRange(beginToken, endToken, keyspaceName, isSequential, isLocal, fullRepair, columnFamilies);
     }
 
     public void invalidateCounterCache()
@@ -447,7 +466,7 @@ public class NodeProbe implements AutoCloseable
         {
             if (keyspaces.length != 1)
             {
-                throw new IOException("When specifying the column family for a snapshot, you must specify one and only one keyspace");
+                throw new IOException("When specifying the table for a snapshot, you must specify one and only one keyspace");
             }
             ssProxy.takeColumnFamilySnapshot(keyspaces[0], columnFamily, snapshotName);
         }
@@ -491,11 +510,6 @@ public class NodeProbe implements AutoCloseable
     public void move(String newToken) throws IOException
     {
         ssProxy.move(newToken);
-    }
-
-    public void takeTokens(List<String> tokens) throws IOException
-    {
-        ssProxy.relocate(tokens);
     }
 
     public void removeNode(String token)
@@ -588,6 +602,10 @@ public class NodeProbe implements AutoCloseable
         }
     }
 
+    public void setHintedHandoffThrottleInKB(int throttleInKB)
+    {
+        ssProxy.setHintedHandoffThrottleInKB(throttleInKB);
+    }
 
     public List<InetAddress> getEndpoints(String keyspace, String cf, String key)
     {
@@ -1015,7 +1033,7 @@ public class NodeProbe implements AutoCloseable
                 case "TombstoneScannedHistogram":
                     return JMX.newMBeanProxy(mbeanServerConn, oName, JmxReporter.HistogramMBean.class);
                 default:
-                    throw new RuntimeException("Unknown column family metric.");
+                    throw new RuntimeException("Unknown table metric.");
             }
         }
         catch (MalformedObjectNameException e)
@@ -1113,6 +1131,23 @@ public class NodeProbe implements AutoCloseable
     {
         spProxy.reloadTriggerClasses();
     }
+
+    public void setLoggingLevel(String classQualifier, String level)
+    {
+        try
+        {
+            ssProxy.setLoggingLevel(classQualifier, level);
+        }
+        catch (Exception e)
+        {
+          throw new RuntimeException("Error setting log for " + classQualifier +" on level " + level +". Please check logback configuration and ensure to have <jmxConfigurator /> set", e); 
+        }
+    }
+
+    public Map<String, String> getLoggingLevels()
+    {
+        return ssProxy.getLoggingLevels();
+    }
 }
 
 class ColumnFamilyStoreMBeanIterator implements Iterator<Map.Entry<String, ColumnFamilyStoreMBean>>
@@ -1138,7 +1173,7 @@ class ColumnFamilyStoreMBeanIterator implements Iterator<Map.Entry<String, Colum
                 // get CF name and split it for index name
                 String e1CF[] = e1.getValue().getColumnFamilyName().split("\\.");
                 String e2CF[] = e2.getValue().getColumnFamilyName().split("\\.");
-                assert e1CF.length <= 2 && e2CF.length <= 2 : "unexpected split count for column family name";
+                assert e1CF.length <= 2 && e2CF.length <= 2 : "unexpected split count for table name";
 
                 //if neither are indexes, just compare CF names
                 if(e1CF.length == 1 && e2CF.length == 1)

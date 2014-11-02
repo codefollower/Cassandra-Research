@@ -22,6 +22,7 @@ import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+
 public class ListSerializer<T> extends CollectionSerializer<List<T>>
 {
     // interning instances
@@ -45,19 +46,44 @@ public class ListSerializer<T> extends CollectionSerializer<List<T>>
         this.elements = elements;
     }
 
-    public List<T> deserialize(ByteBuffer bytes)
+    public List<ByteBuffer> serializeValues(List<T> values)
+    {
+        List<ByteBuffer> buffers = new ArrayList<>(values.size());
+        for (T value : values)
+            buffers.add(elements.serialize(value));
+        return buffers;
+    }
+
+    public int getElementCount(List<T> value)
+    {
+        return value.size();
+    }
+
+    public void validateForNativeProtocol(ByteBuffer bytes, int version)
     {
         try
         {
             ByteBuffer input = bytes.duplicate();
-            int n = getUnsignedShort(input);
+            int n = readCollectionSize(input, version);
+            for (int i = 0; i < n; i++)
+                elements.validate(readValue(input, version));
+        }
+        catch (BufferUnderflowException e)
+        {
+            throw new MarshalException("Not enough bytes to read a list");
+        }
+    }
+
+    public List<T> deserializeForNativeProtocol(ByteBuffer bytes, int version)
+    {
+        try
+        {
+            ByteBuffer input = bytes.duplicate();
+            int n = readCollectionSize(input, version);
             List<T> l = new ArrayList<T>(n);
             for (int i = 0; i < n; i++)
             {
-                int s = getUnsignedShort(input);
-                byte[] data = new byte[s];
-                input.get(data);
-                ByteBuffer databb = ByteBuffer.wrap(data);
+                ByteBuffer databb = readValue(input, version);
                 elements.validate(databb);
                 l.add(elements.deserialize(databb));
             }
@@ -67,26 +93,6 @@ public class ListSerializer<T> extends CollectionSerializer<List<T>>
         {
             throw new MarshalException("Not enough bytes to read a list");
         }
-    }
-
-    /**
-     * Layout is: {@code <n><s_1><b_1>...<s_n><b_n> }
-     * where:
-     *   n is the number of elements
-     *   s_i is the number of bytes composing the ith element
-     *   b_i is the s_i bytes composing the ith element
-     */
-    public ByteBuffer serialize(List<T> value)
-    {
-        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>(value.size());
-        int size = 0;
-        for (T elt : value)
-        {
-            ByteBuffer bb = elements.serialize(elt);
-            bbs.add(bb);
-            size += 2 + bb.remaining();
-        }
-        return pack(bbs, value.size(), size);
     }
 
     public String toString(List<T> value)

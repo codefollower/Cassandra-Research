@@ -23,6 +23,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.security.KeyStore;
+import java.security.cert.X509Certificate;
+import java.util.Date;
+import java.util.Enumeration;
 import java.util.Set;
 
 import javax.net.ssl.KeyManagerFactory;
@@ -48,6 +51,8 @@ public final class SSLFactory
 {
     private static final Logger logger = LoggerFactory.getLogger(SSLFactory.class);
 
+    private static boolean checkedExpiry = false;
+
     public static SSLServerSocket getServerSocket(EncryptionOptions options, InetAddress address, int port) throws IOException
     {
         SSLContext ctx = createSSLContext(options, true);
@@ -56,7 +61,7 @@ public final class SSLFactory
         String[] suits = filterCipherSuites(serverSocket.getSupportedCipherSuites(), options.cipher_suites);
         serverSocket.setEnabledCipherSuites(suits);
         serverSocket.setNeedClientAuth(options.require_client_auth);
-        serverSocket.bind(new InetSocketAddress(address, port), 100);
+        serverSocket.bind(new InetSocketAddress(address, port), 500);
         return serverSocket;
     }
 
@@ -114,6 +119,20 @@ public final class SSLFactory
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(options.algorithm);
             KeyStore ks = KeyStore.getInstance(options.store_type);
             ks.load(ksf, options.keystore_password.toCharArray());
+            if (!checkedExpiry)
+            {
+                for (Enumeration<String> aliases = ks.aliases(); aliases.hasMoreElements(); )
+                {
+                    String alias = aliases.nextElement();
+                    if (ks.getCertificate(alias).getType().equals("X.509"))
+                    {
+                        Date expires = ((X509Certificate) ks.getCertificate(alias)).getNotAfter();
+                        if (expires.before(new Date()))
+                            logger.warn("Certificate for {} expired on {}", alias, expires);
+                    }
+                }
+                checkedExpiry = true;
+            }
             kmf.init(ks, options.keystore_password.toCharArray());
 
             ctx.init(kmf.getKeyManagers(), trustManagers, null);

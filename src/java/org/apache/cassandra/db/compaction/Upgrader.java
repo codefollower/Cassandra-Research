@@ -18,7 +18,6 @@
 package org.apache.cassandra.db.compaction;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.*;
 
 import com.google.common.base.Throwables;
@@ -34,7 +33,7 @@ public class Upgrader
 {
     private final ColumnFamilyStore cfs;
     private final SSTableReader sstable;
-    private final Collection<SSTableReader> toUpgrade;
+    private final Set<SSTableReader> toUpgrade;
     private final File directory;
 
     private final OperationType compactionType = OperationType.UPGRADE_SSTABLES;
@@ -48,7 +47,7 @@ public class Upgrader
     {
         this.cfs = cfs;
         this.sstable = sstable;
-        this.toUpgrade = Collections.singletonList(sstable);
+        this.toUpgrade = new HashSet<>(Collections.singleton(sstable));
         this.outputHandler = outputHandler;
 
         this.directory = new File(sstable.getFilename()).getParentFile();
@@ -67,6 +66,7 @@ public class Upgrader
 
         // Get the max timestamp of the precompacted sstables
         // and adds generation of live ancestors
+        // -- note that we always only have one SSTable in toUpgrade here:
         for (SSTableReader sstable : toUpgrade)
         {
             sstableMetadataCollector.addAncestor(sstable.descriptor.generation);
@@ -75,6 +75,7 @@ public class Upgrader
                 if (new File(sstable.descriptor.withGeneration(i).filenameFor(Component.DATA)).exists())
                     sstableMetadataCollector.addAncestor(i);
             }
+            sstableMetadataCollector.sstableLevel(sstable.getSSTableLevel());
         }
 
         return new SSTableWriter(cfs.getTempSSTablePath(directory), estimatedRows, repairedAt, cfs.metadata, cfs.partitioner, sstableMetadataCollector);
@@ -84,56 +85,28 @@ public class Upgrader
     {
         outputHandler.output("Upgrading " + sstable);
 
-
-        AbstractCompactionIterable ci = new CompactionIterable(compactionType, strategy.getScanners(this.toUpgrade), controller);
-
-        CloseableIterator<AbstractCompactedRow> iter = ci.iterator();
-
-        Collection<SSTableReader> sstables = new ArrayList<SSTableReader>();
-        Collection<SSTableWriter> writers = new ArrayList<SSTableWriter>();
-
-        try
+        SSTableRewriter writer = new SSTableRewriter(cfs, toUpgrade, CompactionTask.getMaxDataAge(this.toUpgrade), OperationType.UPGRADE_SSTABLES, true);
+        try (CloseableIterator<AbstractCompactedRow> iter = new CompactionIterable(compactionType, strategy.getScanners(this.toUpgrade), controller).iterator())
         {
-            SSTableWriter writer = createCompactionWriter(sstable.getSSTableMetadata().repairedAt);
-            writers.add(writer);
+            writer.switchWriter(createCompactionWriter(sstable.getSSTableMetadata().repairedAt));
             while (iter.hasNext())
             {
                 AbstractCompactedRow row = iter.next();
-
                 writer.append(row);
             }
 
-            long maxAge = CompactionTask.getMaxDataAge(this.toUpgrade);
-            for (SSTableWriter completedWriter : writers)
-                sstables.add(completedWriter.closeAndOpenReader(maxAge));
-
+            writer.finish();
             outputHandler.output("Upgrade of " + sstable + " complete.");
 
         }
         catch (Throwable t)
         {
-            for (SSTableWriter writer : writers)
-                writer.abort();
-            // also remove already completed SSTables
-            for (SSTableReader sstable : sstables)
-            {
-                sstable.markObsolete();
-                sstable.releaseReference();
-            }
+            writer.abort();
             throw Throwables.propagate(t);
         }
         finally
         {
             controller.close();
-
-            try
-            {
-                iter.close();
-            }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
         }
     }
 

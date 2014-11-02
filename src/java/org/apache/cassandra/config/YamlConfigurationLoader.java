@@ -19,6 +19,7 @@ package org.apache.cassandra.config;
 
 import java.beans.IntrospectionException;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.io.IOException;
 import java.net.URL;
@@ -67,17 +68,28 @@ public class YamlConfigurationLoader implements ConfigurationLoader
             ClassLoader loader = DatabaseDescriptor.class.getClassLoader();
             url = loader.getResource(configUrl);
             if (url == null)
-                throw new ConfigurationException("Cannot locate " + configUrl);
+            {
+                String required = "file:" + File.separator + File.separator;
+                if (!configUrl.startsWith(required))
+                    throw new ConfigurationException("Expecting URI in variable: [cassandra.config].  Please prefix the file with " + required + File.separator +
+                            " for local files or " + required + "<server>" + File.separator + " for remote files.  Aborting.");
+                throw new ConfigurationException("Cannot locate " + configUrl + ".  If this is a local file, please confirm you've provided " + required + File.separator + " as a URI prefix.");
+            }
         }
 
         return url;
     }
 
+    @Override
     public Config loadConfig() throws ConfigurationException
+    {
+        return loadConfig(getStorageConfigURL());
+    }
+
+    public Config loadConfig(URL url) throws ConfigurationException
     {
         try
         {
-            URL url = getStorageConfigURL();
             logger.info("Loading settings from {}", url);
             byte[] configBytes;
             try (InputStream is = url.openStream())
@@ -121,7 +133,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
                 configMap.put(sensitiveKey, "<REDACTED>");
             }
         }
-        logger.info("Node configuration:[" + Joiner.on("; ").join(configMap.entrySet()) + "]");
+        logger.info("Node configuration:[{}]", Joiner.on("; ").join(configMap.entrySet()));
     }
     
     private static class MissingPropertiesChecker extends PropertyUtils 

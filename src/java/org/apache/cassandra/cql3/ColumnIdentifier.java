@@ -33,7 +33,7 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  */
 //表示一个列名
 //Selectable是一个标记接口
-public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier>, IMeasurableMemory
+public class ColumnIdentifier implements Selectable, IMeasurableMemory
 {
     public final ByteBuffer bytes; //列名字节形式
     private final String text; //列名文本形式
@@ -46,13 +46,13 @@ public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier
         this.bytes = ByteBufferUtil.bytes(this.text); //按UTF_8编码
     }
 
-    public ColumnIdentifier(ByteBuffer bytes, AbstractType type)
+    public ColumnIdentifier(ByteBuffer bytes, AbstractType<?> type)
     {
         this.bytes = bytes;
         this.text = type.getString(bytes);
     }
 
-    private ColumnIdentifier(ByteBuffer bytes, String text)
+    public ColumnIdentifier(ByteBuffer bytes, String text)
     {
         this.bytes = bytes;
         this.text = text;
@@ -91,19 +91,11 @@ public class ColumnIdentifier implements Selectable, Comparable<ColumnIdentifier
              + ObjectSizes.sizeOf(text);
     }
 
-    public long excessHeapSizeExcludingData()
+    public long unsharedHeapSizeExcludingData()
     {
         return EMPTY_SIZE
              + ObjectSizes.sizeOnHeapExcludingData(bytes)
              + ObjectSizes.sizeOf(text);
-    }
-
-    public int compareTo(ColumnIdentifier other)
-    {
-        if (this == other)
-            return 0;
-
-        return bytes.compareTo(other.bytes);
     }
 
     public ColumnIdentifier clone(AbstractAllocator allocator)

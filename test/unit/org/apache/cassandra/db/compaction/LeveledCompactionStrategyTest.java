@@ -20,21 +20,31 @@ package org.apache.cassandra.db.compaction;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.apache.cassandra.OrderedJUnit4ClassRunner;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.repair.RepairJobDesc;
 import org.apache.cassandra.repair.Validator;
 import org.apache.cassandra.service.ActiveRepairService;
@@ -45,16 +55,32 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(OrderedJUnit4ClassRunner.class)
-public class LeveledCompactionStrategyTest extends SchemaLoader
+public class LeveledCompactionStrategyTest
 {
-    private String ksname = "Keyspace1";
-    private String cfname = "StandardLeveled";
-    private Keyspace keyspace = Keyspace.open(ksname);
-    private ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
+    private static final String KEYSPACE1 = "LeveledCompactionStrategyTest";
+    private static final String CF_STANDARDDLEVELED = "StandardLeveled";
+    private Keyspace keyspace;
+    private ColumnFamilyStore cfs;
+
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        Map<String, String> leveledOptions = new HashMap<>();
+        leveledOptions.put("sstable_size_in_mb", "1");
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARDDLEVELED)
+                                                .compactionStrategyClass(LeveledCompactionStrategy.class)
+                                                .compactionStrategyOptions(leveledOptions));
+        }
 
     @Before
     public void enableCompaction()
     {
+        keyspace = Keyspace.open(KEYSPACE1);
+        cfs = keyspace.getColumnFamilyStore(CF_STANDARDDLEVELED);
         cfs.enableAutoCompaction();
     }
 
@@ -65,6 +91,54 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
     public void truncateSTandardLeveled()
     {
         cfs.truncateBlocking();
+    }
+
+    /**
+     * Ensure that the grouping operation preserves the levels of grouped tables
+     */
+    @Test
+    public void testGrouperLevels() throws Exception{
+        ByteBuffer value = ByteBuffer.wrap(new byte[100 * 1024]); // 100 KB value, make it easy to have multiple files
+
+        // Enough data to have a level 1 and 2
+        int rows = 20;
+        int columns = 10;
+
+        // Adds enough data to trigger multiple sstable per level
+        for (int r = 0; r < rows; r++)
+        {
+            DecoratedKey key = Util.dk(String.valueOf(r));
+            Mutation rm = new Mutation(KEYSPACE1, key.getKey());
+            for (int c = 0; c < columns; c++)
+            {
+                rm.add(CF_STANDARDDLEVELED, Util.cellname("column" + c), value, 0);
+            }
+            rm.apply();
+            cfs.forceBlockingFlush();
+        }
+
+        waitForLeveling(cfs);
+        LeveledCompactionStrategy strategy = (LeveledCompactionStrategy) cfs.getCompactionStrategy();
+        // Checking we're not completely bad at math
+        assert strategy.getLevelSize(1) > 0;
+        assert strategy.getLevelSize(2) > 0;
+
+        Collection<Collection<SSTableReader>> groupedSSTables = cfs.getCompactionStrategy().groupSSTablesForAntiCompaction(cfs.getSSTables());
+        for (Collection<SSTableReader> sstableGroup : groupedSSTables)
+        {
+            int groupLevel = -1;
+            Iterator<SSTableReader> it = sstableGroup.iterator();
+            while (it.hasNext())
+            {
+
+                SSTableReader sstable = it.next();
+                int tableLevel = sstable.getSSTableLevel();
+                if (groupLevel == -1)
+                    groupLevel = tableLevel;
+                assert groupLevel == tableLevel;
+            }
+        }
+
     }
 
     /*
@@ -83,12 +157,12 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
         for (int r = 0; r < rows; r++)
         {
             DecoratedKey key = Util.dk(String.valueOf(r));
-            Mutation rm = new Mutation(ksname, key.key);
+            Mutation rm = new Mutation(KEYSPACE1, key.getKey());
             for (int c = 0; c < columns; c++)
             {
-                rm.add(cfname, Util.cellname("column" + c), value, 0);
+                rm.add(CF_STANDARDDLEVELED, Util.cellname("column" + c), value, 0);
             }
-            rm.apply();
+            rm.applyUnsafe();
             cfs.forceBlockingFlush();
         }
 
@@ -99,10 +173,10 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
         assert strategy.getLevelSize(2) > 0;
 
         Range<Token> range = new Range<>(Util.token(""), Util.token(""));
-        int gcBefore = keyspace.getColumnFamilyStore(cfname).gcBefore(System.currentTimeMillis());
+        int gcBefore = keyspace.getColumnFamilyStore(CF_STANDARDDLEVELED).gcBefore(System.currentTimeMillis());
         UUID parentRepSession = UUID.randomUUID();
         ActiveRepairService.instance.registerParentRepairSession(parentRepSession, Arrays.asList(cfs), Arrays.asList(range));
-        RepairJobDesc desc = new RepairJobDesc(parentRepSession, UUID.randomUUID(), ksname, cfname, range);
+        RepairJobDesc desc = new RepairJobDesc(parentRepSession, UUID.randomUUID(), KEYSPACE1, CF_STANDARDDLEVELED, range);
         Validator validator = new Validator(desc, FBUtilities.getBroadcastAddress(), gcBefore);
         CompactionManager.instance.submitValidation(cfs, validator).get();
     }
@@ -128,12 +202,12 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
         for (int r = 0; r < rows; r++)
         {
             DecoratedKey key = Util.dk(String.valueOf(r));
-            Mutation rm = new Mutation(ksname, key.key);
+            Mutation rm = new Mutation(KEYSPACE1, key.getKey());
             for (int c = 0; c < columns; c++)
             {
-                rm.add(cfname, Util.cellname("column" + c), value, 0);
+                rm.add(CF_STANDARDDLEVELED, Util.cellname("column" + c), value, 0);
             }
-            rm.apply();
+            rm.applyUnsafe();
             cfs.forceBlockingFlush();
         }
 
@@ -143,7 +217,7 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
 
         // get LeveledScanner for level 1 sstables
         Collection<SSTableReader> sstables = strategy.manifest.getLevel(1);
-        List<ICompactionScanner> scanners = strategy.getScanners(sstables);
+        List<ICompactionScanner> scanners = strategy.getScanners(sstables).scanners;
         assertEquals(1, scanners.size()); // should be one per level
         ICompactionScanner scanner = scanners.get(0);
         // scan through to the end
@@ -167,12 +241,12 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
         for (int r = 0; r < rows; r++)
         {
             DecoratedKey key = Util.dk(String.valueOf(r));
-            Mutation rm = new Mutation(ksname, key.key);
+            Mutation rm = new Mutation(KEYSPACE1, key.getKey());
             for (int c = 0; c < columns; c++)
             {
-                rm.add(cfname, Util.cellname("column" + c), value, 0);
+                rm.add(CF_STANDARDDLEVELED, Util.cellname("column" + c), value, 0);
             }
-            rm.apply();
+            rm.applyUnsafe();
             cfs.forceBlockingFlush();
         }
         waitForLeveling(cfs);
@@ -213,12 +287,12 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
         for (int r = 0; r < rows; r++)
         {
             DecoratedKey key = Util.dk(String.valueOf(r));
-            Mutation rm = new Mutation(ksname, key.key);
+            Mutation rm = new Mutation(KEYSPACE1, key.getKey());
             for (int c = 0; c < columns; c++)
             {
-                rm.add(cfname, Util.cellname("column" + c), value, 0);
+                rm.add(CF_STANDARDDLEVELED, Util.cellname("column" + c), value, 0);
             }
-            rm.apply();
+            rm.applyUnsafe();
             cfs.forceBlockingFlush();
         }
         waitForLeveling(cfs);

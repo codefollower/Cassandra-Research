@@ -21,20 +21,39 @@
 package org.apache.cassandra.db;
 
 import java.util.*;
+
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.db.composites.*;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.utils.SearchIterator;
 
-public class ArrayBackedSortedColumnsTest extends SchemaLoader
+public class ArrayBackedSortedColumnsTest
 {
+    private static final String KEYSPACE1 = "ArrayBackedSortedColumnsTest";
+    private static final String CF_STANDARD1 = "Standard1";
+
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1));
+    }
+
     @Test
     public void testAdd()
     {
@@ -44,7 +63,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
 
     private CFMetaData metadata()
     {
-        return Schema.instance.getCFMetaData("Keyspace1", "Standard1");
+        return Schema.instance.getCFMetaData(KEYSPACE1, CF_STANDARD1);
     }
 
     private void testAddInternal(boolean reversed)
@@ -54,7 +73,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values = new int[]{ 1, 2, 2, 3 };
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            map.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         Iterator<Cell> iter = map.iterator();
         assertEquals("1st column", 1, iter.next().name().toByteBuffer().getInt(0));
@@ -76,7 +95,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
 
         int[] values = new int[]{ 1, 2, 1, 3, 4, 4, 5, 5, 1, 2, 6, 6, 6, 1, 2, 3 };
         for (int i = 0; i < values.length; ++i)
-            cells.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            cells.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         assertEquals(6, cells.getColumnCount());
 
@@ -91,7 +110,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         // Add more values
         values = new int[]{ 11, 15, 12, 12, 12, 16, 10, 8, 8, 7, 4, 4, 5 };
         for (int i = 0; i < values.length; ++i)
-            cells.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            cells.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         assertEquals(13, cells.getColumnCount());
 
@@ -125,7 +144,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
 
         int[] values = new int[]{ -1, 20, 44, 55, 27, 27, 17, 1, 9, 89, 33, 44, 0, 9 };
         for (int i = 0; i < values.length; ++i)
-            cells.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            cells.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         for (int i : values)
             assertEquals(i, cells.getColumn(type.makeCellName(i)).name().toByteBuffer().getInt(0));
@@ -148,10 +167,10 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values2 = new int[]{ 2, 4, 5, 6 };
 
         for (int i = 0; i < values1.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values1[reversed ? values1.length - 1 - i : i])));
+            map.addColumn(new BufferCell(type.makeCellName(values1[reversed ? values1.length - 1 - i : i])));
 
         for (int i = 0; i < values2.length; ++i)
-            map2.addColumn(new Cell(type.makeCellName(values2[reversed ? values2.length - 1 - i : i])));
+            map2.addColumn(new BufferCell(type.makeCellName(values2[reversed ? values2.length - 1 - i : i])));
 
         map2.addAll(map);
 
@@ -179,12 +198,12 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
 
         List<Cell> sorted = new ArrayList<>();
         for (int v : values)
-            sorted.add(new Cell(type.makeCellName(v)));
+            sorted.add(new BufferCell(type.makeCellName(v)));
         List<Cell> reverseSorted = new ArrayList<>(sorted);
         Collections.reverse(reverseSorted);
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            map.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         assertSame(sorted, map.getSortedColumns());
         assertSame(reverseSorted, map.getReverseSortedColumns());
@@ -205,12 +224,49 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values = new int[]{ 1, 2, 3, 5, 9 };
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            map.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(3), Composites.EMPTY) }));
         assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(4), Composites.EMPTY) }));
 
         assertSame(map.iterator(), map.iterator(ColumnSlice.ALL_COLUMNS_ARRAY));
+    }
+
+    @Test
+    public void testSearchIterator()
+    {
+        CellNameType type = new SimpleDenseCellNameType(Int32Type.instance);
+        ColumnFamily map = ArrayBackedSortedColumns.factory.create(metadata(), false);
+
+        int[] values = new int[]{ 1, 2, 3, 5, 9, 15, 21, 22 };
+
+        for (int i = 0; i < values.length; ++i)
+            map.addColumn(new BufferCell(type.makeCellName(values[i])));
+
+        SearchIterator<CellName, Cell> iter = map.searchIterator();
+        for (int i = 0 ; i < values.length ; i++)
+            assertSame(values[i], iter.next(type.makeCellName(values[i])));
+
+        iter = map.searchIterator();
+        for (int i = 0 ; i < values.length ; i+=2)
+            assertSame(values[i], iter.next(type.makeCellName(values[i])));
+
+        iter = map.searchIterator();
+        for (int i = 0 ; i < values.length ; i+=4)
+            assertSame(values[i], iter.next(type.makeCellName(values[i])));
+
+        iter = map.searchIterator();
+        for (int i = 0 ; i < values.length ; i+=1)
+        {
+            if (i % 2 == 0)
+            {
+                Cell cell = iter.next(type.makeCellName(values[i] - 1));
+                if (i > 0 && values[i - 1] == values[i] - 1)
+                    assertSame(values[i - 1], cell);
+                else
+                    assertNull(cell);
+            }
+        }
     }
 
     private <T> void assertSame(Iterable<T> c1, Iterable<T> c2)
@@ -226,6 +282,11 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
             fail("The collection don't have the same size");
     }
 
+    private void assertSame(int name, Cell cell)
+    {
+        int value = ByteBufferUtil.toInt(cell.name().toByteBuffer());
+        assert name == value : "Expected " + name + " but got " + value;
+    }
     private void assertSame(int[] names, Iterator<Cell> iter)
     {
         for (int name : names)
@@ -251,7 +312,7 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         int[] values = new int[]{ 1, 2, 2, 3 };
 
         for (int i = 0; i < values.length; ++i)
-            map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
+            map.addColumn(new BufferCell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
         Iterator<Cell> iter = map.getReverseSortedColumns().iterator();
         assertTrue(iter.hasNext());

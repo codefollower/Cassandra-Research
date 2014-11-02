@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.serializers.CollectionSerializer;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -57,7 +58,16 @@ public abstract class CollectionType<T> extends AbstractType<T>
 
     protected abstract void appendToStringBuilder(StringBuilder sb);
 
-    public abstract ByteBuffer serialize(List<Cell> cells);
+    public abstract List<ByteBuffer> serializedValues(List<Cell> cells);
+
+    @Override
+    public abstract CollectionSerializer<T> getSerializer();
+
+    @Override
+    public void validateCellValue(ByteBuffer cellValue) throws MarshalException
+    {
+        valueComparator().validate(cellValue);
+    }
 
     @Override
     public String toString()
@@ -65,11 +75,6 @@ public abstract class CollectionType<T> extends AbstractType<T>
         StringBuilder sb = new StringBuilder();
         appendToStringBuilder(sb);
         return sb.toString();
-    }
-
-    public int compare(ByteBuffer o1, ByteBuffer o2)
-    {
-        throw new UnsupportedOperationException("CollectionType should not be use directly as a comparator");
     }
 
     public String getString(ByteBuffer bytes)
@@ -87,11 +92,6 @@ public abstract class CollectionType<T> extends AbstractType<T>
         {
             throw new MarshalException(String.format("cannot parse '%s' as hex bytes", source), e);
         }
-    }
-
-    public void validate(ByteBuffer bytes)
-    {
-        valueComparator().validate(bytes);
     }
 
     @Override
@@ -115,22 +115,9 @@ public abstract class CollectionType<T> extends AbstractType<T>
         return true;
     }
 
-    // Utilitary method
-    protected static ByteBuffer pack(List<ByteBuffer> buffers, int elements, int size)
+    protected List<Cell> enforceLimit(List<Cell> cells, int version)
     {
-        ByteBuffer result = ByteBuffer.allocate(2 + size);
-        result.putShort((short)elements);
-        for (ByteBuffer bb : buffers)
-        {
-            result.putShort((short)bb.remaining());
-            result.put(bb.duplicate());
-        }
-        return (ByteBuffer)result.flip();
-    }
-
-    protected List<Cell> enforceLimit(List<Cell> cells)
-    {
-        if (cells.size() <= MAX_ELEMENTS)
+        if (version >= 3 || cells.size() <= MAX_ELEMENTS)
             return cells;
 
         logger.error("Detected collection with {} elements, more than the {} limit. Only the first {} elements will be returned to the client. "
@@ -138,18 +125,11 @@ public abstract class CollectionType<T> extends AbstractType<T>
         return cells.subList(0, MAX_ELEMENTS);
     }
 
-    public static ByteBuffer pack(List<ByteBuffer> buffers, int elements)
+    public ByteBuffer serializeForNativeProtocol(List<Cell> cells, int version)
     {
-        int size = 0;
-        for (ByteBuffer bb : buffers)
-            size += 2 + bb.remaining();
-        return pack(buffers, elements, size);
-    }
-
-    protected static int getUnsignedShort(ByteBuffer bb)
-    {
-        int length = (bb.get() & 0xFF) << 8;
-        return length | (bb.get() & 0xFF);
+        cells = enforceLimit(cells, version);
+        List<ByteBuffer> values = serializedValues(cells);
+        return CollectionSerializer.pack(values, cells.size(), version);
     }
 
     public CQL3Type asCQL3Type()

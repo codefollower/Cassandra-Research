@@ -69,7 +69,7 @@ public class GossipDigestSynVerbHandler implements IVerbHandler<GossipDigestSyn>
                 sb.append(gDigest);
                 sb.append(" ");
             }
-            logger.trace("Gossip syn digests are : " + sb.toString());
+            logger.trace("Gossip syn digests are : {}", sb);
         }
 
         doSort(gDigestList);
@@ -85,7 +85,6 @@ public class GossipDigestSynVerbHandler implements IVerbHandler<GossipDigestSyn>
                                                                                         GossipDigestAck.serializer);
         if (logger.isTraceEnabled())
             logger.trace("Sending a GossipDigestAckMessage to {}", from);
-        Gossiper.instance.checkSeedContact(from);
         MessagingService.instance().sendOneWay(gDigestAckMessage, from);
     }
 

@@ -22,6 +22,7 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
@@ -31,6 +32,8 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.IntegerType;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.config.*;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.*;
 import static org.apache.cassandra.Util.dk;
@@ -43,11 +46,21 @@ import static org.apache.cassandra.Util.dk;
  * length partitioner that takes the length of the key as token, making
  * collision easy and predictable.
  */
-public class KeyCollisionTest extends SchemaLoader
+public class KeyCollisionTest
 {
     IPartitioner oldPartitioner;
-    private static final String KEYSPACE = "Keyspace1";
+    private static final String KEYSPACE1 = "KeyCollisionTest1";
     private static final String CF = "Standard1";
+
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF));
+    }
 
     protected void setUp()
     {
@@ -63,7 +76,7 @@ public class KeyCollisionTest extends SchemaLoader
     @Test
     public void testGetSliceWithCollision() throws Exception
     {
-        Keyspace keyspace = Keyspace.open(KEYSPACE);
+        Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF);
         cfs.clearUnsafe();
 
@@ -73,10 +86,10 @@ public class KeyCollisionTest extends SchemaLoader
 
         List<Row> rows = cfs.getRangeSlice(new Bounds<RowPosition>(dk("k2"), dk("key2")), null, new IdentityQueryFilter(), 10000);
         assert rows.size() == 4 : "Expecting 4 keys, got " + rows.size();
-        assert rows.get(0).key.key.equals(ByteBufferUtil.bytes("k2"));
-        assert rows.get(1).key.key.equals(ByteBufferUtil.bytes("k3"));
-        assert rows.get(2).key.key.equals(ByteBufferUtil.bytes("key1"));
-        assert rows.get(3).key.key.equals(ByteBufferUtil.bytes("key2"));
+        assert rows.get(0).key.getKey().equals(ByteBufferUtil.bytes("k2"));
+        assert rows.get(1).key.getKey().equals(ByteBufferUtil.bytes("k3"));
+        assert rows.get(2).key.getKey().equals(ByteBufferUtil.bytes("key1"));
+        assert rows.get(3).key.getKey().equals(ByteBufferUtil.bytes("key2"));
     }
 
     private void insert(String... keys)
@@ -88,9 +101,9 @@ public class KeyCollisionTest extends SchemaLoader
     private void insert(String key)
     {
         Mutation rm;
-        rm = new Mutation(KEYSPACE, ByteBufferUtil.bytes(key));
+        rm = new Mutation(KEYSPACE1, ByteBufferUtil.bytes(key));
         rm.add(CF, Util.cellname("column"), ByteBufferUtil.bytes("asdf"), 0);
-        rm.apply();
+        rm.applyUnsafe();
     }
 
     public static class LengthPartitioner extends AbstractPartitioner<BigIntegerToken>
@@ -102,7 +115,7 @@ public class KeyCollisionTest extends SchemaLoader
 
         public DecoratedKey decorateKey(ByteBuffer key)
         {
-            return new DecoratedKey(getToken(key), key);
+            return new BufferDecoratedKey(getToken(key), key);
         }
 
         public Token midpoint(Token ltoken, Token rtoken)
@@ -194,7 +207,7 @@ public class KeyCollisionTest extends SchemaLoader
                     for (Range<Token> r : sortedRanges)
                     {
                         // Looping over every KS:CF:Range, get the splits size and add it to the count
-                        allTokens.put(r.right, allTokens.get(r.right) + StorageService.instance.getSplits(ks, cfmd.cfName, r, 1, cfmd).size());
+                        allTokens.put(r.right, allTokens.get(r.right) + StorageService.instance.getSplits(ks, cfmd.cfName, r, 1).size());
                     }
                 }
             }

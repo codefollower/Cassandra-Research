@@ -65,7 +65,7 @@ public class RangeSliceQueryPager extends AbstractQueryPager
     {
         return lastReturnedKey == null
              ? null
-             : new PagingState(lastReturnedKey.key, lastReturnedName.toByteBuffer(), maxRemaining());
+             : new PagingState(lastReturnedKey.getKey(), lastReturnedName.toByteBuffer(), maxRemaining());
     }
 
     protected List<Row> queryNextPage(int pageSize, ConsistencyLevel consistencyLevel, boolean localQuery)
@@ -82,7 +82,8 @@ public class RangeSliceQueryPager extends AbstractQueryPager
                                                           start,
                                                           sf.finish(),
                                                           command.rowFilter,
-                                                          pageSize);
+                                                          pageSize,
+                                                          command.countCQL3Rows);
 
         return localQuery
              ? pageCmd.executeLocally()

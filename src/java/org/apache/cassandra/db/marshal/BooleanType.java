@@ -24,20 +24,28 @@ import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.BooleanSerializer;
 import org.apache.cassandra.serializers.MarshalException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class BooleanType extends AbstractType<Boolean>
 {
+    private static final Logger logger = LoggerFactory.getLogger(BooleanType.class);
+
     public static final BooleanType instance = new BooleanType();
 
     BooleanType() {} // singleton
 
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
-        if ((o1 == null) || (o1.remaining() != 1))
-            return ((o2 == null) || (o2.remaining() != 1)) ? 0 : -1;
-        if ((o2 == null) || (o2.remaining() != 1))
-            return 1;
+        if (!o1.hasRemaining() || !o2.hasRemaining())
+            return o1.hasRemaining() ? 1 : o2.hasRemaining() ? -1 : 0;
 
-        return o1.compareTo(o2);
+        // False is 0, True is anything else, makes False sort before True.
+        byte b1 = o1.get(o1.position());
+        byte b2 = o2.get(o2.position());
+        if (b1 == 0)
+            return b2 == 0 ? 0 : -1;
+        return b2 == 0 ? 1 : 0;
     }
 
     public ByteBuffer fromString(String source) throws MarshalException

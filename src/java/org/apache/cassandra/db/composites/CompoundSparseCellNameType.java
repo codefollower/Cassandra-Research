@@ -20,6 +20,7 @@ package org.apache.cassandra.db.composites;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.CQL3Row;
 import org.apache.cassandra.cql3.ColumnIdentifier;
@@ -29,11 +30,10 @@ import org.apache.cassandra.db.marshal.ColumnToCollectionType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
-import org.apache.cassandra.utils.memory.PoolAllocator;
 
 public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
 {
-    private static final ColumnIdentifier rowMarkerId = new ColumnIdentifier(ByteBufferUtil.EMPTY_BYTE_BUFFER, UTF8Type.instance);
+    public static final ColumnIdentifier rowMarkerId = new ColumnIdentifier(ByteBufferUtil.EMPTY_BYTE_BUFFER, UTF8Type.instance);
     private static final CellName rowMarkerNoPrefix = new CompoundSparseCellName(rowMarkerId, false);
 
     // For CQL3 columns, this is always UTF8Type. However, for compatibility with super columns, we need to allow it to be non-UTF8.
@@ -88,14 +88,9 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
             }
 
             @Override
-            public Composite copy(AbstractAllocator allocator)
+            public Composite copy(CFMetaData cfm, AbstractAllocator allocator)
             {
                 return this;
-            }
-
-            @Override
-            public void free(PoolAllocator<?> allocator)
-            {
             }
         };
     }
@@ -205,9 +200,9 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
         internedIds.remove(id.bytes);
     }
 
-    public CQL3Row.Builder CQL3RowBuilder(long now)
+    public CQL3Row.Builder CQL3RowBuilder(CFMetaData metadata, long now)
     {
-        return makeSparseCQL3RowBuilder(this, now);
+        return makeSparseCQL3RowBuilder(metadata, this, now);
     }
 
     public static class WithCollection extends CompoundSparseCellNameType
@@ -267,6 +262,43 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
             assert prefix instanceof CompoundComposite;
             CompoundComposite lc = (CompoundComposite)prefix;
             return new CompoundSparseCellName.WithCollection(lc.elements, clusteringSize, column.name, collectionElement, column.isStatic());
+        }
+
+        @Override
+        public int compare(Composite c1, Composite c2)
+        {
+            if (c1.isStatic() != c2.isStatic())
+            {
+                // Static sorts before non-static no matter what, except for empty which
+                // always sort first
+                if (c1.isEmpty())
+                    return c2.isEmpty() ? 0 : -1;
+                if (c2.isEmpty())
+                    return 1;
+                return c1.isStatic() ? -1 : 1;
+            }
+
+            int s1 = c1.size();
+            int s2 = c2.size();
+            int minSize = Math.min(s1, s2);
+
+            ByteBuffer previous = null;
+            for (int i = 0; i < minSize; i++)
+            {
+                AbstractType<?> comparator = subtype(i);
+                ByteBuffer value1 = c1.get(i);
+                ByteBuffer value2 = c2.get(i);
+
+                int cmp = comparator.compareCollectionMembers(value1, value2, previous);
+                if (cmp != 0)
+                    return cmp;
+
+                previous = value1;
+            }
+
+            if (s1 == s2)
+                return c1.eoc().compareTo(c2.eoc());
+            return s1 < s2 ? c1.eoc().prefixComparisonResult : -c2.eoc().prefixComparisonResult;
         }
 
         @Override

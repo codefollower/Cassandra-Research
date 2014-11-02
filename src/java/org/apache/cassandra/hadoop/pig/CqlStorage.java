@@ -24,6 +24,7 @@ import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.BufferCell;
 import org.apache.cassandra.db.composites.CellNames;
 import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.marshal.*;
@@ -33,7 +34,6 @@ import org.apache.cassandra.hadoop.cql3.CqlConfigHelper;
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-
 import org.apache.hadoop.mapreduce.*;
 import org.apache.pig.Expression;
 import org.apache.pig.Expression.OpType;
@@ -57,12 +57,12 @@ public class CqlStorage extends AbstractCassandraStorage
 {
     private static final Logger logger = LoggerFactory.getLogger(CqlStorage.class);
     private RecordReader<Map<String, ByteBuffer>, Map<String, ByteBuffer>> reader;
-    private RecordWriter<Map<String, ByteBuffer>, List<ByteBuffer>> writer;
+    protected RecordWriter<Map<String, ByteBuffer>, List<ByteBuffer>> writer;
 
-    private int pageSize = 1000;
-    private String columns;
-    private String outputQuery;
-    private String whereClause;
+    protected int pageSize = 1000;
+    protected String columns;
+    protected String outputQuery;
+    protected String whereClause;
     private boolean hasCompactValueAlias = false;
         
     public CqlStorage()
@@ -112,7 +112,7 @@ public class CqlStorage extends AbstractCassandraStorage
                 ByteBuffer columnValue = columns.get(ByteBufferUtil.string(cdef.name.duplicate()));
                 if (columnValue != null)
                 {
-                    Cell cell = new Cell(CellNames.simpleDense(cdef.name), columnValue);
+                    Cell cell = new BufferCell(CellNames.simpleDense(cdef.name), columnValue);
                     AbstractType<?> validator = getValidatorMap(cfDef).get(cdef.name);
                     setTupleValue(tuple, i, cqlColumnToObj(cell, cfDef), validator);
                 }
@@ -129,7 +129,7 @@ public class CqlStorage extends AbstractCassandraStorage
     }
 
     /** set the value to the position of the tuple */
-    private void setTupleValue(Tuple tuple, int position, Object value, AbstractType<?> validator) throws ExecException
+    protected void setTupleValue(Tuple tuple, int position, Object value, AbstractType<?> validator) throws ExecException
     {
         if (validator instanceof CollectionType)
             setCollectionTupleValues(tuple, position, value, validator);
@@ -183,7 +183,7 @@ public class CqlStorage extends AbstractCassandraStorage
     }
 
     /** convert a cql column to an object */
-    private Object cqlColumnToObj(Cell col, CfDef cfDef) throws IOException
+    protected Object cqlColumnToObj(Cell col, CfDef cfDef) throws IOException
     {
         // standard
         Map<ByteBuffer,AbstractType> validators = getValidatorMap(cfDef);
@@ -670,7 +670,7 @@ public class CqlStorage extends AbstractCassandraStorage
         }
         catch (Exception e)
         {
-            throw new IOException("Expected 'cql://[username:password@]<keyspace>/<columnfamily>" +
+            throw new IOException("Expected 'cql://[username:password@]<keyspace>/<table>" +
                     "[?[page_size=<size>][&columns=<col1,col2>][&output_query=<prepared_statement>]" +
                     "[&where_clause=<clause>][&split_size=<size>][&partitioner=<partitioner>][&use_secondary=true|false]" +
                     "[&init_address=<host>][&rpc_port=<port>]]': " + e.getMessage());

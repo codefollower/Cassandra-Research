@@ -44,6 +44,7 @@ public abstract class Functions
         declared.put("maxtimeuuid", AbstractFunction.factory(TimeuuidFcts.maxTimeuuidFct));
         declared.put("dateof", AbstractFunction.factory(TimeuuidFcts.dateOfFct));
         declared.put("unixtimestampof", AbstractFunction.factory(TimeuuidFcts.unixTimestampOfFct));
+        declared.put("uuid", AbstractFunction.factory(UuidFcts.uuidFct));
 
         for (CQL3Type type : CQL3Type.Native.values())
         {
@@ -59,6 +60,11 @@ public abstract class Functions
         }
         declared.put("varcharasblob", AbstractFunction.factory(BytesConversionFcts.VarcharAsBlobFct));
         declared.put("blobasvarchar", AbstractFunction.factory(BytesConversionFcts.BlobAsVarcharFact));
+    }
+
+    public static boolean contains(String functionName)
+    {
+        return declared.containsKey(functionName);
     }
 
     public static AbstractType<?> getReturnType(String functionName, String ksName, String cfName)
@@ -81,7 +87,7 @@ public abstract class Functions
     {
         List<Function.Factory> factories = declared.get(name.toLowerCase());
         if (factories.isEmpty())
-            throw new InvalidRequestException(String.format("Unknown CQL3 function %s called", name));
+            return null;
 
         // Fast path if there is not choice
         if (factories.size() == 1)
@@ -110,7 +116,7 @@ public abstract class Functions
 
     private static void validateTypes(String keyspace, Function fun, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
     {
-        if (!receiver.type.asCQL3Type().equals(fun.returnType().asCQL3Type()))
+        if (!receiver.type.isValueCompatibleWith(fun.returnType()))
             throw new InvalidRequestException(String.format("Type error: cannot assign result of function %s (type %s) to %s (type %s)", fun.name(), fun.returnType().asCQL3Type(), receiver, receiver.type.asCQL3Type()));
 
         if (providedArgs.size() != fun.argsType().size())
@@ -131,9 +137,9 @@ public abstract class Functions
         }
     }
 
-    private static boolean isValidType(String keyspace, Function fun, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
+    private static boolean isValidType(String keyspace, Function fun, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver)
     {
-        if (!receiver.type.asCQL3Type().equals(fun.returnType().asCQL3Type()))
+        if (!receiver.type.isValueCompatibleWith(fun.returnType()))
             return false;
 
         if (providedArgs.size() != fun.argsType().size())

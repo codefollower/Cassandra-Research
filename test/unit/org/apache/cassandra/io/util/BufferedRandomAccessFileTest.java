@@ -19,6 +19,7 @@
  */
 package org.apache.cassandra.io.util;
 
+import org.apache.cassandra.service.FileCacheService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 import java.io.File;
@@ -28,6 +29,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.apache.cassandra.Util.expectEOF;
 import static org.apache.cassandra.Util.expectException;
@@ -520,6 +526,71 @@ public class BufferedRandomAccessFileTest
     }
 
     @Test
+    public void testFileCacheService() throws IOException, InterruptedException
+    {
+        //see https://issues.apache.org/jira/browse/CASSANDRA-7756
+
+        final FileCacheService.CacheKey cacheKey = new FileCacheService.CacheKey();
+        final int THREAD_COUNT = 40;
+        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
+
+        SequentialWriter w1 = createTempFile("fscache1");
+        SequentialWriter w2 = createTempFile("fscache2");
+
+        w1.write(new byte[30]);
+        w1.close();
+
+        w2.write(new byte[30]);
+        w2.close();
+
+        for (int i = 0; i < 20; i++)
+        {
+
+
+            RandomAccessReader r1 = RandomAccessReader.open(w1);
+            RandomAccessReader r2 = RandomAccessReader.open(w2);
+
+
+            FileCacheService.instance.put(cacheKey, r1);
+            FileCacheService.instance.put(cacheKey, r2);
+
+            final CountDownLatch finished = new CountDownLatch(THREAD_COUNT);
+            final AtomicBoolean hadError = new AtomicBoolean(false);
+
+            for (int k = 0; k < THREAD_COUNT; k++)
+            {
+                executorService.execute( new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        try
+                        {
+                            long size = FileCacheService.instance.sizeInBytes();
+
+                            while (size > 0)
+                                size = FileCacheService.instance.sizeInBytes();
+                        }
+                        catch (Throwable t)
+                        {
+                            t.printStackTrace();
+                            hadError.set(true);
+                        }
+                        finally
+                        {
+                            finished.countDown();
+                        }
+                    }
+                });
+
+            }
+
+            finished.await();
+            assert !hadError.get();
+        }
+    }
+
+    @Test
     public void testReadOnly() throws IOException
     {
         SequentialWriter file = createTempFile("brafReadOnlyTest");
@@ -546,34 +617,6 @@ public class BufferedRandomAccessFileTest
                 return null;
             }
         }, IllegalArgumentException.class);
-
-        // Any write() call should fail
-        expectException(new Callable<Object>()
-        {
-            public Object call() throws IOException
-            {
-                copy.write(1);
-                return null;
-            }
-        }, UnsupportedOperationException.class);
-
-        expectException(new Callable<Object>()
-        {
-            public Object call() throws IOException
-            {
-                copy.write(new byte[1]);
-                return null;
-            }
-        }, UnsupportedOperationException.class);
-
-        expectException(new Callable<Object>()
-        {
-            public Object call() throws IOException
-            {
-                copy.write(new byte[3], 0, 2);
-                return null;
-            }
-        }, UnsupportedOperationException.class);
 
         copy.seek(0);
         copy.skipBytes(5);
@@ -616,16 +659,6 @@ public class BufferedRandomAccessFileTest
         try (SequentialWriter file = SequentialWriter.open(tmpFile))
         {
             file.truncate(-8L);
-        }
-    }
-
-    @Test (expected=IOException.class)
-    public void testSetLengthDuringReadMode() throws IOException
-    {
-        File tmpFile = File.createTempFile("set_length_during_read_mode", "bin");
-        try (RandomAccessReader file = RandomAccessReader.open(tmpFile))
-        {
-            file.setLength(4L);
         }
     }
 

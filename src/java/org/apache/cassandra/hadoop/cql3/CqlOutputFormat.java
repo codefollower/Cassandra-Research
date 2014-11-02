@@ -30,14 +30,14 @@ import org.apache.hadoop.mapreduce.*;
 /**
  * The <code>ColumnFamilyOutputFormat</code> acts as a Hadoop-specific
  * OutputFormat that allows reduce tasks to store keys (and corresponding
- *  binded variable values) as CQL rows (and respective columns) in a given
+ * bound variable values) as CQL rows (and respective columns) in a given
  * ColumnFamily.
  *
  * <p>
  * As is the case with the {@link org.apache.cassandra.hadoop.ColumnFamilyInputFormat}, 
  * you need to set the prepared statement in your
  * Hadoop job Configuration. The {@link CqlConfigHelper} class, through its
- * {@link ConfigHelper#setOutputPreparedStatement} method, is provided to make this
+ * {@link CqlConfigHelper#setOutputCql} method, is provided to make this
  * simple.
  * you need to set the Keyspace. The {@link ConfigHelper} class, through its
  * {@link ConfigHelper#setOutputColumnFamily} method, is provided to make this

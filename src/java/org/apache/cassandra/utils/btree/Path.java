@@ -20,7 +20,8 @@ package org.apache.cassandra.utils.btree;
 
 import java.util.Comparator;
 
-import static org.apache.cassandra.utils.btree.BTree.MAX_DEPTH;
+import static org.apache.cassandra.utils.btree.BTree.NEGATIVE_INFINITY;
+import static org.apache.cassandra.utils.btree.BTree.POSITIVE_INFINITY;
 import static org.apache.cassandra.utils.btree.BTree.getBranchKeyEnd;
 import static org.apache.cassandra.utils.btree.BTree.getKeyEnd;
 import static org.apache.cassandra.utils.btree.BTree.getLeafKeyEnd;
@@ -35,7 +36,7 @@ import static org.apache.cassandra.utils.btree.BTree.isLeaf;
  *
  * Path is only intended to be used via Cursor.
  */
-class Path
+public class Path<V>
 {
     // operations corresponding to the ones in NavigableSet
     static enum Op
@@ -46,51 +47,85 @@ class Path
         LOWER   // the greatest element strictly less than the given element
     }
 
-    static Path newPath()
-    {
-        // try to encourage stack allocation - probably misguided/unnecessary. but no harm
-        Object[][] path = new Object[MAX_DEPTH][];
-        byte[] index = new byte[MAX_DEPTH];
-        return new Path(path, index);
-    }
-
     // the path to the searched-for key
-    final Object[][] path;
+    Object[][] path;
     // the index within the node of our path at a given depth
-    final byte[] indexes;
+    byte[] indexes;
     // current depth.  nothing in path[i] for i > depth is valid.
     byte depth;
 
-    Path(Object[][] path, byte[] indexes)
+    Path() { }
+    Path(int depth, Object[] btree)
     {
-        this.path = path;
-        this.indexes = indexes;
+        this.path = new Object[depth][];
+        this.indexes = new byte[depth];
+        this.path[0] = btree;
+    }
+
+    void init(Object[] btree)
+    {
+        int depth = BTree.depth(btree);
+        if (path == null || path.length < depth)
+        {
+            path = new Object[depth][];
+            indexes = new byte[depth];
+        }
+        path[0] = btree;
+    }
+
+    void moveEnd(Object[] node, boolean forwards)
+    {
+        push(node, getKeyEnd(node));
+        if (!forwards)
+            predecessor();
+    }
+
+    void moveStart(Object[] node, boolean forwards)
+    {
+        push(node, -1);
+        if (forwards)
+            successor();
     }
 
     /**
      * Find the provided key in the tree rooted at node, and store the root to it in the path
      *
-     * @param node       the tree to search in
      * @param comparator the comparator defining the order on the tree
      * @param target     the key to search for
      * @param mode       the type of search to perform
      * @param forwards   if the path should be setup for forward or backward iteration
-     * @param <V>
+     * @param <K>
      */
-    <V> void find(Object[] node, Comparator<V> comparator, Object target, Op mode, boolean forwards)
+    <K> boolean find(Comparator<K> comparator, Object target, Op mode, boolean forwards)
     {
         // TODO : should not require parameter 'forwards' - consider modifying index to represent both
         // child and key position, as opposed to just key position (which necessitates a different value depending
         // on which direction you're moving in. Prerequisite for making Path public and using to implement general
         // search
 
-        depth = -1;
+        Object[] node = path[depth];
+        int lb = indexes[depth];
+        assert lb == 0 || forwards;
+        pop();
+
+        if (target instanceof BTree.Special)
+        {
+            if (target == POSITIVE_INFINITY)
+                moveEnd(node, forwards);
+            else if (target == NEGATIVE_INFINITY)
+                moveStart(node, forwards);
+            else
+                throw new AssertionError();
+            return false;
+        }
+
         while (true)
         {
             int keyEnd = getKeyEnd(node);
 
             // search for the target in the current node
-            int i = BTree.find(comparator, target, node, 0, keyEnd);
+            int i = BTree.find(comparator, target, node, lb, keyEnd);
+            lb = 0;
             if (i >= 0)
             {
                 // exact match. transform exclusive bounds into the correct index by moving back or forwards one
@@ -103,20 +138,19 @@ class Path
                     case LOWER:
                         predecessor();
                 }
-                return;
+                return true;
             }
+            i = -i - 1;
 
             // traverse into the appropriate child
             if (!isLeaf(node))
             {
-                i = -i - 1;
                 push(node, forwards ? i - 1 : i);
                 node = (Object[]) node[keyEnd + i];
                 continue;
             }
 
             // bottom of the tree and still not found.  pick the right index to satisfy Op
-            i = -i - 1;
             switch (mode)
             {
                 case FLOOR:
@@ -139,16 +173,16 @@ class Path
                 push(node, i);
             }
 
-            return;
+            return false;
         }
     }
 
-    private boolean isRoot()
+    boolean isRoot()
     {
         return depth == 0;
     }
 
-    private void pop()
+    void pop()
     {
         depth--;
     }
@@ -163,7 +197,7 @@ class Path
         return indexes[depth];
     }
 
-    private void push(Object[] node, int index)
+    void push(Object[] node, int index)
     {
         path[++depth] = node;
         indexes[depth] = (byte) index;
@@ -172,6 +206,21 @@ class Path
     void setIndex(int index)
     {
         indexes[depth] = (byte) index;
+    }
+
+    byte findSuccessorParentDepth()
+    {
+        byte depth = this.depth;
+        depth--;
+        while (depth >= 0)
+        {
+            int ub = indexes[depth] + 1;
+            Object[] node = path[depth];
+            if (ub < getBranchKeyEnd(node))
+                return depth;
+            depth--;
+        }
+        return -1;
     }
 
     // move to the next key in the tree
@@ -272,7 +321,7 @@ class Path
         return currentNode()[currentIndex()];
     }
 
-    int compareTo(Path that, boolean forwards)
+    int compareTo(Path<V> that, boolean forwards)
     {
         int d = Math.min(this.depth, that.depth);
         for (int i = 0; i <= d; i++)

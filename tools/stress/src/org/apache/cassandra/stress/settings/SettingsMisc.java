@@ -27,7 +27,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.cassandra.stress.generatedata.Distribution;
+import org.apache.cassandra.stress.generate.Distribution;
 
 public class SettingsMisc implements Serializable
 {
@@ -43,7 +43,7 @@ public class SettingsMisc implements Serializable
 
     static final class PrintDistribution extends GroupedOptions
     {
-        final OptionDistribution dist = new OptionDistribution("dist=", null);
+        final OptionDistribution dist = new OptionDistribution("dist=", null, "A mathematical distribution");
 
         @Override
         public List<? extends Option> options()
@@ -117,7 +117,8 @@ public class SettingsMisc implements Serializable
 
     public static void printHelp()
     {
-        System.out.println("Usage: ./bin/cassandra-stress <command> [options]");
+        System.out.println("Usage:      cassandra-stress <command> [options]");
+        System.out.println("Help usage: cassandra-stress help <command>");
         System.out.println();
         System.out.println("---Commands---");
         for (Command cmd : Command.values())
@@ -160,7 +161,7 @@ public class SettingsMisc implements Serializable
                 System.out.println("Usage: ./bin/cassandra-stress help <command|option>");
                 System.out.println("Commands:");
                 for (Command cmd : Command.values())
-                    System.out.println("    " + cmd.toString().toLowerCase() + (cmd.extraName != null ? ", " + cmd.extraName : ""));
+                    System.out.println("    " + cmd.names.toString().replaceAll("\\[|\\]", ""));
                 System.out.println("Options:");
                 for (CliOption op : CliOption.values())
                     System.out.println("    -" + op.toString().toLowerCase() + (op.extraName != null ? ", " + op.extraName : ""));
@@ -180,7 +181,7 @@ public class SettingsMisc implements Serializable
                     @Override
                     public List<? extends Option> options()
                     {
-                        return Arrays.asList(new OptionDistribution("dist=", null));
+                        return Arrays.asList(new OptionDistribution("dist=", null, "A mathematical distribution"));
                     }
                 });
             }

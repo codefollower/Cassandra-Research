@@ -19,15 +19,25 @@ package org.apache.cassandra.io.sstable.metadata;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Maps;
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
-import com.google.common.collect.Maps;
-
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.io.sstable.*;
+import org.apache.cassandra.io.sstable.ColumnNameHelper;
+import org.apache.cassandra.io.sstable.ColumnStats;
+import org.apache.cassandra.io.sstable.Component;
+import org.apache.cassandra.io.sstable.SSTable;
+import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.MurmurHash;
@@ -67,6 +77,7 @@ public class MetadataCollector
                                  0,
                                  Collections.<ByteBuffer>emptyList(),
                                  Collections.<ByteBuffer>emptyList(),
+                                 true,
                                  ActiveRepairService.UNREPAIRED_SSTABLE);
     }
 
@@ -82,6 +93,8 @@ public class MetadataCollector
     protected int sstableLevel;
     protected List<ByteBuffer> minColumnNames = Collections.emptyList();
     protected List<ByteBuffer> maxColumnNames = Collections.emptyList();
+    protected boolean hasLegacyCounterShards = false;
+
     /**
      * Default cardinality estimation method is to use HyperLogLog++.
      * Parameter here(p=13, sp=25) should give reasonable estimation
@@ -108,56 +121,62 @@ public class MetadataCollector
         {
             addAncestor(sstable.descriptor.generation);
             for (Integer i : sstable.getAncestors())
-            {
                 if (new File(sstable.descriptor.withGeneration(i).filenameFor(Component.DATA)).exists())
                     addAncestor(i);
-            }
         }
     }
 
-    public void addKey(ByteBuffer key)
+    public MetadataCollector addKey(ByteBuffer key)
     {
         long hashed = MurmurHash.hash2_64(key, key.position(), key.remaining(), 0);
         cardinality.offerHashed(hashed);
+        return this;
     }
 
-    public void addRowSize(long rowSize)
+    public MetadataCollector addRowSize(long rowSize)
     {
         estimatedRowSize.add(rowSize);
+        return this;
     }
 
-    public void addColumnCount(long columnCount)
+    public MetadataCollector addColumnCount(long columnCount)
     {
         estimatedColumnCount.add(columnCount);
+        return this;
     }
 
-    public void mergeTombstoneHistogram(StreamingHistogram histogram)
+    public MetadataCollector mergeTombstoneHistogram(StreamingHistogram histogram)
     {
         estimatedTombstoneDropTime.merge(histogram);
+        return this;
     }
 
     /**
      * Ratio is compressed/uncompressed and it is
      * if you have 1.x then compression isn't helping
      */
-    public void addCompressionRatio(long compressed, long uncompressed)
+    public MetadataCollector addCompressionRatio(long compressed, long uncompressed)
     {
         compressionRatio = (double) compressed/uncompressed;
+        return this;
     }
 
-    public void updateMinTimestamp(long potentialMin)
+    public MetadataCollector updateMinTimestamp(long potentialMin)
     {
         minTimestamp = Math.min(minTimestamp, potentialMin);
+        return this;
     }
 
-    public void updateMaxTimestamp(long potentialMax)
+    public MetadataCollector updateMaxTimestamp(long potentialMax)
     {
         maxTimestamp = Math.max(maxTimestamp, potentialMax);
+        return this;
     }
 
-    public void updateMaxLocalDeletionTime(int maxLocalDeletionTime)
+    public MetadataCollector updateMaxLocalDeletionTime(int maxLocalDeletionTime)
     {
         this.maxLocalDeletionTime = Math.max(this.maxLocalDeletionTime, maxLocalDeletionTime);
+        return this;
     }
 
     public MetadataCollector estimatedRowSize(EstimatedHistogram estimatedRowSize)
@@ -184,18 +203,6 @@ public class MetadataCollector
         return this;
     }
 
-    public void update(long size, ColumnStats stats)
-    {
-        updateMinTimestamp(stats.minTimestamp);
-        updateMaxTimestamp(stats.maxTimestamp);
-        updateMaxLocalDeletionTime(stats.maxLocalDeletionTime);
-        addRowSize(size);
-        addColumnCount(stats.columnCount);
-        mergeTombstoneHistogram(stats.tombstoneHistogram);
-        updateMinColumnNames(stats.minColumnNames);
-        updateMaxColumnNames(stats.maxColumnNames);
-    }
-
     public MetadataCollector sstableLevel(int sstableLevel)
     {
         this.sstableLevel = sstableLevel;
@@ -216,6 +223,26 @@ public class MetadataCollector
         return this;
     }
 
+    public MetadataCollector updateHasLegacyCounterShards(boolean hasLegacyCounterShards)
+    {
+        this.hasLegacyCounterShards = this.hasLegacyCounterShards || hasLegacyCounterShards;
+        return this;
+    }
+
+    public MetadataCollector update(long rowSize, ColumnStats stats)
+    {
+        updateMinTimestamp(stats.minTimestamp);
+        updateMaxTimestamp(stats.maxTimestamp);
+        updateMaxLocalDeletionTime(stats.maxLocalDeletionTime);
+        addRowSize(rowSize);
+        addColumnCount(stats.columnCount);
+        mergeTombstoneHistogram(stats.tombstoneHistogram);
+        updateMinColumnNames(stats.minColumnNames);
+        updateMaxColumnNames(stats.maxColumnNames);
+        updateHasLegacyCounterShards(stats.hasLegacyCounterShards);
+        return this;
+    }
+
     public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, long repairedAt)
     {
         Map<MetadataType, MetadataComponent> components = Maps.newHashMap();
@@ -229,11 +256,11 @@ public class MetadataCollector
                                                              compressionRatio,
                                                              estimatedTombstoneDropTime,
                                                              sstableLevel,
-                                                             minColumnNames,
-                                                             maxColumnNames,
+                                                             ImmutableList.copyOf(minColumnNames),
+                                                             ImmutableList.copyOf(maxColumnNames),
+                                                             hasLegacyCounterShards,
                                                              repairedAt));
         components.put(MetadataType.COMPACTION, new CompactionMetadata(ancestors, cardinality));
         return components;
     }
-
 }

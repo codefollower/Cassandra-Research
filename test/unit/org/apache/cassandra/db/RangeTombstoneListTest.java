@@ -31,6 +31,178 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class RangeTombstoneListTest
 {
     private static final Comparator<Composite> cmp = new SimpleDenseCellNameType(IntegerType.instance);
+    private static final Random rand = new Random();
+
+    @Test
+    public void testDiff()
+    {
+        RangeTombstoneList superset;
+        RangeTombstoneList subset;
+        RangeTombstoneList diff;
+        Iterator<RangeTombstone> iter;
+
+        // no difference
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        assertNull( subset.diff(superset));
+
+        // all items in subset are contained by the first range in the superset
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        subset.add(rt(1, 2, 3));
+        subset.add(rt(3, 4, 4));
+        subset.add(rt(5, 6, 5));
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(1, 10, 10), iter.next());
+        assertRT(rt(20, 30, 10), iter.next());
+        assertRT(rt(40, 50, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // multiple subset RTs are contained by superset RTs
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        subset.add(rt(1, 2, 1));
+        subset.add(rt(3, 4, 2));
+        subset.add(rt(5, 6, 3));
+        superset.add(rt(1, 5, 2));
+        superset.add(rt(5, 6, 3));
+        superset.add(rt(6, 10, 2));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(1, 5, 2), iter.next());
+        assertRT(rt(6, 10, 2), iter.next());
+        assertFalse(iter.hasNext());
+
+        // the superset has one RT that covers the entire subset
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(1, 50, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // the superset has one RT that covers the remainder of the subset
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(20, 50, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // only the timestamp differs on one RT
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 20));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(20, 30, 20), iter.next());
+        assertFalse(iter.hasNext());
+
+        // superset has a large range on an RT at the start
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(1, 2, 3));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(1, 10, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // superset has a larger range on an RT in the middle
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 25, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(20, 30, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // superset has a larger range on an RT at the end
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 55, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(40, 55, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+         // superset has one additional RT in the middle
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(20, 30, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // superset has one additional RT at the start
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(20, 30, 10));
+        subset.add(rt(40, 50, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(1, 10, 10), iter.next());
+        assertFalse(iter.hasNext());
+
+        // superset has one additional RT at the end
+        superset = new RangeTombstoneList(cmp, 10);
+        subset = new RangeTombstoneList(cmp, 10);
+        superset.add(rt(1, 10, 10));
+        superset.add(rt(20, 30, 10));
+        superset.add(rt(40, 50, 10));
+        subset.add(rt(1, 10, 10));
+        subset.add(rt(20, 30, 10));
+        diff = subset.diff(superset);
+        iter = diff.iterator();
+        assertRT(rt(40, 50, 10), iter.next());
+        assertFalse(iter.hasNext());
+    }
 
     @Test
     public void sortedAdditionTest()
@@ -290,14 +462,101 @@ public class RangeTombstoneListTest
         assertEquals(6, l.maxMarkedAt());
     }
 
+    private RangeTombstoneList makeRandom(int size, int maxItSize, int maxItDistance, int maxMarkedAt)
+    {
+        RangeTombstoneList l = new RangeTombstoneList(cmp, size);
+
+        int prevStart = -1;
+        int prevEnd = 0;
+        for (int i = 0; i < size; i++)
+        {
+            int nextStart = prevEnd + rand.nextInt(maxItDistance);
+            int nextEnd = nextStart + rand.nextInt(maxItSize);
+
+            // We can have an interval [x, x], but not 2 consecutives ones for the same x
+            if (nextEnd == nextStart && prevEnd == prevStart && prevEnd == nextStart)
+                nextEnd += 1 + rand.nextInt(maxItDistance);
+
+            l.add(rt(nextStart, nextEnd, rand.nextInt(maxMarkedAt)));
+
+            prevStart = nextStart;
+            prevEnd = nextEnd;
+        }
+        return l;
+    }
+
+    @Test
+    public void addAllRandomTest() throws Throwable
+    {
+        int TEST_COUNT = 1000;
+        int MAX_LIST_SIZE = 50;
+
+        int MAX_IT_SIZE = 20;
+        int MAX_IT_DISTANCE = 10;
+        int MAX_MARKEDAT = 10;
+
+        for (int i = 0; i < TEST_COUNT; i++)
+        {
+            RangeTombstoneList l1 = makeRandom(rand.nextInt(MAX_LIST_SIZE) + 1, rand.nextInt(MAX_IT_SIZE) + 1, rand.nextInt(MAX_IT_DISTANCE) + 1, rand.nextInt(MAX_MARKEDAT) + 1);
+            RangeTombstoneList l2 = makeRandom(rand.nextInt(MAX_LIST_SIZE) + 1, rand.nextInt(MAX_IT_SIZE) + 1, rand.nextInt(MAX_IT_DISTANCE) + 1, rand.nextInt(MAX_MARKEDAT) + 1);
+
+            RangeTombstoneList l1Initial = l1.copy();
+
+            try
+            {
+                // We generate the list randomly, so "all" we check is that the resulting range tombstone list looks valid.
+                l1.addAll(l2);
+                assertValid(l1);
+            }
+            catch (Throwable e)
+            {
+                System.out.println("Error merging:");
+                System.out.println(" l1: " + toString(l1Initial));
+                System.out.println(" l2: " + toString(l2));
+                throw e;
+            }
+        }
+    }
+
     private static void assertRT(RangeTombstone expected, RangeTombstone actual)
     {
         assertEquals(String.format("Expected %s but got %s", toString(expected), toString(actual)), expected, actual);
     }
 
+    private static void assertValid(RangeTombstoneList l)
+    {
+        // We check that ranges are in the right order and that we never have something
+        // like ...[x, x][x, x] ...
+        int prevStart = -2;
+        int prevEnd = -1;
+        for (RangeTombstone rt : l)
+        {
+            int curStart = i(rt.min);
+            int curEnd = i(rt.max);
+
+            assertTrue("Invalid " + toString(l), prevEnd <= curStart);
+            assertTrue("Invalid " + toString(l), curStart <= curEnd);
+
+            if (curStart == curEnd && prevEnd == curStart)
+                assertTrue("Invalid " + toString(l), prevStart != prevEnd);
+
+            prevStart = curStart;
+            prevEnd = curEnd;
+        }
+    }
+
     private static String toString(RangeTombstone rt)
     {
         return String.format("[%d, %d]@%d", i(rt.min), i(rt.max), rt.data.markedForDeleteAt);
+    }
+
+    private static String toString(RangeTombstoneList l)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        for (RangeTombstone rt : l)
+            sb.append(" ").append(toString(rt));
+        return sb.append(" }").toString();
     }
 
     private static Composite b(int i)

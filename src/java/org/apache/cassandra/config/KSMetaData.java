@@ -102,12 +102,12 @@ public final class KSMetaData
                                                 CFMetaData.PeerEventsCf,
                                                 CFMetaData.HintsCf,
                                                 CFMetaData.IndexCf,
-                                                CFMetaData.CounterIdCf,
                                                 CFMetaData.SchemaKeyspacesCf,
                                                 CFMetaData.SchemaColumnFamiliesCf,
                                                 CFMetaData.SchemaColumnsCf,
                                                 CFMetaData.SchemaTriggersCf,
                                                 CFMetaData.SchemaUserTypesCf,
+                                                CFMetaData.SchemaFunctionsCf,
                                                 CFMetaData.CompactionLogCf,
                                                 CFMetaData.CompactionHistoryCf,
                                                 CFMetaData.PaxosCf,
@@ -235,7 +235,7 @@ public final class KSMetaData
 
     public KSMetaData reloadAttributes()
     {
-        Row ksDefRow = SystemKeyspace.readSchemaRow(name);
+        Row ksDefRow = SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_KEYSPACES_CF, name);
 
         if (ksDefRow.cf == null)
             throw new RuntimeException(String.format("%s not found in the schema definitions keyspaceName (%s).", name, SystemKeyspace.SCHEMA_KEYSPACES_CF));
@@ -252,6 +252,7 @@ public final class KSMetaData
         mutation.delete(SystemKeyspace.SCHEMA_COLUMNS_CF, timestamp);
         mutation.delete(SystemKeyspace.SCHEMA_TRIGGERS_CF, timestamp);
         mutation.delete(SystemKeyspace.SCHEMA_USER_TYPES_CF, timestamp);
+        mutation.delete(SystemKeyspace.INDEX_CF, timestamp);
 
         return mutation;
     }

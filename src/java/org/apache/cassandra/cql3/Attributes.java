@@ -18,7 +18,6 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
-import java.util.List;
 
 import org.apache.cassandra.db.ExpiringCell;
 import org.apache.cassandra.db.marshal.Int32Type;
@@ -58,12 +57,12 @@ public class Attributes
         return timeToLive != null;
     }
 
-    public long getTimestamp(long now, List<ByteBuffer> variables) throws InvalidRequestException
+    public long getTimestamp(long now, QueryOptions options) throws InvalidRequestException
     {
         if (timestamp == null)
             return now;
 
-        ByteBuffer tval = timestamp.bindAndGet(variables);
+        ByteBuffer tval = timestamp.bindAndGet(options);
         if (tval == null)
             throw new InvalidRequestException("Invalid null value of timestamp");
 
@@ -79,12 +78,12 @@ public class Attributes
         return LongType.instance.compose(tval);
     }
 
-    public int getTimeToLive(List<ByteBuffer> variables) throws InvalidRequestException
+    public int getTimeToLive(QueryOptions options) throws InvalidRequestException
     {
         if (timeToLive == null)
             return 0;
 
-        ByteBuffer tval = timeToLive.bindAndGet(variables);
+        ByteBuffer tval = timeToLive.bindAndGet(options);
         if (tval == null)
             throw new InvalidRequestException("Invalid null value of TTL");
 

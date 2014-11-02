@@ -32,10 +32,10 @@ import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.util.ByteBufferOutputStream;
-import org.apache.cassandra.io.util.ChecksummedOutputStream;
+import org.apache.cassandra.io.util.DataOutputByteBuffer;
 import org.apache.cassandra.metrics.CommitLogMetrics;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.PureJavaCrc32;
 
 import static org.apache.cassandra.db.commitlog.CommitLogSegment.*;
@@ -158,9 +158,17 @@ public class CommitLog implements CommitLogMBean
     /**
      * Flushes all dirty CFs, waiting for them to free and recycle any segments they were retaining
      */
+    public void forceRecycleAllSegments(Iterable<UUID> droppedCfs)
+    {
+        allocator.forceRecycleAll(droppedCfs);
+    }
+
+    /**
+     * Flushes all dirty CFs, waiting for them to free and recycle any segments they were retaining
+     */
     public void forceRecycleAllSegments()
     {
-        allocator.forceRecycleAll();
+        allocator.forceRecycleAll(Collections.<UUID>emptyList());
     }
 
     /**
@@ -192,12 +200,6 @@ public class CommitLog implements CommitLogMBean
      */
     public ReplayPosition add(Mutation mutation)
     {
-        Allocation alloc = add(mutation, new Allocation());
-        return alloc.getReplayPosition();
-    }
-
-    private Allocation add(Mutation mutation, Allocation alloc)
-    {
         assert mutation != null;
 
         long size = Mutation.serializer.serializedSize(mutation, MessagingService.current_version);
@@ -205,24 +207,34 @@ public class CommitLog implements CommitLogMBean
         long totalSize = size + ENTRY_OVERHEAD_SIZE;
         if (totalSize > MAX_MUTATION_SIZE)
         {
-            logger.warn("Skipping commitlog append of extremely large mutation ({} bytes)", totalSize);
-            return alloc;
+            throw new IllegalArgumentException(String.format("Mutation of %s bytes is too large for the maxiumum size of %s",
+                                                             totalSize, MAX_MUTATION_SIZE));
         }
 
-        allocator.allocate(mutation, (int) totalSize, alloc);
+        Allocation alloc = allocator.allocate(mutation, (int) totalSize);
         try
         {
             PureJavaCrc32 checksum = new PureJavaCrc32();
             final ByteBuffer buffer = alloc.getBuffer();
-            DataOutputStream dos = new DataOutputStream(new ChecksummedOutputStream(new ByteBufferOutputStream(buffer), checksum));
+            DataOutputByteBuffer dos = new DataOutputByteBuffer(buffer);
 
             // checksummed length
-            dos.writeInt((int) size); //对应ENTRY_OVERHEAD_SIZE注释中提到的length
-            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的head checksum
+//<<<<<<< HEAD
+//            dos.writeInt((int) size); //对应ENTRY_OVERHEAD_SIZE注释中提到的length
+//            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的head checksum
+//=======
+            dos.writeInt((int) size);
+            checksum.update(buffer, buffer.position() - 4, 4);
+            buffer.putInt(checksum.getCrc());
 
+            int start = buffer.position();
             // checksummed mutation
             Mutation.serializer.serialize(mutation, dos, MessagingService.current_version);
-            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
+//<<<<<<< HEAD
+//            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
+//=======
+            checksum.update(buffer, start, (int) size);
+            buffer.putInt(checksum.getCrc());
         }
         catch (IOException e)
         {
@@ -234,7 +246,7 @@ public class CommitLog implements CommitLogMBean
         }
 
         executor.finishWriteFor(alloc);
-        return alloc;
+        return alloc.getReplayPosition();
     }
 
     /**
@@ -246,7 +258,7 @@ public class CommitLog implements CommitLogMBean
      */
     public void discardCompletedSegments(final UUID cfId, final ReplayPosition context)
     {
-        logger.debug("discard completed log segments for {}, column family {}", context, cfId);
+        logger.debug("discard completed log segments for {}, table {}", context, cfId);
 
         // Go thru the active segment files, which are ordered oldest to newest, marking the
         // flushed CF as clean, until we reach the segment file containing the ReplayPosition passed
@@ -336,4 +348,22 @@ public class CommitLog implements CommitLogMBean
     {
         return allocator.getActiveSegments().size();
     }
+
+    static boolean handleCommitError(String message, Throwable t)
+    {
+        switch (DatabaseDescriptor.getCommitFailurePolicy())
+        {
+            case stop:
+                StorageService.instance.stopTransports();
+            case stop_commit:
+                logger.error(String.format("%s. Commit disk failure policy is %s; terminating thread", message, DatabaseDescriptor.getCommitFailurePolicy()), t);
+                return false;
+            case ignore:
+                logger.error(message, t);
+                return true;
+            default:
+                throw new AssertionError(DatabaseDescriptor.getCommitFailurePolicy());
+        }
+    }
+
 }

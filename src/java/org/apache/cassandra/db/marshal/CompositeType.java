@@ -89,11 +89,11 @@ public class CompositeType extends AbstractCompositeType
         if (bb.remaining() < 2)
             return false;
 
-        int header = getShortLength(bb, bb.position());
+        int header = ByteBufferUtil.getShortLength(bb, bb.position());
         if ((header & 0xFFFF) != STATIC_MARKER)
             return false;
 
-        getShortLength(bb); // Skip header
+        ByteBufferUtil.readShortLength(bb); // Skip header
         return true;
     }
 
@@ -179,7 +179,7 @@ public class CompositeType extends AbstractCompositeType
         int i = 0;
         while (bb.remaining() > 0)
         {
-            l[i++] = getWithShortLength(bb);
+            l[i++] = ByteBufferUtil.readBytesWithShortLength(bb);
             bb.get(); // skip end-of-component
         }
         return i == l.length ? l : Arrays.copyOfRange(l, 0, i);
@@ -193,7 +193,7 @@ public class CompositeType extends AbstractCompositeType
         int i = 0;
         while (bb.remaining() > 0)
         {
-            ByteBuffer c = getWithShortLength(bb);
+            ByteBuffer c = ByteBufferUtil.readBytesWithShortLength(bb);
             if (i == idx)
                 return c;
 
@@ -212,7 +212,7 @@ public class CompositeType extends AbstractCompositeType
 
     public static boolean isStaticName(ByteBuffer bb)
     {
-        return bb.remaining() >= 2 && (getShortLength(bb, bb.position()) & 0xFFFF) == STATIC_MARKER;
+        return bb.remaining() >= 2 && (ByteBufferUtil.getShortLength(bb, bb.position()) & 0xFFFF) == STATIC_MARKER;
     }
 
     @Override
@@ -252,16 +252,16 @@ public class CompositeType extends AbstractCompositeType
     }
 
     @Override
-    public boolean isValueCompatibleWith(AbstractType<?> previous)
+    public boolean isValueCompatibleWithInternal(AbstractType<?> otherType)
     {
-        if (this == previous)
+        if (this == otherType)
             return true;
 
-        if (!(previous instanceof CompositeType))
+        if (!(otherType instanceof CompositeType))
             return false;
 
         // Extending with new components is fine
-        CompositeType cp = (CompositeType)previous;
+        CompositeType cp = (CompositeType) otherType;
         if (types.size() < cp.types.size())
             return false;
 
@@ -324,7 +324,7 @@ public class CompositeType extends AbstractCompositeType
         ByteBuffer out = ByteBuffer.allocate(totalLength);
         for (ByteBuffer bb : buffers)
         {
-            putShortLength(out, bb.remaining());
+            ByteBufferUtil.writeShortLength(out, bb.remaining());
             out.put(bb.duplicate());
             out.put((byte) 0);
         }

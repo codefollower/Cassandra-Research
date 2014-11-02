@@ -28,7 +28,7 @@ import org.apache.cassandra.io.util.DiskAwareRunnable;
 public abstract class AbstractCompactionTask extends DiskAwareRunnable
 {
     protected final ColumnFamilyStore cfs;
-    protected Iterable<SSTableReader> sstables;
+    protected Set<SSTableReader> sstables;
     protected boolean isUserDefined;
     protected OperationType compactionType;
 
@@ -36,7 +36,7 @@ public abstract class AbstractCompactionTask extends DiskAwareRunnable
      * @param cfs
      * @param sstables must be marked compacting
      */
-    public AbstractCompactionTask(ColumnFamilyStore cfs, Iterable<SSTableReader> sstables)
+    public AbstractCompactionTask(ColumnFamilyStore cfs, Set<SSTableReader> sstables)
     {
         this.cfs = cfs;
         this.sstables = sstables;
@@ -47,11 +47,6 @@ public abstract class AbstractCompactionTask extends DiskAwareRunnable
         Set<SSTableReader> compacting = cfs.getDataTracker().getCompacting();
         for (SSTableReader sstable : sstables)
             assert compacting.contains(sstable) : sstable.getFilename() + " is not correctly marked compacting";
-    }
-
-    protected Directories.DataDirectory getWriteableLocation()
-    {
-        return cfs.directories.getCompactionLocation();
     }
 
     /**

@@ -17,15 +17,18 @@
  */
 package org.apache.cassandra.cql3.statements;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
+import org.apache.cassandra.cache.CachingOptions;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.CFMetaData.SpeculativeRetry;
 import org.apache.cassandra.db.compaction.AbstractCompactionStrategy;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.io.compress.CompressionParameters;
-import org.apache.cassandra.service.CacheService;
 
 public class CFPropDefs extends PropertyDefinitions
 {
@@ -36,12 +39,10 @@ public class CFPropDefs extends PropertyDefinitions
     public static final String KW_MINCOMPACTIONTHRESHOLD = "min_threshold";
     public static final String KW_MAXCOMPACTIONTHRESHOLD = "max_threshold";
     public static final String KW_CACHING = "caching";
-    public static final String KW_ROWS_PER_PARTITION_TO_CACHE = "rows_per_partition_to_cache";
     public static final String KW_DEFAULT_TIME_TO_LIVE = "default_time_to_live";
     public static final String KW_MIN_INDEX_INTERVAL = "min_index_interval";
     public static final String KW_MAX_INDEX_INTERVAL = "max_index_interval";
     public static final String KW_SPECULATIVE_RETRY = "speculative_retry";
-    public static final String KW_POPULATE_IO_CACHE_ON_FLUSH = "populate_io_cache_on_flush";
     public static final String KW_BF_FP_CHANCE = "bloom_filter_fp_chance";
     public static final String KW_MEMTABLE_FLUSH_PERIOD = "memtable_flush_period_in_ms";
 
@@ -67,12 +68,10 @@ public class CFPropDefs extends PropertyDefinitions
         keywords.add(KW_DCLOCALREADREPAIRCHANCE);
         keywords.add(KW_GCGRACESECONDS);
         keywords.add(KW_CACHING);
-        keywords.add(KW_ROWS_PER_PARTITION_TO_CACHE);
         keywords.add(KW_DEFAULT_TIME_TO_LIVE);
         keywords.add(KW_MIN_INDEX_INTERVAL);
         keywords.add(KW_MAX_INDEX_INTERVAL);
         keywords.add(KW_SPECULATIVE_RETRY);
-        keywords.add(KW_POPULATE_IO_CACHE_ON_FLUSH);
         keywords.add(KW_BF_FP_CHANCE);
         keywords.add(KW_COMPACTION);
         keywords.add(KW_COMPRESSION);
@@ -80,6 +79,7 @@ public class CFPropDefs extends PropertyDefinitions
 
         obsoleteKeywords.add("index_interval");
         obsoleteKeywords.add("replicate_on_write");
+        obsoleteKeywords.add("populate_io_cache_on_flush");
     }
 
     private Class<? extends AbstractCompactionStrategy> compactionStrategyClass = null;
@@ -160,6 +160,21 @@ public class CFPropDefs extends PropertyDefinitions
             return new HashMap<>();
         return compressionOptions;
     }
+    public CachingOptions getCachingOptions() throws SyntaxException, ConfigurationException
+    {
+        CachingOptions options = null;
+        Object val = properties.get(KW_CACHING);
+        if (val == null)
+            return null;
+        else if (val instanceof Map)
+            options = CachingOptions.fromMap(getMap(KW_CACHING));
+        else if (val instanceof String) // legacy syntax
+        {
+            options = CachingOptions.fromString(getSimple(KW_CACHING));
+            logger.warn("Setting caching options with deprecated syntax.");
+        }
+        return options;
+    }
 
     public void applyToCFMetadata(CFMetaData cfm) throws ConfigurationException, SyntaxException
     {
@@ -175,16 +190,9 @@ public class CFPropDefs extends PropertyDefinitions
             throw new ConfigurationException("Disabling compaction by setting compaction thresholds to 0 has been deprecated, set the compaction option 'enabled' to false instead.");
         cfm.minCompactionThreshold(minCompactionThreshold);
         cfm.maxCompactionThreshold(maxCompactionThreshold);
-        cfm.caching(CFMetaData.Caching.fromString(getString(KW_CACHING, cfm.getCaching().toString())));
-        CFMetaData.RowsPerPartitionToCache newRppc = CFMetaData.RowsPerPartitionToCache.fromString(getString(KW_ROWS_PER_PARTITION_TO_CACHE, cfm.getRowsPerPartitionToCache().toString()));
-        // we need to invalidate row cache if the amount of rows cached changes, otherwise we might serve out bad data.
-        if (!cfm.getRowsPerPartitionToCache().equals(newRppc))
-            CacheService.instance.invalidateRowCacheForCf(cfm.cfId);
-        cfm.rowsPerPartitionToCache(newRppc);
         cfm.defaultTimeToLive(getInt(KW_DEFAULT_TIME_TO_LIVE, cfm.getDefaultTimeToLive()));
         cfm.speculativeRetry(CFMetaData.SpeculativeRetry.fromString(getString(KW_SPECULATIVE_RETRY, cfm.getSpeculativeRetry().toString())));
         cfm.memtableFlushPeriod(getInt(KW_MEMTABLE_FLUSH_PERIOD, cfm.getMemtableFlushPeriod()));
-        cfm.populateIoCacheOnFlush(getBoolean(KW_POPULATE_IO_CACHE_ON_FLUSH, cfm.populateIoCacheOnFlush()));
         cfm.minIndexInterval(getInt(KW_MIN_INDEX_INTERVAL, cfm.getMinIndexInterval()));
         cfm.maxIndexInterval(getInt(KW_MAX_INDEX_INTERVAL, cfm.getMaxIndexInterval()));
 
@@ -198,6 +206,9 @@ public class CFPropDefs extends PropertyDefinitions
 
         if (!getCompressionOptions().isEmpty())
             cfm.compressionParameters(CompressionParameters.create(getCompressionOptions()));
+        CachingOptions cachingOptions = getCachingOptions();
+        if (cachingOptions != null)
+            cfm.caching(cachingOptions);
     }
 
     @Override

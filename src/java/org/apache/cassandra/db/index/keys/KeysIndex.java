@@ -30,8 +30,12 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 
 /**
- * Implements a secondary index for a column family using a second column family
- * in which the row keys are indexed values, and column names are base row keys.
+ * Implements a secondary index for a column family using a second column family.
+ * The design uses inverted index http://en.wikipedia.org/wiki/Inverted_index.
+ * The row key is the indexed value. For example, if we're indexing a column named
+ * city, the index value of city is the row key.
+ * The column names are the keys of the records. To see a detailed example, please
+ * refer to wikipedia.
  */
 public class KeysIndex extends AbstractSimplePerColumnSecondaryIndex
 {
@@ -52,12 +56,8 @@ public class KeysIndex extends AbstractSimplePerColumnSecondaryIndex
 
     public boolean isIndexEntryStale(ByteBuffer indexedValue, ColumnFamily data, long now)
     {
-        Cell liveCell = data.getColumn(data.getComparator().makeCellName(columnDef.name.bytes));
-        if (liveCell == null || liveCell.isMarkedForDelete(now))
-            return true;
-
-        ByteBuffer liveValue = liveCell.value();
-        return columnDef.type.compare(indexedValue, liveValue) != 0;
+        Cell cell = data.getColumn(data.getComparator().makeCellName(columnDef.name.bytes));
+        return cell == null || !cell.isLive(now) || columnDef.type.compare(indexedValue, cell.value()) != 0;
     }
 
     public void validateOptions() throws ConfigurationException

@@ -27,6 +27,8 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.io.util.DataOutputStreamAndChannel;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
@@ -46,7 +48,7 @@ public class MetadataSerializer implements IMetadataSerializer
 {
     private static final Logger logger = LoggerFactory.getLogger(MetadataSerializer.class);
 
-    public void serialize(Map<MetadataType, MetadataComponent> components, DataOutput out) throws IOException
+    public void serialize(Map<MetadataType, MetadataComponent> components, DataOutputPlus out) throws IOException
     {
         // sort components by type
         List<MetadataComponent> sortedComponents = Lists.newArrayList(components.values());
@@ -144,9 +146,9 @@ public class MetadataSerializer implements IMetadataSerializer
 
     private void rewriteSSTableMetadata(Descriptor descriptor, Map<MetadataType, MetadataComponent> currentComponents) throws IOException
     {
-        Descriptor tmpDescriptor = descriptor.asTemporary(true);
+        Descriptor tmpDescriptor = descriptor.asType(Descriptor.Type.TEMP);
 
-        try (DataOutputStream out = new DataOutputStream(new FileOutputStream(tmpDescriptor.filenameFor(Component.STATS))))
+        try (DataOutputStreamAndChannel out = new DataOutputStreamAndChannel(new FileOutputStream(tmpDescriptor.filenameFor(Component.STATS))))
         {
             serialize(currentComponents, out);
             out.flush();

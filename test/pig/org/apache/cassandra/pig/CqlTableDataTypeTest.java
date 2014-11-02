@@ -19,24 +19,16 @@
 package org.apache.cassandra.pig;
 
 import java.io.IOException;
-import java.nio.charset.CharacterCodingException;
 import java.util.Iterator;
 
 import org.apache.cassandra.db.marshal.TimeUUIDType;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.thrift.AuthenticationException;
-import org.apache.cassandra.thrift.AuthorizationException;
-import org.apache.cassandra.thrift.InvalidRequestException;
-import org.apache.cassandra.thrift.NotFoundException;
-import org.apache.cassandra.thrift.SchemaDisagreementException;
-import org.apache.cassandra.thrift.TimedOutException;
-import org.apache.cassandra.thrift.UnavailableException;
 import org.apache.cassandra.utils.Hex;
 import org.apache.pig.data.DataByteArray;
 import org.apache.pig.data.Tuple;
 import org.apache.thrift.TException;
-import org.apache.thrift.transport.TTransportException;
+
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -64,6 +56,7 @@ public class CqlTableDataTypeTest extends PigTestBase
     //MAP
     //Create table to test the above data types
     private static String[] statements = {
+            "DROP KEYSPACE IF EXISTS cql3ks",
             "CREATE KEYSPACE cql3ks WITH replication = {'class': 'SimpleStrategy', 'replication_factor' : 1}",
             "USE cql3ks;",
 
@@ -208,19 +201,27 @@ public class CqlTableDataTypeTest extends PigTestBase
     };
 
     @BeforeClass
-    public static void setup() throws TTransportException, IOException, InterruptedException, ConfigurationException,
-                                      AuthenticationException, AuthorizationException, InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException, CharacterCodingException, ClassNotFoundException, NoSuchFieldException, IllegalAccessException, InstantiationException
+    public static void setup() throws IOException, InterruptedException, ConfigurationException, TException,
+        ClassNotFoundException, NoSuchFieldException, IllegalAccessException, InstantiationException
     {
         startCassandra();
-        setupDataByCql(statements);
+        executeCQLStatements(statements);
         startHadoopCluster();
     }
 
     @Test
-    public void testCqlStorageRegularType()
-    throws AuthenticationException, AuthorizationException, InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException, SchemaDisagreementException, IOException
+    public void testCqlNativeStorageRegularType() throws TException, IOException
     {
-        pig.registerQuery("rows = LOAD 'cql://cql3ks/cqltable?" + defaultParameters + "' USING CqlStorage();");
+        //input_cql=select * from cqltable where token(key) > ? and token(key) <= ?
+        cqlTableTest("rows = LOAD 'cql://cql3ks/cqltable?" + defaultParameters + nativeParameters + "&input_cql=select%20*%20from%20cqltable%20where%20token(key)%20%3E%20%3F%20and%20token(key)%20%3C%3D%20%3F' USING CqlNativeStorage();");
+
+        //input_cql=select * from countertable where token(key) > ? and token(key) <= ?
+        counterTableTest("cc_rows = LOAD 'cql://cql3ks/countertable?" + defaultParameters + nativeParameters + "&input_cql=select%20*%20from%20countertable%20where%20token(key)%20%3E%20%3F%20and%20token(key)%20%3C%3D%20%3F' USING CqlNativeStorage();");
+    }
+
+    private void cqlTableTest(String initialQuery) throws IOException
+    {
+        pig.registerQuery(initialQuery);
         Iterator<Tuple> it = pig.openIterator("rows");
         //{key: int, 
         //col_ascii: chararray, 
@@ -257,21 +258,37 @@ public class CqlTableDataTypeTest extends PigTestBase
             Assert.assertEquals(t.get(14), "varchar");
             Assert.assertEquals(t.get(15), 123);
         }
-        
-        pig.registerQuery("cc_rows = LOAD 'cql://cql3ks/countertable?" + defaultParameters + "' USING CqlStorage();");
-        it = pig.openIterator("cc_rows");
+        else
+        {
+            Assert.fail("Failed to get data for query " + initialQuery);
+        }
+    }
+
+    private void counterTableTest(String initialQuery) throws IOException
+    {
+        pig.registerQuery(initialQuery);
+        Iterator<Tuple>  it = pig.openIterator("cc_rows");
         if (it.hasNext()) {
             Tuple t = it.next();
             Assert.assertEquals(t.get(0), 1);
             Assert.assertEquals(t.get(1), 3L);
         }
+        else
+        {
+            Assert.fail("Failed to get data for query " + initialQuery);
+        }
     }
 
     @Test
-    public void testCqlStorageSetType()
-    throws AuthenticationException, AuthorizationException, InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException, SchemaDisagreementException, IOException
+    public void testCqlNativeStorageSetType() throws TException, IOException
     {
-        pig.registerQuery("set_rows = LOAD 'cql://cql3ks/settable?" + defaultParameters + "' USING CqlStorage();");
+        //input_cql=select * from settable where token(key) > ? and token(key) <= ?
+        settableTest("set_rows = LOAD 'cql://cql3ks/settable?" + defaultParameters + nativeParameters + "&input_cql=select%20*%20from%20settable%20where%20token(key)%20%3E%20%3F%20and%20token(key)%20%3C%3D%20%3F' USING CqlNativeStorage();");
+    }
+
+    private void settableTest(String initialQuery) throws IOException
+    {
+        pig.registerQuery(initialQuery);
         Iterator<Tuple> it = pig.openIterator("set_rows");
         if (it.hasNext()) {
             Tuple t = it.next();
@@ -322,13 +339,22 @@ public class CqlTableDataTypeTest extends PigTestBase
             Assert.assertEquals(innerTuple.get(0), 123);
             Assert.assertEquals(innerTuple.get(1), 124);
         }
+        else
+        {
+            Assert.fail("Failed to get data for query " + initialQuery);
+        }
     }
 
     @Test
-    public void testCqlStorageListType()
-    throws AuthenticationException, AuthorizationException, InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException, SchemaDisagreementException, IOException
+    public void testCqlNativeStorageListType() throws TException, IOException
     {
-        pig.registerQuery("list_rows = LOAD 'cql://cql3ks/listtable?" + defaultParameters + "' USING CqlStorage();");
+        //input_cql=select * from listtable where token(key) > ? and token(key) <= ?
+        listtableTest("list_rows = LOAD 'cql://cql3ks/listtable?" + defaultParameters + nativeParameters + "&input_cql=select%20*%20from%20listtable%20where%20token(key)%20%3E%20%3F%20and%20token(key)%20%3C%3D%20%3F' USING CqlNativeStorage();");
+    }
+
+    private void listtableTest(String initialQuery) throws IOException
+    {
+        pig.registerQuery(initialQuery);
         Iterator<Tuple> it = pig.openIterator("list_rows");
         if (it.hasNext()) {
             Tuple t = it.next();
@@ -379,13 +405,22 @@ public class CqlTableDataTypeTest extends PigTestBase
             Assert.assertEquals(innerTuple.get(1), 123);
             Assert.assertEquals(innerTuple.get(0), 124);
         }
+        else
+        {
+            Assert.fail("Failed to get data for query " + initialQuery);
+        }
     }
 
     @Test
-    public void testCqlStorageMapType()
-    throws AuthenticationException, AuthorizationException, InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException, SchemaDisagreementException, IOException
+    public void testCqlNativeStorageMapType() throws TException, IOException
     {
-        pig.registerQuery("map_rows = LOAD 'cql://cql3ks/maptable?" + defaultParameters + "' USING CqlStorage();");
+        //input_cql=select * from maptable where token(key) > ? and token(key) <= ?
+        maptableTest("map_rows = LOAD 'cql://cql3ks/maptable?" + defaultParameters + nativeParameters + "&input_cql=select%20*%20from%20maptable%20where%20token(key)%20%3E%20%3F%20and%20token(key)%20%3C%3D%20%3F' USING CqlNativeStorage();");
+    }
+
+    private void maptableTest(String initialQuery) throws IOException
+    {
+        pig.registerQuery(initialQuery);
         Iterator<Tuple> it = pig.openIterator("map_rows");
         if (it.hasNext()) {
             Tuple t = it.next();
@@ -436,5 +471,10 @@ public class CqlTableDataTypeTest extends PigTestBase
             Assert.assertEquals(innerTuple.get(0), 123);
             Assert.assertEquals(innerTuple.get(1), 124);
         }
+        else
+        {
+            Assert.fail("Failed to get data for query " + initialQuery);
+        }
     }
+
 }

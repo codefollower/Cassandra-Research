@@ -258,13 +258,16 @@ public class SSTableScanner implements ICompactionScanner
                     }
                 }
 
-                if (dataRange == null || dataRange.selectsFullRowFor(currentKey.key))
+                if (dataRange == null || dataRange.selectsFullRowFor(currentKey.getKey()))
                 {
                     dfile.seek(currentEntry.position);
                     ByteBufferUtil.readWithShortLength(dfile); // key
-                    if (sstable.descriptor.version.hasRowSizeAndColumnCount)
-                        dfile.readLong();
-                    //readEnd是下一行的开始位置
+//<<<<<<< HEAD
+//                    if (sstable.descriptor.version.hasRowSizeAndColumnCount)
+//                        dfile.readLong();
+//                    //readEnd是下一行的开始位置
+//=======
+//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
                     long dataSize = readEnd - dfile.getFilePointer();
                     return new SSTableIdentityIterator(sstable, dfile, currentKey, dataSize); //只是读一行
                 }
@@ -273,7 +276,7 @@ public class SSTableScanner implements ICompactionScanner
                 {
                     public OnDiskAtomIterator create()
                     {
-                        return dataRange.columnFilter(currentKey.key).getSSTableColumnIterator(sstable, dfile, currentKey, currentEntry);
+                        return dataRange.columnFilter(currentKey.getKey()).getSSTableColumnIterator(sstable, dfile, currentKey, currentEntry);
                     }
                 });
 

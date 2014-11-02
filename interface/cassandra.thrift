@@ -467,7 +467,6 @@ struct CfDef {
     33: optional double bloom_filter_fp_chance,
     34: optional string caching="keys_only",
     37: optional double dclocal_read_repair_chance = 0.0,
-    38: optional bool populate_io_cache_on_flush,
     39: optional i32 memtable_flush_period_in_ms,
     40: optional i32 default_time_to_live,
     42: optional string speculative_retry="NONE",
@@ -501,6 +500,8 @@ struct CfDef {
     /** @deprecated */
     31: optional i32 row_cache_keys_to_save,
     /** @deprecated */
+    38: optional bool populate_io_cache_on_flush,
+    /** @deprecated */
     41: optional i32 index_interval,
 }
 
@@ -529,7 +530,14 @@ enum CqlResultType {
     INT = 3
 }
 
-/** Row returned from a CQL query */
+/** 
+  Row returned from a CQL query.
+
+  This struct is used for both CQL2 and CQL3 queries.  For CQL2, the partition key
+  is special-cased and is always returned.  For CQL3, it is not special cased;
+  it will be included in the columns list if it was included in the SELECT and
+  the key field is always null.
+*/
 struct CqlRow {
     1: required binary key,
     2: required list<Column> columns

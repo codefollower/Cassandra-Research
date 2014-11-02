@@ -18,29 +18,45 @@
 package org.apache.cassandra.db.index;
 
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 
-import org.apache.cassandra.utils.concurrent.OpOrder;
-import org.apache.cassandra.utils.memory.AbstractAllocator;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
+import org.apache.cassandra.Util;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.ColumnFamily;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.IndexExpression;
+import org.apache.cassandra.db.Mutation;
+import org.apache.cassandra.db.Row;
 import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.filter.ExtendedFilter;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.Util;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
-public class PerRowSecondaryIndexTest extends SchemaLoader
+public class PerRowSecondaryIndexTest
 {
 
     // test that when index(key) is called on a PRSI index,
@@ -48,6 +64,19 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
     // key. TestIndex.index(key) simply reads the data to be
     // indexed & stashes it in a static variable for inspection
     // in the test.
+
+    private static final String KEYSPACE1 = "PerRowSecondaryIndexTest";
+    private static final String CF_INDEXED = "Indexed1";
+
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.perRowIndexedCFMD(KEYSPACE1, CF_INDEXED));
+    }
 
     @Before
     public void clearTestStub()
@@ -60,18 +89,18 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
     {
         // create a row then test that the configured index instance was able to read the row
         Mutation rm;
-        rm = new Mutation("PerRowSecondaryIndex", ByteBufferUtil.bytes("k1"));
+        rm = new Mutation(KEYSPACE1, ByteBufferUtil.bytes("k1"));
         rm.add("Indexed1", Util.cellname("indexed"), ByteBufferUtil.bytes("foo"), 1);
-        rm.apply();
+        rm.applyUnsafe();
 
         ColumnFamily indexedRow = PerRowSecondaryIndexTest.TestIndex.LAST_INDEXED_ROW;
         assertNotNull(indexedRow);
         assertEquals(ByteBufferUtil.bytes("foo"), indexedRow.getColumn(Util.cellname("indexed")).value());
 
         // update the row and verify what was indexed
-        rm = new Mutation("PerRowSecondaryIndex", ByteBufferUtil.bytes("k1"));
+        rm = new Mutation(KEYSPACE1, ByteBufferUtil.bytes("k1"));
         rm.add("Indexed1", Util.cellname("indexed"), ByteBufferUtil.bytes("bar"), 2);
-        rm.apply();
+        rm.applyUnsafe();
 
         indexedRow = PerRowSecondaryIndexTest.TestIndex.LAST_INDEXED_ROW;
         assertNotNull(indexedRow);
@@ -84,17 +113,16 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
     {
         // issue a column delete and test that the configured index instance was notified to update
         Mutation rm;
-        rm = new Mutation("PerRowSecondaryIndex", ByteBufferUtil.bytes("k2"));
+        rm = new Mutation(KEYSPACE1, ByteBufferUtil.bytes("k2"));
         rm.delete("Indexed1", Util.cellname("indexed"), 1);
-        rm.apply();
+        rm.applyUnsafe();
 
         ColumnFamily indexedRow = PerRowSecondaryIndexTest.TestIndex.LAST_INDEXED_ROW;
         assertNotNull(indexedRow);
 
         for (Cell cell : indexedRow.getSortedColumns())
-        {
-            assertTrue(cell.isMarkedForDelete(System.currentTimeMillis()));
-        }
+            assertFalse(cell.isLive());
+
         assertTrue(Arrays.equals("k2".getBytes(), PerRowSecondaryIndexTest.TestIndex.LAST_INDEXED_KEY.array()));
     }
 
@@ -103,17 +131,40 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
     {
         // issue a row level delete and test that the configured index instance was notified to update
         Mutation rm;
-        rm = new Mutation("PerRowSecondaryIndex", ByteBufferUtil.bytes("k3"));
+        rm = new Mutation(KEYSPACE1, ByteBufferUtil.bytes("k3"));
         rm.delete("Indexed1", 1);
-        rm.apply();
+        rm.applyUnsafe();
 
         ColumnFamily indexedRow = PerRowSecondaryIndexTest.TestIndex.LAST_INDEXED_ROW;
         assertNotNull(indexedRow);
         for (Cell cell : indexedRow.getSortedColumns())
-        {
-            assertTrue(cell.isMarkedForDelete(System.currentTimeMillis()));
-        }
+            assertFalse(cell.isLive());
+
         assertTrue(Arrays.equals("k3".getBytes(), PerRowSecondaryIndexTest.TestIndex.LAST_INDEXED_KEY.array()));
+    }
+    
+    @Test
+    public void testInvalidSearch() throws IOException
+    {
+        Mutation rm;
+        rm = new Mutation(KEYSPACE1, ByteBufferUtil.bytes("k4"));
+        rm.add("Indexed1", Util.cellname("indexed"), ByteBufferUtil.bytes("foo"), 1);
+        rm.apply();
+        
+        // test we can search:
+        UntypedResultSet result = QueryProcessor.executeInternal(String.format("SELECT * FROM \"%s\".\"Indexed1\" WHERE indexed = 'foo'", KEYSPACE1));
+        assertEquals(1, result.size());
+
+        // test we can't search if the searcher doesn't validate the expression:
+        try
+        {
+            QueryProcessor.executeInternal(String.format("SELECT * FROM \"%s\".\"Indexed1\" WHERE indexed = 'invalid'", KEYSPACE1));
+            fail("Query should have been invalid!");
+        }
+        catch (Exception e)
+        {
+            assertTrue(e instanceof InvalidRequestException || (e.getCause() != null && (e.getCause() instanceof InvalidRequestException)));
+        }
     }
 
     public static class TestIndex extends PerRowSecondaryIndex
@@ -133,7 +184,7 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
             QueryFilter filter = QueryFilter.getIdentityFilter(DatabaseDescriptor.getPartitioner().decorateKey(rowKey),
                                                                baseCfs.getColumnFamilyName(),
                                                                System.currentTimeMillis());
-            LAST_INDEXED_ROW = baseCfs.getColumnFamily(filter);
+            LAST_INDEXED_ROW = cf;
             LAST_INDEXED_KEY = rowKey;
         }
 
@@ -166,7 +217,23 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
         @Override
         protected SecondaryIndexSearcher createSecondaryIndexSearcher(Set<ByteBuffer> columns)
         {
-            return null;
+            return new SecondaryIndexSearcher(baseCfs.indexManager, columns)
+            {
+                
+                @Override
+                public List<Row> search(ExtendedFilter filter)
+                {
+                    return Arrays.asList(new Row(LAST_INDEXED_KEY, LAST_INDEXED_ROW));
+                }
+
+                @Override
+                public void validate(IndexExpression indexExpression) throws InvalidRequestException
+                {
+                    if (indexExpression.value.equals(ByteBufferUtil.bytes("invalid")))
+                        throw new InvalidRequestException("Invalid search!");
+                }
+                
+            };
         }
 
         @Override
@@ -175,15 +242,9 @@ public class PerRowSecondaryIndexTest extends SchemaLoader
         }
 
         @Override
-        public AbstractAllocator getOnHeapAllocator()
-        {
-            return null;
-        }
-
-        @Override
         public ColumnFamilyStore getIndexCfs()
         {
-            return null;
+            return baseCfs;
         }
 
         @Override

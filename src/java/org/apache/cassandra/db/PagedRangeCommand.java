@@ -18,7 +18,6 @@
 package org.apache.cassandra.db;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +28,7 @@ import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -40,6 +40,7 @@ public class PagedRangeCommand extends AbstractRangeCommand
     public final Composite start;
     public final Composite stop;
     public final int limit;
+    private final boolean countCQL3Rows;
 
     public PagedRangeCommand(String keyspace,
                              String columnFamily,
@@ -49,12 +50,14 @@ public class PagedRangeCommand extends AbstractRangeCommand
                              Composite start,
                              Composite stop,
                              List<IndexExpression> rowFilter,
-                             int limit)
+                             int limit,
+                             boolean countCQL3Rows)
     {
         super(keyspace, columnFamily, timestamp, keyRange, predicate, rowFilter);
         this.start = start;
         this.stop = stop;
         this.limit = limit;
+        this.countCQL3Rows = countCQL3Rows;
     }
 
     public MessageOut<PagedRangeCommand> createMessage()
@@ -74,7 +77,8 @@ public class PagedRangeCommand extends AbstractRangeCommand
                                      newStart,
                                      newStop,
                                      rowFilter,
-                                     limit);
+                                     limit,
+                                     countCQL3Rows);
     }
 
     public AbstractRangeCommand withUpdatedLimit(int newLimit)
@@ -87,7 +91,8 @@ public class PagedRangeCommand extends AbstractRangeCommand
                                      start,
                                      stop,
                                      rowFilter,
-                                     newLimit);
+                                     newLimit,
+                                     countCQL3Rows);
     }
 
     public int limit()
@@ -97,14 +102,14 @@ public class PagedRangeCommand extends AbstractRangeCommand
 
     public boolean countCQL3Rows()
     {
-        return true;
+        return countCQL3Rows;
     }
 
     public List<Row> executeLocally()
     {
         ColumnFamilyStore cfs = Keyspace.open(keyspace).getColumnFamilyStore(columnFamily);
 
-        ExtendedFilter exFilter = cfs.makeExtendedFilter(keyRange, (SliceQueryFilter)predicate, start, stop, rowFilter, limit, timestamp);
+        ExtendedFilter exFilter = cfs.makeExtendedFilter(keyRange, (SliceQueryFilter)predicate, start, stop, rowFilter, limit, countCQL3Rows(), timestamp);
         if (cfs.indexManager.hasIndexFor(rowFilter))
             return cfs.search(exFilter);
         else
@@ -119,7 +124,7 @@ public class PagedRangeCommand extends AbstractRangeCommand
 
     private static class Serializer implements IVersionedSerializer<PagedRangeCommand>
     {
-        public void serialize(PagedRangeCommand cmd, DataOutput out, int version) throws IOException
+        public void serialize(PagedRangeCommand cmd, DataOutputPlus out, int version) throws IOException
         {
             out.writeUTF(cmd.keyspace);
             out.writeUTF(cmd.columnFamily);
@@ -146,6 +151,8 @@ public class PagedRangeCommand extends AbstractRangeCommand
             }
 
             out.writeInt(cmd.limit);
+            if (version >= MessagingService.VERSION_21)
+                out.writeBoolean(cmd.countCQL3Rows);
         }
 
         public PagedRangeCommand deserialize(DataInput in, int version) throws IOException
@@ -174,7 +181,10 @@ public class PagedRangeCommand extends AbstractRangeCommand
             }
 
             int limit = in.readInt();
-            return new PagedRangeCommand(keyspace, columnFamily, timestamp, keyRange, predicate, start, stop, rowFilter, limit);
+            boolean countCQL3Rows = version >= MessagingService.VERSION_21
+                                  ? in.readBoolean()
+                                  : predicate.compositesToGroup >= 0 || predicate.count != 1; // See #6857
+            return new PagedRangeCommand(keyspace, columnFamily, timestamp, keyRange, predicate, start, stop, rowFilter, limit, countCQL3Rows);
         }
 
         public long serializedSize(PagedRangeCommand cmd, int version)
@@ -203,6 +213,8 @@ public class PagedRangeCommand extends AbstractRangeCommand
             }
 
             size += TypeSizes.NATIVE.sizeof(cmd.limit);
+            if (version >= MessagingService.VERSION_21)
+                size += TypeSizes.NATIVE.sizeof(cmd.countCQL3Rows);
             return size;
         }
     }

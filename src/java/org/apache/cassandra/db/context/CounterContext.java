@@ -22,8 +22,6 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.cassandra.serializers.MarshalException;
-import org.apache.cassandra.utils.memory.AbstractAllocator;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.ClockAndCount;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.utils.*;
 
 /**
@@ -103,9 +102,9 @@ public class CounterContext
     /**
      * Creates a counter context with a single global, 2.1+ shard (a result of increment).
      */
-    public ByteBuffer createGlobal(CounterId id, long clock, long count, AbstractAllocator allocator)
+    public ByteBuffer createGlobal(CounterId id, long clock, long count)
     {
-        ContextState state = ContextState.allocate(1, 0, 0, allocator);
+        ContextState state = ContextState.allocate(1, 0, 0);
         state.writeGlobal(id, clock, count);
         return state.context;
     }
@@ -114,9 +113,9 @@ public class CounterContext
      * Creates a counter context with a single local shard.
      * For use by tests of compatibility with pre-2.1 counters only.
      */
-    public ByteBuffer createLocal(long count, AbstractAllocator allocator)
+    public ByteBuffer createLocal(long count)
     {
-        ContextState state = ContextState.allocate(0, 1, 0, allocator);
+        ContextState state = ContextState.allocate(0, 1, 0);
         state.writeLocal(CounterId.getLocalId(), 1L, count);
         return state.context;
     }
@@ -125,9 +124,9 @@ public class CounterContext
      * Creates a counter context with a single remote shard.
      * For use by tests of compatibility with pre-2.1 counters only.
      */
-    public ByteBuffer createRemote(CounterId id, long clock, long count, AbstractAllocator allocator)
+    public ByteBuffer createRemote(CounterId id, long clock, long count)
     {
-        ContextState state = ContextState.allocate(0, 0, 1, allocator);
+        ContextState state = ContextState.allocate(0, 0, 1);
         state.writeRemote(id, clock, count);
         return state.context;
     }
@@ -254,10 +253,12 @@ public class CounterContext
      *
      * @param left counter context.
      * @param right counter context.
-     * @param allocator An allocator for the merged value.
      */
-    public ByteBuffer merge(ByteBuffer left, ByteBuffer right, AbstractAllocator allocator)
+    public ByteBuffer merge(ByteBuffer left, ByteBuffer right)
     {
+        boolean leftIsSuperSet = true;
+        boolean rightIsSuperSet = true;
+
         int globalCount = 0;
         int localCount = 0;
         int remoteCount = 0;
@@ -270,6 +271,14 @@ public class CounterContext
             int cmp = leftState.compareIdTo(rightState);
             if (cmp == 0)
             {
+                Relationship rel = compare(leftState, rightState);
+                if (rel == Relationship.GREATER_THAN)
+                    rightIsSuperSet = false;
+                else if (rel == Relationship.LESS_THAN)
+                    leftIsSuperSet = false;
+                else if (rel == Relationship.DISJOINT)
+                    leftIsSuperSet = rightIsSuperSet = false;
+
                 if (leftState.isGlobal() || rightState.isGlobal())
                     globalCount += 1;
                 else if (leftState.isLocal() || rightState.isLocal())
@@ -282,6 +291,8 @@ public class CounterContext
             }
             else if (cmp > 0)
             {
+                leftIsSuperSet = false;
+
                 if (rightState.isGlobal())
                     globalCount += 1;
                 else if (rightState.isLocal())
@@ -293,6 +304,8 @@ public class CounterContext
             }
             else // cmp < 0
             {
+                rightIsSuperSet = false;
+
                 if (leftState.isGlobal())
                     globalCount += 1;
                 else if (leftState.isLocal())
@@ -303,6 +316,17 @@ public class CounterContext
                 leftState.moveToNext();
             }
         }
+
+        if (leftState.hasRemaining())
+            rightIsSuperSet = false;
+        else if (rightState.hasRemaining())
+            leftIsSuperSet = false;
+
+        // if one of the contexts is a superset, return it early.
+        if (leftIsSuperSet)
+            return left;
+        else if (rightIsSuperSet)
+            return right;
 
         while (leftState.hasRemaining())
         {
@@ -331,7 +355,7 @@ public class CounterContext
         leftState.reset();
         rightState.reset();
 
-        return merge(ContextState.allocate(globalCount, localCount, remoteCount, allocator), leftState, rightState);
+        return merge(ContextState.allocate(globalCount, localCount, remoteCount), leftState, rightState);
     }
 
     private ByteBuffer merge(ContextState mergedState, ContextState leftState, ContextState rightState)
@@ -341,7 +365,16 @@ public class CounterContext
             int cmp = leftState.compareIdTo(rightState);
             if (cmp == 0)
             {
-                mergeTie(mergedState, leftState, rightState);
+                Relationship rel = compare(leftState, rightState);
+                if (rel == Relationship.DISJOINT) // two local shards
+                    mergedState.writeLocal(leftState.getCounterId(),
+                                           leftState.getClock() + rightState.getClock(),
+                                           leftState.getCount() + rightState.getCount());
+                else if (rel == Relationship.GREATER_THAN)
+                    leftState.copyTo(mergedState);
+                else // EQUAL or LESS_THAN
+                    rightState.copyTo(mergedState);
+
                 rightState.moveToNext();
                 leftState.moveToNext();
             }
@@ -372,20 +405,26 @@ public class CounterContext
         return mergedState.context;
     }
 
-    private void mergeTie(ContextState mergedState, ContextState leftState, ContextState rightState)
+    /*
+     * Compares two shards, returns:
+     * - GREATER_THAN if leftState overrides rightState
+     * - LESS_THAN if rightState overrides leftState
+     * - EQUAL for two equal, non-local, shards
+     * - DISJOINT for any two local shards
+     */
+    private Relationship compare(ContextState leftState, ContextState rightState)
     {
+        long leftClock = leftState.getClock();
+        long leftCount = leftState.getCount();
+        long rightClock = rightState.getClock();
+        long rightCount = rightState.getCount();
+
         if (leftState.isGlobal() || rightState.isGlobal())
         {
             if (leftState.isGlobal() && rightState.isGlobal())
             {
-                long leftClock = leftState.getClock();
-                long rightClock = rightState.getClock();
-
                 if (leftClock == rightClock)
                 {
-                    long leftCount = leftState.getCount();
-                    long rightCount = rightState.getCount();
-
                     // Can happen if an sstable gets lost and disk failure policy is set to 'best effort'
                     if (leftCount != rightCount && CompactionManager.isCompactionManager.get())
                     {
@@ -396,69 +435,60 @@ public class CounterContext
                     }
 
                     if (leftCount > rightCount)
-                        leftState.copyTo(mergedState);
+                        return Relationship.GREATER_THAN;
+                    else if (leftCount == rightCount)
+                        return Relationship.EQUAL;
                     else
-                        rightState.copyTo(mergedState);
+                        return Relationship.LESS_THAN;
                 }
                 else
                 {
-                    (leftClock > rightClock ? leftState : rightState).copyTo(mergedState);
+                    return leftClock > rightClock ? Relationship.GREATER_THAN : Relationship.LESS_THAN;
                 }
             }
             else // only one is global - keep that one
             {
-                (leftState.isGlobal() ? leftState : rightState).copyTo(mergedState);
+                return leftState.isGlobal() ? Relationship.GREATER_THAN : Relationship.LESS_THAN;
             }
         }
-        else if (leftState.isLocal() || rightState.isLocal())
+
+        if (leftState.isLocal() || rightState.isLocal())
         {
             // Local id and at least one is a local shard.
             if (leftState.isLocal() && rightState.isLocal())
-            {
-                // both local - sum
-                long clock = leftState.getClock() + rightState.getClock();
-                long count = leftState.getCount() + rightState.getCount();
-                mergedState.writeLocal(leftState.getCounterId(), clock, count);
-            }
+                return Relationship.DISJOINT;
             else // only one is local - keep that one
-            {
-                (leftState.isLocal() ? leftState : rightState).copyTo(mergedState);
-            }
+                return leftState.isLocal() ? Relationship.GREATER_THAN : Relationship.LESS_THAN;
         }
-        else // both are remote shards
+
+        // both are remote shards
+        if (leftClock == rightClock)
         {
-            long leftClock = leftState.getClock();
-            long rightClock = rightState.getClock();
-
-            if (leftClock == rightClock)
+            // We should never see non-local shards w/ same id+clock but different counts. However, if we do
+            // we should "heal" the problem by being deterministic in our selection of shard - and
+            // log the occurrence so that the operator will know something is wrong.
+            if (leftCount != rightCount && CompactionManager.isCompactionManager.get())
             {
-                // We should never see non-local shards w/ same id+clock but different counts. However, if we do
-                // we should "heal" the problem by being deterministic in our selection of shard - and
-                // log the occurrence so that the operator will know something is wrong.
-                long leftCount = leftState.getCount();
-                long rightCount = rightState.getCount();
-
-                if (leftCount != rightCount && CompactionManager.isCompactionManager.get())
-                {
-                    logger.warn("invalid remote counter shard detected; ({}, {}, {}) and ({}, {}, {}) differ only in "
-                                + "count; will pick highest to self-heal on compaction",
-                                leftState.getCounterId(), leftClock, leftCount,
-                                rightState.getCounterId(), rightClock, rightCount);
-                }
-
-                if (leftCount > rightCount)
-                    leftState.copyTo(mergedState);
-                else
-                    rightState.copyTo(mergedState);
+                logger.warn("invalid remote counter shard detected; ({}, {}, {}) and ({}, {}, {}) differ only in "
+                            + "count; will pick highest to self-heal on compaction",
+                            leftState.getCounterId(), leftClock, leftCount,
+                            rightState.getCounterId(), rightClock, rightCount);
             }
+
+            if (leftCount > rightCount)
+                return Relationship.GREATER_THAN;
+            else if (leftCount == rightCount)
+                return Relationship.EQUAL;
             else
-            {
-                if ((leftClock >= 0 && rightClock > 0 && leftClock >= rightClock)
-                        || (leftClock < 0 && (rightClock > 0 || leftClock < rightClock)))
-                    leftState.copyTo(mergedState);
-                else
-                    rightState.copyTo(mergedState);
-            }
+                return Relationship.LESS_THAN;
+        }
+        else
+        {
+            if ((leftClock >= 0 && rightClock > 0 && leftClock >= rightClock)
+                    || (leftClock < 0 && (rightClock > 0 || leftClock < rightClock)))
+                return Relationship.GREATER_THAN;
+            else
+                return Relationship.LESS_THAN;
         }
     }
 
@@ -513,6 +543,24 @@ public class CounterContext
     {
         // #elt being negative means we have to clean local shards.
         return context.getShort(context.position()) < 0;
+    }
+
+    /**
+     * Detects whether or not the context has any legacy (local or remote) shards in it.
+     */
+    public boolean hasLegacyShards(ByteBuffer context)
+    {
+        int totalCount = (context.remaining() - headerLength(context)) / STEP_LENGTH;
+        int localAndGlobalCount = Math.abs(context.getShort(context.position()));
+
+        if (localAndGlobalCount < totalCount)
+            return true; // remote shard(s) present
+
+        for (int i = 0; i < localAndGlobalCount; i++)
+            if (context.getShort(context.position() + HEADER_SIZE_LENGTH + i * HEADER_ELT_LENGTH) >= 0)
+                return true; // found a local shard
+
+        return false;
     }
 
     /**
@@ -700,12 +748,12 @@ public class CounterContext
          * Allocate a new context big enough for globalCount + localCount + remoteCount elements
          * and return the initial corresponding ContextState.
          */
-        public static ContextState allocate(int globalCount, int localCount, int remoteCount, AbstractAllocator allocator)
+        public static ContextState allocate(int globalCount, int localCount, int remoteCount)
         {
             int headerLength = HEADER_SIZE_LENGTH + (globalCount + localCount) * HEADER_ELT_LENGTH;
             int bodyLength = (globalCount + localCount + remoteCount) * STEP_LENGTH;
 
-            ByteBuffer buffer = allocator.allocate(headerLength + bodyLength);
+            ByteBuffer buffer = ByteBuffer.allocate(headerLength + bodyLength);
             buffer.putShort(buffer.position(), (short) (globalCount + localCount));
 
             return ContextState.wrap(buffer);

@@ -18,6 +18,7 @@
 package org.apache.cassandra.db.composites;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 
@@ -30,6 +31,7 @@ public class SimpleCType extends AbstractCType
 
     public SimpleCType(AbstractType<?> type)
     {
+        super(type.isByteOrderComparable());
         this.type = type;
     }
 
@@ -41,6 +43,18 @@ public class SimpleCType extends AbstractCType
     public int size()
     {
         return 1;
+    }
+
+    public int compare(Composite c1, Composite c2)
+    {
+        if (isByteOrderComparable)
+            return AbstractSimpleCellNameType.compareUnsigned(c1, c2);
+
+        assert !(c1.isEmpty() | c2.isEmpty());
+        // This method assumes that simple composites never have an EOC != NONE. This assumption
+        // stands in particular on the fact that a Composites.EMPTY never has a non-NONE EOC. If
+        // this ever change, we'll need to update this.
+        return type.compare(c1.get(0), c2.get(0));
     }
 
     public AbstractType<?> subtype(int i)
@@ -128,6 +142,15 @@ public class SimpleCType extends AbstractCType
                 return new SimpleDenseCellName(value);
 
             return new SimpleComposite(value);
+        }
+
+        public Composite buildWith(List<ByteBuffer> values)
+        {
+            if (values.size() > 1)
+                throw new IllegalStateException();
+            if (values.isEmpty())
+                return Composites.EMPTY;
+            return buildWith(values.get(0));
         }
     }
 }

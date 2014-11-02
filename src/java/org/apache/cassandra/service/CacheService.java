@@ -18,7 +18,6 @@
 package org.apache.cassandra.service;
 
 import java.io.DataInputStream;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
@@ -30,7 +29,6 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.locks.Lock;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -47,12 +45,11 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.filter.QueryFilter;
-import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
@@ -286,6 +283,17 @@ public class CacheService implements CacheServiceMBean
         keyCache.clear();
     }
 
+    public void invalidateKeyCacheForCf(UUID cfId)
+    {
+        Iterator<KeyCacheKey> keyCacheIterator = keyCache.getKeySet().iterator();
+        while (keyCacheIterator.hasNext())
+        {
+            KeyCacheKey key = keyCacheIterator.next();
+            if (key.cfId.equals(cfId))
+                keyCacheIterator.remove();
+        }
+    }
+
     public void invalidateRowCache()
     {
         rowCache.clear();
@@ -299,6 +307,17 @@ public class CacheService implements CacheServiceMBean
             RowCacheKey rowCacheKey = rowCacheIterator.next();
             if (rowCacheKey.cfId.equals(cfId))
                 rowCacheIterator.remove();
+        }
+    }
+
+    public void invalidateCounterCacheForCf(UUID cfId)
+    {
+        Iterator<CounterCacheKey> counterCacheIterator = counterCache.getKeySet().iterator();
+        while (counterCacheIterator.hasNext())
+        {
+            CounterCacheKey counterCacheKey = counterCacheIterator.next();
+            if (counterCacheKey.cfId.equals(cfId))
+                counterCacheIterator.remove();
         }
     }
 
@@ -384,9 +403,9 @@ public class CacheService implements CacheServiceMBean
         logger.debug("cache saves completed");
     }
 
-    public class CounterCacheSerializer implements CacheSerializer<CounterCacheKey, ClockAndCount>
+    public static class CounterCacheSerializer implements CacheSerializer<CounterCacheKey, ClockAndCount>
     {
-        public void serialize(CounterCacheKey key, DataOutput out) throws IOException
+        public void serialize(CounterCacheKey key, DataOutputPlus out) throws IOException
         {
             ByteBufferUtil.writeWithLength(key.partitionKey, out);
             ByteBufferUtil.writeWithLength(key.cellName, out);
@@ -401,35 +420,26 @@ public class CacheService implements CacheServiceMBean
                 public Pair<CounterCacheKey, ClockAndCount> call() throws Exception
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(partitionKey);
-                    Lock lock = cfs.counterLockFor(partitionKey);
-                    lock.lock();
-                    try
-                    {
-                        QueryFilter filter = QueryFilter.getNamesFilter(key,
-                                                                        cfs.metadata.cfName,
-                                                                        FBUtilities.singleton(cellName, cfs.metadata.comparator),
-                                                                        Long.MIN_VALUE);
-                        ColumnFamily cf = cfs.getTopLevelColumns(filter, Integer.MIN_VALUE);
-                        if (cf == null)
-                            return null;
-                        Cell cell = cf.getColumn(cellName);
-                        if (cell == null || cell.isMarkedForDelete(Long.MIN_VALUE))
-                            return null;
-                        ClockAndCount clockAndCount = CounterContext.instance().getLocalClockAndCount(cell.value());
-                        return Pair.create(CounterCacheKey.create(cfs.metadata.cfId, partitionKey, cellName), clockAndCount);
-                    }
-                    finally
-                    {
-                        lock.unlock();
-                    }
+                    QueryFilter filter = QueryFilter.getNamesFilter(key,
+                                                                    cfs.metadata.cfName,
+                                                                    FBUtilities.singleton(cellName, cfs.metadata.comparator),
+                                                                    Long.MIN_VALUE);
+                    ColumnFamily cf = cfs.getTopLevelColumns(filter, Integer.MIN_VALUE);
+                    if (cf == null)
+                        return null;
+                    Cell cell = cf.getColumn(cellName);
+                    if (cell == null || !cell.isLive(Long.MIN_VALUE))
+                        return null;
+                    ClockAndCount clockAndCount = CounterContext.instance().getLocalClockAndCount(cell.value());
+                    return Pair.create(CounterCacheKey.create(cfs.metadata.cfId, partitionKey, cellName), clockAndCount);
                 }
             });
         }
     }
 
-    public class RowCacheSerializer implements CacheSerializer<RowCacheKey, IRowCacheEntry>
+    public static class RowCacheSerializer implements CacheSerializer<RowCacheKey, IRowCacheEntry>
     {
-        public void serialize(RowCacheKey key, DataOutput out) throws IOException
+        public void serialize(RowCacheKey key, DataOutputPlus out) throws IOException
         {
             ByteBufferUtil.writeWithLength(key.key, out);
         }
@@ -450,9 +460,9 @@ public class CacheService implements CacheServiceMBean
         }
     }
 
-    public class KeyCacheSerializer implements CacheSerializer<KeyCacheKey, RowIndexEntry>
+    public static class KeyCacheSerializer implements CacheSerializer<KeyCacheKey, RowIndexEntry>
     {
-        public void serialize(KeyCacheKey key, DataOutput out) throws IOException
+        public void serialize(KeyCacheKey key, DataOutputPlus out) throws IOException
         {
             RowIndexEntry entry = CacheService.instance.keyCache.get(key);
             if (entry == null)

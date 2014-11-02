@@ -47,11 +47,11 @@ public class TypeCast implements Term.Raw
         return new ColumnSpecification(receiver.ksName, receiver.cfName, new ColumnIdentifier(toString(), true), type.prepare(keyspace).getType());
     }
 
-    public boolean isAssignableTo(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
+    public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
     {
         try
         {
-            return receiver.type.asCQL3Type().equals(type.prepare(keyspace));
+            return receiver.type.isValueCompatibleWith(type.prepare(keyspace).getType());
         }
         catch (InvalidRequestException e)
         {

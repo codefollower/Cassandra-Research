@@ -27,6 +27,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * A simple container that simplify passing parameters for collections methods.
@@ -34,7 +35,8 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 public class UpdateParameters
 {
     public final CFMetaData metadata;
-    public final List<ByteBuffer> variables;
+
+    public final QueryOptions options;
     public final long timestamp; //有可能是client端指定的时间
     private final int ttl;
     public final int localDeletionTime; //server端的当前时间(以秒为单位)
@@ -42,10 +44,11 @@ public class UpdateParameters
     // For lists operation that require a read-before-write. Will be null otherwise.
     private final Map<ByteBuffer, CQL3Row> prefetchedLists;
 
-    public UpdateParameters(CFMetaData metadata, List<ByteBuffer> variables, long timestamp, int ttl, Map<ByteBuffer, CQL3Row> prefetchedLists)
+    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, Map<ByteBuffer, CQL3Row> prefetchedLists)
     {
         this.metadata = metadata;
-        this.variables = variables;
+
+        this.options = options;
         this.timestamp = timestamp; //纳秒
         this.ttl = ttl;
         this.localDeletionTime = (int)(System.currentTimeMillis() / 1000); //秒
@@ -55,13 +58,19 @@ public class UpdateParameters
     public Cell makeColumn(CellName name, ByteBuffer value) throws InvalidRequestException
     {
         QueryProcessor.validateCellName(name, metadata.comparator);
-        return Cell.create(name, value, timestamp, ttl, metadata);
+        return AbstractCell.create(name, value, timestamp, ttl, metadata);
     }
+
+     public Cell makeCounter(CellName name, long delta) throws InvalidRequestException
+     {
+         QueryProcessor.validateCellName(name, metadata.comparator);
+         return new BufferCounterUpdateCell(name, delta, FBUtilities.timestampMicros());
+     }
 
     public Cell makeTombstone(CellName name) throws InvalidRequestException
     {
         QueryProcessor.validateCellName(name, metadata.comparator);
-        return new DeletedCell(name, localDeletionTime, timestamp);
+        return new BufferDeletedCell(name, localDeletionTime, timestamp);
     }
 
     public RangeTombstone makeRangeTombstone(ColumnSlice slice) throws InvalidRequestException

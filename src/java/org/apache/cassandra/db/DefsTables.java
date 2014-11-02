@@ -24,6 +24,8 @@ import java.util.*;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
+import org.apache.cassandra.config.UFMetaData;
+import org.apache.cassandra.cql3.udf.UDFRegistry;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +42,7 @@ import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * SCHEMA_{KEYSPACES, COLUMNFAMILIES, COLUMNS}_CF are used to store Keyspace/ColumnFamily attributes to make schema
@@ -166,33 +169,54 @@ public class DefsTables //都是static方法
     //与schema_keyspaces、schema_columnfamilies、schema_usertypes这三个表相关
     public static synchronized void mergeSchema(Collection<Mutation> mutations) throws ConfigurationException, IOException
     {
+        mergeSchemaInternal(mutations, true);
+        Schema.instance.updateVersionAndAnnounce();
+    }
+
+    public static synchronized void mergeSchemaInternal(Collection<Mutation> mutations, boolean doFlush) throws IOException
+    {
+        // compare before/after schemas of the affected keyspaces only
+        Set<String> keyspaces = new HashSet<>(mutations.size());
+        for (Mutation mutation : mutations)
+            keyspaces.add(ByteBufferUtil.string(mutation.key()));
+
         // current state of the schema
-        //获得schema_keyspaces表中的记录
-        Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
-        //获得schema_columnfamilies表中的记录
-        Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
-        Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF);
+//<<<<<<< HEAD
+//        //获得schema_keyspaces表中的记录
+//        Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
+//        //获得schema_columnfamilies表中的记录
+//        Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
+//        Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF);
+//=======
+        Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, keyspaces);
+        Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, keyspaces);
+        Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF, keyspaces);
+        Map<DecoratedKey, ColumnFamily> oldFunctions = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
 
         for (Mutation mutation : mutations)
             mutation.apply();
 
-        if (!StorageService.instance.isClientMode())
-            flushSchemaCFs(); //会强制刷新memtable
+//<<<<<<< HEAD
+//        if (!StorageService.instance.isClientMode())
+//            flushSchemaCFs(); //会强制刷新memtable
+//=======
+        if (doFlush && !StorageService.instance.isClientMode())
+            flushSchemaCFs();
 
         // with new data applied
-        Map<DecoratedKey, ColumnFamily> newKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
-        Map<DecoratedKey, ColumnFamily> newColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
-        Map<DecoratedKey, ColumnFamily> newTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF);
+        Map<DecoratedKey, ColumnFamily> newKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, keyspaces);
+        Map<DecoratedKey, ColumnFamily> newColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, keyspaces);
+        Map<DecoratedKey, ColumnFamily> newTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF, keyspaces);
+        Map<DecoratedKey, ColumnFamily> newFunctions = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
 
         Set<String> keyspacesToDrop = mergeKeyspaces(oldKeyspaces, newKeyspaces);
         mergeColumnFamilies(oldColumnFamilies, newColumnFamilies);
         mergeTypes(oldTypes, newTypes);
+        mergeFunctions(oldFunctions, newFunctions);
 
         // it is safe to drop a keyspace only when all nested ColumnFamilies where deleted
         for (String keyspaceToDrop : keyspacesToDrop)
             dropKeyspace(keyspaceToDrop);
-
-        Schema.instance.updateVersionAndAnnounce();
     }
 
     private static Set<String> mergeKeyspaces(Map<DecoratedKey, ColumnFamily> old, Map<DecoratedKey, ColumnFamily> updated)
@@ -208,8 +232,11 @@ public class DefsTables //都是static方法
             ColumnFamily ksAttrs = entry.getValue();
 
             // we don't care about nested ColumnFamilies here because those are going to be processed separately
-            if (!(ksAttrs.getColumnCount() == 0))
-                //前面调用mergeSchema时也执行了mutation.apply()，记录也存在system.schema_keyspaces表中了，KSMetaData.fromSchema中再次读出来
+//<<<<<<< HEAD
+//            if (!(ksAttrs.getColumnCount() == 0))
+//                //前面调用mergeSchema时也执行了mutation.apply()，记录也存在system.schema_keyspaces表中了，KSMetaData.fromSchema中再次读出来
+//=======
+            if (ksAttrs.hasColumns())
                 addKeyspace(KSMetaData.fromSchema(new Row(entry.getKey(), entry.getValue()), Collections.<CFMetaData>emptyList(), new UTMetaData()));
         }
 
@@ -229,7 +256,7 @@ public class DefsTables //都是static方法
             ColumnFamily prevValue = entry.getValue().leftValue();
             ColumnFamily newValue = entry.getValue().rightValue();
 
-            if (prevValue.getColumnCount() == 0)
+            if (!prevValue.hasColumns())
             {
                 addKeyspace(KSMetaData.fromSchema(new Row(entry.getKey(), newValue), Collections.<CFMetaData>emptyList(), new UTMetaData()));
                 continue;
@@ -253,10 +280,10 @@ public class DefsTables //都是static方法
 
             ColumnFamily newState = valueDiff.rightValue();
 
-            if (newState.getColumnCount() == 0)
-                keyspacesToDrop.add(AsciiType.instance.getString(key.key));
-            else
+            if (newState.hasColumns())
                 updateKeyspace(KSMetaData.fromSchema(new Row(key, newState), Collections.<CFMetaData>emptyList(), new UTMetaData()));
+            else
+                keyspacesToDrop.add(AsciiType.instance.getString(key.getKey()));
         }
 
         return keyspacesToDrop;
@@ -272,7 +299,7 @@ public class DefsTables //都是static方法
         {
             ColumnFamily cfAttrs = entry.getValue();
 
-            if (!(cfAttrs.getColumnCount() == 0))
+            if (cfAttrs.hasColumns())
             {
                 //entry.getKey()是keyspace
                 Map<String, CFMetaData> cfDefs = KSMetaData.deserializeColumnFamilies(new Row(entry.getKey(), cfAttrs));
@@ -294,19 +321,19 @@ public class DefsTables //都是static方法
 
             Row newRow = new Row(keyspace, newValue);
 
-            if (prevValue.getColumnCount() == 0) // whole keyspace was deleted and now it's re-created
+            if (!prevValue.hasColumns()) // whole keyspace was deleted and now it's re-created
             {
                 for (CFMetaData cfm : KSMetaData.deserializeColumnFamilies(newRow).values())
                     addColumnFamily(cfm);
             }
-            else if (newValue.getColumnCount() == 0) // whole keyspace is deleted
+            else if (!newValue.hasColumns()) // whole keyspace is deleted
             {
                 for (CFMetaData cfm : KSMetaData.deserializeColumnFamilies(new Row(keyspace, prevValue)).values())
                     dropColumnFamily(cfm.ksName, cfm.cfName);
             }
             else // has modifications in the nested ColumnFamilies, need to perform nested diff to determine what was really changed
             {
-                String ksName = AsciiType.instance.getString(keyspace.key);
+                String ksName = AsciiType.instance.getString(keyspace.getKey());
 
                 Map<String, CFMetaData> oldCfDefs = new HashMap<String, CFMetaData>();
                 for (CFMetaData cfm : Schema.instance.getKSMetaData(ksName).cfMetaData().values())
@@ -352,7 +379,7 @@ public class DefsTables //都是static方法
         for (Map.Entry<DecoratedKey, ColumnFamily> entry : diff.entriesOnlyOnRight().entrySet())
         {
             ColumnFamily cfTypes = entry.getValue();
-            if (cfTypes.getColumnCount() == 0)
+            if (!cfTypes.hasColumns())
                 continue;
 
             for (UserType ut : UTMetaData.fromSchema(new Row(entry.getKey(), cfTypes)).values())
@@ -365,12 +392,12 @@ public class DefsTables //都是static方法
             ColumnFamily prevCFTypes = modifiedEntry.getValue().leftValue(); // state before external modification
             ColumnFamily newCFTypes = modifiedEntry.getValue().rightValue(); // updated state
 
-            if (prevCFTypes.getColumnCount() == 0) // whole keyspace was deleted and now it's re-created
+            if (!prevCFTypes.hasColumns()) // whole keyspace was deleted and now it's re-created
             {
                 for (UserType ut : UTMetaData.fromSchema(new Row(keyspace, newCFTypes)).values())
                     addType(ut);
             }
-            else if (newCFTypes.getColumnCount() == 0) // whole keyspace is deleted
+            else if (!newCFTypes.hasColumns()) // whole keyspace is deleted
             {
                 for (UserType ut : UTMetaData.fromSchema(new Row(keyspace, prevCFTypes)).values())
                     dropType(ut);
@@ -393,7 +420,55 @@ public class DefsTables //都是static方法
                     dropType(type);
 
                 for (MapDifference.ValueDifference<UserType> tdiff : typesDiff.entriesDiffering().values())
-                    addType(tdiff.rightValue()); // use the most recent value
+                    updateType(tdiff.rightValue()); // use the most recent value
+            }
+        }
+    }
+
+    private static void mergeFunctions(Map<DecoratedKey, ColumnFamily> old, Map<DecoratedKey, ColumnFamily> updated)
+    {
+        MapDifference<DecoratedKey, ColumnFamily> diff = Maps.difference(old, updated);
+
+        // New namespace with functions
+        for (Map.Entry<DecoratedKey, ColumnFamily> entry : diff.entriesOnlyOnRight().entrySet())
+        {
+            ColumnFamily cfFunctions = entry.getValue();
+            if (!cfFunctions.hasColumns())
+                continue;
+
+            for (UFMetaData uf : UFMetaData.fromSchema(new Row(entry.getKey(), cfFunctions)).values())
+                addFunction(uf);
+        }
+
+        for (Map.Entry<DecoratedKey, MapDifference.ValueDifference<ColumnFamily>> modifiedEntry : diff.entriesDiffering().entrySet())
+        {
+            DecoratedKey namespace = modifiedEntry.getKey();
+            ColumnFamily prevCFFunctions = modifiedEntry.getValue().leftValue(); // state before external modification
+            ColumnFamily newCFFunctions = modifiedEntry.getValue().rightValue(); // updated state
+
+            if (!prevCFFunctions.hasColumns()) // whole namespace was deleted and now it's re-created
+            {
+                for (UFMetaData uf : UFMetaData.fromSchema(new Row(namespace, newCFFunctions)).values())
+                    addFunction(uf);
+            }
+            else if (!newCFFunctions.hasColumns()) // whole namespace is deleted
+            {
+                for (UFMetaData uf : UFMetaData.fromSchema(new Row(namespace, prevCFFunctions)).values())
+                    dropFunction(uf);
+            }
+            else // has modifications in the functions, need to perform nested diff to determine what was really changed
+            {
+                MapDifference<String, UFMetaData> functionsDiff = Maps.difference(UFMetaData.fromSchema(new Row(namespace, prevCFFunctions)),
+                    UFMetaData.fromSchema(new Row(namespace, newCFFunctions)));
+
+                for (UFMetaData function : functionsDiff.entriesOnlyOnRight().values())
+                    addFunction(function);
+
+                for (UFMetaData function : functionsDiff.entriesOnlyOnLeft().values())
+                    dropFunction(function);
+
+                for (MapDifference.ValueDifference<UFMetaData> tdiff : functionsDiff.entriesDiffering().values())
+                    updateFunction(tdiff.rightValue()); // use the most recent value
             }
         }
     }
@@ -444,7 +519,17 @@ public class DefsTables //都是static方法
         ksm.userTypes.addType(ut);
 
         if (!StorageService.instance.isClientMode())
-            MigrationManager.instance.notifyUpdateKeyspace(ksm);
+            MigrationManager.instance.notifyCreateUserType(ut);
+    }
+
+    private static void addFunction(UFMetaData uf)
+    {
+        logger.info("Loading {}", uf);
+
+        UDFRegistry.migrateAddFunction(uf);
+
+        if (!StorageService.instance.isClientMode())
+            MigrationManager.instance.notifyCreateFunction(uf);
     }
 
     private static void updateKeyspace(KSMetaData newState)
@@ -476,6 +561,29 @@ public class DefsTables //都是static方法
         }
     }
 
+    private static void updateType(UserType ut)
+    {
+        KSMetaData ksm = Schema.instance.getKSMetaData(ut.keyspace);
+        assert ksm != null;
+
+        logger.info("Updating {}", ut);
+
+        ksm.userTypes.addType(ut);
+
+        if (!StorageService.instance.isClientMode())
+            MigrationManager.instance.notifyUpdateUserType(ut);
+    }
+
+    private static void updateFunction(UFMetaData uf)
+    {
+        logger.info("Updating {}", uf);
+
+        UDFRegistry.migrateUpdateFunction(uf);
+
+        if (!StorageService.instance.isClientMode())
+            MigrationManager.instance.notifyUpdateFunction(uf);
+    }
+
     private static void dropKeyspace(String ksName)
     {
         KSMetaData ksm = Schema.instance.getKSMetaData(ksName);
@@ -483,10 +591,13 @@ public class DefsTables //都是static方法
 
         CompactionManager.instance.interruptCompactionFor(ksm.cfMetaData().values(), true);
 
+        Keyspace keyspace = Keyspace.open(ksm.name);
+
         // remove all cfs from the keyspace instance.
+        List<UUID> droppedCfs = new ArrayList<>();
         for (CFMetaData cfm : ksm.cfMetaData().values())
         {
-            ColumnFamilyStore cfs = Keyspace.open(ksm.name).getColumnFamilyStore(cfm.cfName);
+            ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfm.cfName);
 
             Schema.instance.purge(cfm);
 
@@ -496,14 +607,18 @@ public class DefsTables //都是static方法
                     cfs.snapshot(snapshotName);
                 Keyspace.open(ksm.name).dropCf(cfm.cfId);
             }
+
+            droppedCfs.add(cfm.cfId);
         }
 
         // remove the keyspace from the static instances.
         Keyspace.clear(ksm.name);
         Schema.instance.clearKeyspaceDefinition(ksm);
 
+        keyspace.writeOrder.awaitNewBarrier();
+
         // force a new segment in the CL
-        CommitLog.instance.forceRecycleAllSegments();
+        CommitLog.instance.forceRecycleAllSegments(droppedCfs);
 
         if (!StorageService.instance.isClientMode())
         {
@@ -526,14 +641,14 @@ public class DefsTables //都是static方法
 
         CompactionManager.instance.interruptCompactionFor(Arrays.asList(cfm), true);
 
-        CommitLog.instance.forceRecycleAllSegments();
-
         if (!StorageService.instance.isClientMode())
         {
             if (DatabaseDescriptor.isAutoSnapshot())
                 cfs.snapshot(Keyspace.getTimestampedSnapshotName(cfs.name));
             Keyspace.open(ksm.name).dropCf(cfm.cfId);
             MigrationManager.instance.notifyDropColumnFamily(cfm);
+
+            CommitLog.instance.forceRecycleAllSegments(Collections.singleton(cfm.cfId));
         }
     }
 
@@ -545,7 +660,17 @@ public class DefsTables //都是static方法
         ksm.userTypes.removeType(ut);
 
         if (!StorageService.instance.isClientMode())
-            MigrationManager.instance.notifyUpdateKeyspace(ksm);
+            MigrationManager.instance.notifyDropUserType(ut);
+    }
+
+    private static void dropFunction(UFMetaData uf)
+    {
+        logger.info("Drop {}", uf);
+
+        UDFRegistry.migrateDropFunction(uf);
+
+        if (!StorageService.instance.isClientMode())
+            MigrationManager.instance.notifyDropFunction(uf);
     }
 
     private static KSMetaData makeNewKeyspaceDefinition(KSMetaData ksm, CFMetaData toExclude)

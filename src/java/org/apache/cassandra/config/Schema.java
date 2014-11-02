@@ -22,14 +22,18 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
-import com.google.common.collect.*;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.service.MigrationManager;
+import org.apache.cassandra.utils.ConcurrentBiMap;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
@@ -60,7 +64,7 @@ public class Schema
     /* metadata map for faster ColumnFamily lookup */
     //Pair<String, String>是(ksname,cfname)
     //BiMap是双向的，通过key和value都可找到彼此
-    private final BiMap<Pair<String, String>, UUID> cfIdMap = HashBiMap.create();
+    private final ConcurrentBiMap<Pair<String, String>, UUID> cfIdMap = new ConcurrentBiMap<>();
 
     private volatile UUID version;
 
@@ -129,6 +133,17 @@ public class Schema
     public Keyspace getKeyspaceInstance(String keyspaceName)
     {
         return keyspaceInstances.get(keyspaceName);
+    }
+
+    public ColumnFamilyStore getColumnFamilyStoreInstance(UUID cfId)
+    {
+        Pair<String, String> pair = cfIdMap.inverse().get(cfId);
+        if (pair == null)
+            return null;
+        Keyspace instance = getKeyspaceInstance(pair.left);
+        if (instance == null)
+            return null;
+        return instance.getColumnFamilyStore(cfId);
     }
 
     /**
@@ -316,7 +331,7 @@ public class Schema
         Pair<String, String> key = Pair.create(cfm.ksName, cfm.cfName);
 
         if (cfIdMap.containsKey(key))
-            throw new RuntimeException(String.format("Attempting to load already loaded column family %s.%s", cfm.ksName, cfm.cfName));
+            throw new RuntimeException(String.format("Attempting to load already loaded table %s.%s", cfm.ksName, cfm.cfName));
 
         logger.debug("Adding {} to cfIdMap", cfm);
         cfIdMap.put(key, cfm.cfId);
@@ -358,6 +373,9 @@ public class Schema
                 if (invalidSchemaRow(row) || ignoredSchemaRow(row))
                     continue;
 
+                // we want to digest only live columns
+                ColumnFamilyStore.removeDeletedColumnsOnly(row.cf, Integer.MAX_VALUE, SecondaryIndexManager.nullUpdater);
+                row.cf.purgeTombstones(Integer.MAX_VALUE);
                 row.cf.updateDigest(versionDigest);
             }
 
@@ -397,14 +415,14 @@ public class Schema
 
     public static boolean invalidSchemaRow(Row row)
     {
-        return row.cf == null || (row.cf.isMarkedForDelete() && row.cf.getColumnCount() == 0);
+        return row.cf == null || (row.cf.isMarkedForDelete() && !row.cf.hasColumns());
     }
 
     public static boolean ignoredSchemaRow(Row row)
     {
         try
         {
-            return systemKeyspaceNames.contains(ByteBufferUtil.string(row.key.key));
+            return systemKeyspaceNames.contains(ByteBufferUtil.string(row.key.getKey()));
         }
         catch (CharacterCodingException e)
         {

@@ -18,9 +18,10 @@
 package org.apache.cassandra.service;
 
 import java.nio.ByteBuffer;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
-import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +35,8 @@ public abstract class AbstractRowResolver implements IResponseResolver<ReadRespo
     protected static final Logger logger = LoggerFactory.getLogger(AbstractRowResolver.class);
 
     protected final String keyspaceName;
-    protected final Set<MessageIn<ReadResponse>> replies = new NonBlockingHashSet<MessageIn<ReadResponse>>();
+    // synchronizedList gives us thread-safety without the overhead of guaranteeing uniqueness like a Set would
+    protected final List<MessageIn<ReadResponse>> replies = Collections.synchronizedList(new ArrayList<MessageIn<ReadResponse>>());
     protected final DecoratedKey key;
 
     public AbstractRowResolver(ByteBuffer key, String keyspaceName)

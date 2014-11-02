@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -64,7 +63,7 @@ public class ColumnNameHelper
     {
         // For a cell name, no reason to look more than the clustering prefix
         // (and comparing the collection element would actually crash)
-        int size = candidate instanceof CellName ? ((CellName)candidate).clusteringSize() : candidate.size();
+        int size = Math.min(candidate.size(), comparator.clusteringPrefixSize());
 
         if (maxSeen.isEmpty())
             return getComponents(candidate, size);
@@ -92,7 +91,7 @@ public class ColumnNameHelper
     {
         // For a cell name, no reason to look more than the clustering prefix
         // (and comparing the collection element would actually crash)
-        int size = candidate instanceof CellName ? ((CellName)candidate).clusteringSize() : candidate.size();
+        int size = Math.min(candidate.size(), comparator.clusteringPrefixSize());
 
         if (minSeen.isEmpty())
             return getComponents(candidate, size);

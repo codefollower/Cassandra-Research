@@ -21,15 +21,21 @@ package org.apache.cassandra.stress.settings;
  */
 
 
+import java.io.IOException;
 import java.io.Serializable;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.cassandra.db.marshal.*;
-import org.apache.cassandra.stress.generatedata.*;
+import org.apache.cassandra.stress.generate.*;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * For parsing column options
@@ -38,16 +44,14 @@ public class SettingsColumn implements Serializable
 {
 
     public final int maxColumnsPerKey;
-    public final List<ByteBuffer> names;
+    public transient List<ByteBuffer> names;
+    public final List<String> namestrs;
     public final String comparator;
-    public final boolean useTimeUUIDComparator;
-    public final int superColumns;
-    public final boolean useSuperColumns;
+    public final String timestamp;
     public final boolean variableColumnCount;
-
-    private final DistributionFactory sizeDistribution;
-    private final DistributionFactory countDistribution;
-    private final DataGenFactory dataGenFactory;
+    public final boolean slice;
+    public final DistributionFactory sizeDistribution;
+    public final DistributionFactory countDistribution;
 
     public SettingsColumn(GroupedOptions options)
     {
@@ -60,10 +64,8 @@ public class SettingsColumn implements Serializable
     public SettingsColumn(Options options, NameOptions name, CountOptions count)
     {
         sizeDistribution = options.size.get();
-        superColumns = Integer.parseInt(options.superColumns.value());
-        dataGenFactory = options.generator.get();
-        useSuperColumns = superColumns > 0;
         {
+            timestamp = options.timestamp.value();
             comparator = options.comparator.value();
             AbstractType parsed = null;
 
@@ -76,8 +78,6 @@ public class SettingsColumn implements Serializable
                 System.err.println(e.getMessage());
                 System.exit(1);
             }
-
-            useTimeUUIDComparator = parsed instanceof TimeUUIDType;
 
             if (!(parsed instanceof TimeUUIDType || parsed instanceof AsciiType || parsed instanceof UTF8Type))
             {
@@ -95,7 +95,7 @@ public class SettingsColumn implements Serializable
                 comparator = TypeParser.parse(this.comparator);
             } catch (Exception e)
             {
-                throw new IllegalStateException(e);
+                throw new IllegalArgumentException(this.comparator + " is not a valid type");
             }
 
             final String[] names = name.name.value().split(",");
@@ -103,6 +103,10 @@ public class SettingsColumn implements Serializable
 
             for (String columnName : names)
                 this.names.add(comparator.fromString(columnName));
+            Collections.sort(this.names, BytesType.instance);
+            this.namestrs = new ArrayList<>();
+            for (ByteBuffer columnName : this.names)
+                this.namestrs.add(comparator.getString(columnName));
 
             final int nameCount = this.names.size();
             countDistribution = new DistributionFactory()
@@ -117,15 +121,26 @@ public class SettingsColumn implements Serializable
         else
         {
             this.countDistribution = count.count.get();
-            this.names = null;
+            ByteBuffer[] names = new ByteBuffer[(int) countDistribution.get().maxValue()];
+            String[] namestrs = new String[(int) countDistribution.get().maxValue()];
+            for (int i = 0 ; i < names.length ; i++)
+                names[i] = ByteBufferUtil.bytes("C" + i);
+            Arrays.sort(names, BytesType.instance);
+            try
+            {
+                for (int i = 0 ; i < names.length ; i++)
+                    namestrs[i] = ByteBufferUtil.string(names[i]);
+            }
+            catch (CharacterCodingException e)
+            {
+                throw new RuntimeException(e);
+            }
+            this.names = Arrays.asList(names);
+            this.namestrs = Arrays.asList(namestrs);
         }
         maxColumnsPerKey = (int) countDistribution.get().maxValue();
         variableColumnCount = countDistribution.get().minValue() < maxColumnsPerKey;
-    }
-
-    public RowGen newRowGen()
-    {
-        return new RowGenDistributedSize(dataGenFactory.get(), countDistribution.get(), sizeDistribution.get());
+        slice = options.slice.setByUser();
     }
 
     // Option Declarations
@@ -134,8 +149,9 @@ public class SettingsColumn implements Serializable
     {
         final OptionSimple superColumns = new OptionSimple("super=", "[0-9]+", "0", "Number of super columns to use (no super columns used if not specified)", false);
         final OptionSimple comparator = new OptionSimple("comparator=", "TimeUUIDType|AsciiType|UTF8Type", "AsciiType", "Column Comparator to use", false);
-        final OptionDistribution size = new OptionDistribution("size=", "FIXED(34)");
-        final OptionDataGen generator = new OptionDataGen("data=", "REPEAT(50)");
+        final OptionSimple slice = new OptionSimple("slice", "", null, "If set, range slices will be used for reads, otherwise a names query will be", false);
+        final OptionSimple timestamp = new OptionSimple("timestamp=", "[0-9]+", null, "If set, all columns will be written with the given timestamp", false);
+        final OptionDistribution size = new OptionDistribution("size=", "FIXED(34)", "Cell size distribution");
     }
 
     private static final class NameOptions extends Options
@@ -145,18 +161,18 @@ public class SettingsColumn implements Serializable
         @Override
         public List<? extends Option> options()
         {
-            return Arrays.asList(name, superColumns, comparator, size, generator);
+            return Arrays.asList(name, slice, superColumns, comparator, timestamp, size);
         }
     }
 
     private static final class CountOptions extends Options
     {
-        final OptionDistribution count = new OptionDistribution("n=", "FIXED(5)");
+        final OptionDistribution count = new OptionDistribution("n=", "FIXED(5)", "Cell count distribution, per operation");
 
         @Override
         public List<? extends Option> options()
         {
-            return Arrays.asList(count, superColumns, comparator, size, generator);
+            return Arrays.asList(count, slice, superColumns, comparator, timestamp, size);
         }
     }
 
@@ -194,4 +210,29 @@ public class SettingsColumn implements Serializable
             }
         };
     }
+
+    /* Custom serializaiton invoked here to make legacy thrift based table creation work with StressD. This code requires
+     * the names attribute to be populated. Since the names attribute is set as a List[ByteBuffer] we switch it
+     * to an array on the way out and back to a buffer when it's being read in.
+     */
+
+    private void writeObject(ObjectOutputStream oos) throws IOException
+    {
+        oos.defaultWriteObject();
+        ArrayList<byte[]> namesBytes = new ArrayList<>();
+        for (ByteBuffer buffer : this.names)
+            namesBytes.add(ByteBufferUtil.getArray(buffer));
+        oos.writeObject(namesBytes);
+    }
+
+    private void readObject(ObjectInputStream ois) throws ClassNotFoundException, IOException
+    {
+        ois.defaultReadObject();
+        List<ByteBuffer> namesBuffer = new ArrayList<>();
+        List<byte[]> namesBytes = (List<byte[]>) ois.readObject();
+        for (byte[] bytes : namesBytes)
+            namesBuffer.add(ByteBuffer.wrap(bytes));
+        this.names = new ArrayList<>(namesBuffer);
+    }
+
 }

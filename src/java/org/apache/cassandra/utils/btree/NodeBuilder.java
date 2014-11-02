@@ -25,7 +25,6 @@ import java.util.Comparator;
 
 import static org.apache.cassandra.utils.btree.BTree.EMPTY_BRANCH;
 import static org.apache.cassandra.utils.btree.BTree.FAN_FACTOR;
-import static org.apache.cassandra.utils.btree.BTree.POSITIVE_INFINITY;
 import static org.apache.cassandra.utils.btree.BTree.compare;
 import static org.apache.cassandra.utils.btree.BTree.find;
 import static org.apache.cassandra.utils.btree.BTree.getKeyEnd;
@@ -69,17 +68,25 @@ final class NodeBuilder
     void clear()
     {
         NodeBuilder current = this;
-        while (current != null)
+        while (current != null && current.upperBound != null)
         {
-            if (current.upperBound != null)
-            {
-                current.reset(null, null, null, null);
-                Arrays.fill(current.buildKeys, 0, current.maxBuildKeyPosition, null);
-                Arrays.fill(current.buildChildren, 0, current.maxBuildKeyPosition + 1, null);
-                current.maxBuildKeyPosition = 0;
-            }
+            current.clearSelf();
             current = current.child;
         }
+        current = parent;
+        while (current != null && current.upperBound != null)
+        {
+            current.clearSelf();
+            current = current.parent;
+        }
+    }
+
+    void clearSelf()
+    {
+        reset(null, null, null, null);
+        Arrays.fill(buildKeys, 0, maxBuildKeyPosition, null);
+        Arrays.fill(buildChildren, 0, maxBuildKeyPosition + 1, null);
+        maxBuildKeyPosition = 0;
     }
 
     // reset counters/setup to copy from provided node
@@ -96,6 +103,21 @@ final class NodeBuilder
         copyFromChildPosition = 0;
     }
 
+    NodeBuilder finish()
+    {
+        assert copyFrom != null;
+        int copyFromKeyEnd = getKeyEnd(copyFrom);
+
+        if (buildKeyPosition + buildChildPosition > 0)
+        {
+            // only want to copy if we've already changed something, otherwise we'll return the original
+            copyKeys(copyFromKeyEnd);
+            if (!isLeaf(copyFrom))
+                copyChildren(copyFromKeyEnd + 1);
+        }
+        return isRoot() ? null : ascend();
+    }
+
     /**
      * Inserts or replaces the provided key, copying all not-yet-visited keys prior to it into our buffer.
      *
@@ -109,9 +131,33 @@ final class NodeBuilder
         assert copyFrom != null;
         int copyFromKeyEnd = getKeyEnd(copyFrom);
 
-        int i = find(comparator, key, copyFrom, copyFromKeyPosition, copyFromKeyEnd);
-        boolean found = i >= 0; // exact key match?
+        int i = copyFromKeyPosition;
+        boolean found; // exact key match?
         boolean owns = true; // true iff this node (or a child) should contain the key
+        if (i == copyFromKeyEnd)
+        {
+            found = false;
+        }
+        else
+        {
+            // this optimisation is for the common scenario of updating an existing row with the same columns/keys
+            // and simply avoids performing a binary search until we've checked the proceeding key;
+            // possibly we should disable this check if we determine that it fails more than a handful of times
+            // during any given builder use to get the best of both worlds
+            int c = -comparator.compare(key, copyFrom[i]);
+            if (c >= 0)
+            {
+                found = c == 0;
+            }
+            else
+            {
+                i = find(comparator, key, copyFrom, i + 1, copyFromKeyEnd);
+                found = i >= 0;
+                if (!found)
+                    i = -i - 1;
+            }
+        }
+
         if (found)
         {
             Object prev = copyFrom[i];
@@ -121,12 +167,8 @@ final class NodeBuilder
                 return null;
             key = next;
         }
-        else
-        {
-            i = -i - 1;
-            if (i == copyFromKeyEnd && compare(comparator, upperBound, key) <= 0)
-                owns = false;
-        }
+        else if (i == copyFromKeyEnd && compare(comparator, key, upperBound) >= 0)
+            owns = false;
 
         if (isLeaf(copyFrom))
         {
@@ -194,9 +236,6 @@ final class NodeBuilder
                 copyChildren(copyFromKeyEnd + 1); // since we know that there are exactly 1 more child nodes, than keys
             }
         }
-
-        if (key == POSITIVE_INFINITY && isRoot())
-            return null;
 
         return ascend();
     }
@@ -280,7 +319,7 @@ final class NodeBuilder
     void addNewKey(Object key)
     {
         ensureRoom(buildKeyPosition + 1);
-        buildKeys[buildKeyPosition++] = key;
+        buildKeys[buildKeyPosition++] = updateFunction.apply(key);
     }
 
     // copies children from copyf to the builder, up to the provided index in copyf (exclusive)

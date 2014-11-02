@@ -16,13 +16,17 @@ src/**/gen-java
 build/
 src/gen-java/
 src/resources/org/apache/cassandra/config/
+logs/
+data/
+conf/hotspot_compiler
 
 # C* debs
 build-stamp
 build.properties
 debian/cassandra*debhelper*
-debian/cassandra.substvars
+debian/cassandra*.substvars
 debian/cassandra/
+debian/cassandra-tools/
 debian/files
 
 # gitignore doesn't help with modified files - you may wish to:

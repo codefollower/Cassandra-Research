@@ -26,6 +26,8 @@ import java.util.Queue;
 
 import org.apache.cassandra.utils.ObjectSizes;
 
+import static org.apache.cassandra.utils.btree.UpdateFunction.NoOp;
+
 public class BTree
 {
     /**
@@ -60,12 +62,6 @@ public class BTree
     }
     // NB we encode Path indexes as Bytes, so this needs to be less than Byte.MAX_VALUE / 2
     static final int FAN_FACTOR = 1 << FAN_SHIFT;
-    static final int QUICK_MERGE_LIMIT = Math.min(FAN_FACTOR, 16) * 2;
-
-    // Maximum depth of any B-Tree. In reality this is just an arbitrary limit, and is currently imposed on iterators only,
-    // but a maximum depth sufficient to store at worst Integer.MAX_VALUE items seems reasonable
-    // 2^n = (2^k).(2^(n/k)) => 2^31 <= 2^(FAN_SHIFT-1) . 2^ceil(31 / (FAN_SHIFT - 1))
-    static final int MAX_DEPTH = (int) Math.ceil(31d / (FAN_SHIFT - 1));
 
     // An empty BTree Leaf - which is the same as an empty BTree
     static final Object[] EMPTY_LEAF = new Object[0];
@@ -83,6 +79,11 @@ public class BTree
         return EMPTY_LEAF;
     }
 
+    public static <V> Object[] build(Collection<V> source, Comparator<V> comparator, boolean sorted, UpdateFunction<V> updateF)
+    {
+        return build(source, source.size(), comparator, sorted, updateF);
+    }
+
     /**
      * Creates a BTree containing all of the objects in the provided collection
      *
@@ -92,17 +93,23 @@ public class BTree
      * @param <V>
      * @return
      */
-    public static <V> Object[] build(Collection<V> source, Comparator<V> comparator, boolean sorted, UpdateFunction<V> updateF)
+    public static <V> Object[] build(Iterable<V> source, int size, Comparator<V> comparator, boolean sorted, UpdateFunction<V> updateF)
     {
-        int size = source.size();
-
         if (size < FAN_FACTOR)
         {
             // pad to even length to match contract that all leaf nodes are even
-            V[] values = source.toArray((V[]) new Object[size + (size & 1)]);
+            V[] values = (V[]) new Object[size + (size & 1)];
+            {
+                int i = 0;
+                for (V v : source)
+                    values[i++] = v;
+            }
+
             // inline sorting since we're already calling toArray
             if (!sorted)
                 Arrays.sort(values, 0, size, comparator);
+
+            // if updateF is specified
             if (updateF != null)
             {
                 for (int i = 0 ; i < size ; i++)
@@ -119,7 +126,7 @@ public class BTree
         Builder builder = queue.poll();
         if (builder == null)
             builder = new Builder();
-        Object[] btree = builder.build(source, size);
+        Object[] btree = builder.build(source, updateF, size);
         queue.add(builder);
         return btree;
     }
@@ -136,7 +143,16 @@ public class BTree
      */
     public static <V> Object[] update(Object[] btree, Comparator<V> comparator, Collection<V> updateWith, boolean updateWithIsSorted)
     {
-        return update(btree, comparator, updateWith, updateWithIsSorted, UpdateFunction.NoOp.<V>instance());
+        return update(btree, comparator, updateWith, updateWithIsSorted, NoOp.<V>instance());
+    }
+
+    public static <V> Object[] update(Object[] btree,
+                                      Comparator<V> comparator,
+                                      Collection<V> updateWith,
+                                      boolean updateWithIsSorted,
+                                      UpdateFunction<V> updateF)
+    {
+        return update(btree, comparator, updateWith, updateWith.size(), updateWithIsSorted, updateF);
     }
 
     /**
@@ -152,15 +168,16 @@ public class BTree
      */
     public static <V> Object[] update(Object[] btree,
                                       Comparator<V> comparator,
-                                      Collection<V> updateWith,
+                                      Iterable<V> updateWith,
+                                      int updateWithLength,
                                       boolean updateWithIsSorted,
                                       UpdateFunction<V> updateF)
     {
         if (btree.length == 0)
-            return build(updateWith, comparator, updateWithIsSorted, updateF);
+            return build(updateWith, updateWithLength, comparator, updateWithIsSorted, updateF);
 
         if (!updateWithIsSorted)
-            updateWith = sorted(updateWith, comparator, updateWith.size());
+            updateWith = sorted(updateWith, comparator, updateWithLength);
 
         Queue<Builder> queue = modifier.get();
         Builder builder = queue.poll();
@@ -179,9 +196,9 @@ public class BTree
      * @param <V>
      * @return
      */
-    public static <V> Cursor<V> slice(Object[] btree, boolean forwards)
+    public static <V> Cursor<V, V> slice(Object[] btree, boolean forwards)
     {
-        Cursor<V> r = Cursor.newCursor();
+        Cursor<V, V> r = new Cursor<>();
         r.reset(btree, forwards);
         return r;
     }
@@ -197,9 +214,9 @@ public class BTree
      * @param <V>
      * @return
      */
-    public static <V> Cursor<V> slice(Object[] btree, Comparator<V> comparator, V start, V end, boolean forwards)
+    public static <K, V extends K> Cursor<K, V> slice(Object[] btree, Comparator<K> comparator, K start, K end, boolean forwards)
     {
-        Cursor<V> r = Cursor.newCursor();
+        Cursor<K, V> r = new Cursor<>();
         r.reset(btree, comparator, start, end, forwards);
         return r;
     }
@@ -215,9 +232,9 @@ public class BTree
      * @param <V>
      * @return
      */
-    public static <V> Cursor<V> slice(Object[] btree, Comparator<V> comparator, V start, boolean startInclusive, V end, boolean endInclusive, boolean forwards)
+    public static <K, V extends K> Cursor<K, V> slice(Object[] btree, Comparator<K> comparator, K start, boolean startInclusive, K end, boolean endInclusive, boolean forwards)
     {
-        Cursor<V> r = Cursor.newCursor();
+        Cursor<K, V> r = new Cursor<>();
         r.reset(btree, comparator, start, startInclusive, end, endInclusive, forwards);
         return r;
     }
@@ -251,27 +268,13 @@ public class BTree
     // wrapping generic Comparator with support for Special +/- infinity sentinels
     static <V> int find(Comparator<V> comparator, Object key, Object[] a, final int fromIndex, final int toIndex)
     {
-        // attempt to terminate quickly by checking the first element,
-        // as many uses of this class will (probably) be updating identical sets
-        if (fromIndex >= toIndex)
-            return -(fromIndex + 1);
-
-        int c = compare(comparator, key, a[fromIndex]);
-        if (c <= 0)
-        {
-            if (c == 0)
-                return fromIndex;
-            else
-                return -(fromIndex + 1);
-        }
-
-        int low = fromIndex + 1;
+        int low = fromIndex;
         int high = toIndex - 1;
 
         while (low <= high)
         {
             int mid = (low + high) / 2;
-            int cmp = compare(comparator, key, a[mid]);
+            int cmp = comparator.compare((V) key, (V) a[mid]);
 
             if (cmp > 0)
                 low = mid + 1;
@@ -316,8 +319,24 @@ public class BTree
         return (node.length & 1) == 0;
     }
 
+    public static boolean isEmpty(Object[] tree)
+    {
+        return tree.length == 0;
+    }
+
+    public static int depth(Object[] tree)
+    {
+        int depth = 1;
+        while (!isLeaf(tree))
+        {
+            depth++;
+            tree = (Object[]) tree[getKeyEnd(tree)];
+        }
+        return depth;
+    }
+
     // Special class for making certain operations easier, so we can define a +/- Inf
-    private static interface Special extends Comparable<Object> { }
+    static interface Special extends Comparable<Object> { }
     static final Special POSITIVE_INFINITY = new Special()
     {
         public int compareTo(Object o)
@@ -343,9 +362,12 @@ public class BTree
     };
 
     // return a sorted collection
-    private static <V> Collection<V> sorted(Collection<V> collection, Comparator<V> comparator, int size)
+    private static <V> Collection<V> sorted(Iterable<V> source, Comparator<V> comparator, int size)
     {
-        V[] vs = collection.toArray((V[]) new Object[size]);
+        V[] vs = (V[]) new Object[size];
+        int i = 0;
+        for (V v : source)
+            vs[i++] = v;
         Arrays.sort(vs, comparator);
         return Arrays.asList(vs);
     }
@@ -359,11 +381,6 @@ public class BTree
         if (b instanceof Special)
             return -((Special) b).compareTo(a);
         return cmp.compare((V) a, (V) b);
-    }
-
-    public static boolean isWellFormed(Object[] btree)
-    {
-        return isWellFormed(null, btree, true, NEGATIVE_INFINITY, POSITIVE_INFINITY);
     }
 
     public static boolean isWellFormed(Object[] btree, Comparator<? extends Object> cmp)

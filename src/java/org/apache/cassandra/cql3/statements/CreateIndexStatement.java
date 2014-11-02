@@ -35,7 +35,7 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.thrift.ThriftValidation;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 
 /** A <code>CREATE INDEX</code> statement parsed from a CQL query. */
 public class CreateIndexStatement extends SchemaAlteringStatement
@@ -119,14 +119,15 @@ public class CreateIndexStatement extends SchemaAlteringStatement
     }
 
     //参考测试: my.test.cql3.statements.IndexTest.test_CreateIndexStatement_announceMigration()
-    public void announceMigration() throws RequestValidationException
+    public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
+
     {
         logger.debug("Updating column {} definition for index {}", target.column, indexName);
-        CFMetaData cfm = Schema.instance.getCFMetaData(keyspace(), columnFamily()).clone();
+        CFMetaData cfm = Schema.instance.getCFMetaData(keyspace(), columnFamily()).copy();
         ColumnDefinition cd = cfm.getColumnDefinition(target.column);
 
         if (cd.getIndexType() != null && ifNotExists)
-            return;
+            return false;
 
         if (properties.isCustom)
         {
@@ -149,12 +150,13 @@ public class CreateIndexStatement extends SchemaAlteringStatement
 
         cd.setIndexName(indexName);
         cfm.addDefaultIndexNames();
-        MigrationManager.announceColumnFamilyUpdate(cfm, false);
+        MigrationManager.announceColumnFamilyUpdate(cfm, false, isLocalOnly);
+        return true;
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
         // Creating an index is akin to updating the CF
-        return ResultMessage.SchemaChange.Change.UPDATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TABLE, keyspace(), columnFamily());
     }
 }

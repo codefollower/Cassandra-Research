@@ -24,8 +24,10 @@ import java.util.*;
 
 import com.google.common.collect.AbstractIterator;
 
+import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.db.marshal.*;
-import org.apache.cassandra.cql3.ResultSet;
+import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.service.pager.QueryPager;
 
 /** a utility for doing internal cql-based queries */
 public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
@@ -40,6 +42,11 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
         return new FromResultList(results);
     }
 
+    public static UntypedResultSet create(SelectStatement select, QueryPager pager, int pageSize)
+    {
+        return new FromPager(select, pager, pageSize);
+    }
+
     public boolean isEmpty()
     {
         return size() == 0;
@@ -47,6 +54,9 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 
     public abstract int size();
     public abstract Row one();
+
+    // No implemented by all subclasses, but we use it when we know it's there (for tests)
+    public abstract List<ColumnSpecification> metadata();
 
     private static class FromResultSet extends UntypedResultSet
     {
@@ -82,6 +92,11 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
                     return new Row(cqlRows.metadata.names, iter.next());
                 }
             };
+        }
+
+        public List<ColumnSpecification> metadata()
+        {
+            return cqlRows.metadata.names;
         }
     }
 
@@ -119,6 +134,65 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
                     return new Row(iter.next());
                 }
             };
+        }
+
+        public List<ColumnSpecification> metadata()
+        {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    private static class FromPager extends UntypedResultSet
+    {
+        private final SelectStatement select;
+        private final QueryPager pager;
+        private final int pageSize;
+        private final List<ColumnSpecification> metadata;
+
+        private FromPager(SelectStatement select, QueryPager pager, int pageSize)
+        {
+            this.select = select;
+            this.pager = pager;
+            this.pageSize = pageSize;
+            this.metadata = select.getResultMetadata().names;
+        }
+
+        public int size()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public Row one()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public Iterator<Row> iterator()
+        {
+            return new AbstractIterator<Row>()
+            {
+                private Iterator<List<ByteBuffer>> currentPage;
+
+                protected Row computeNext()
+                {
+                    try {
+                        while (currentPage == null || !currentPage.hasNext())
+                        {
+                            if (pager.isExhausted())
+                                return endOfData();
+                            currentPage = select.process(pager.fetchPage(pageSize)).rows.iterator();
+                        }
+                        return new Row(metadata, currentPage.next());
+                    } catch (RequestValidationException | RequestExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            };
+        }
+
+        public List<ColumnSpecification> metadata()
+        {
+            return metadata;
         }
     }
 

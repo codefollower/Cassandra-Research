@@ -18,11 +18,11 @@
 package org.apache.cassandra.service;
 
 import java.io.File;
-import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
@@ -32,7 +32,6 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.JMXConfigurableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.dht.Bounds;
@@ -43,7 +42,7 @@ import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.locator.TokenMetadata;
-import org.apache.cassandra.net.IAsyncCallback;
+import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -134,7 +133,6 @@ public class ActiveRepairService
 
     public void removeFromActiveSessions(RepairSession session)
     {
-        FailureDetector.instance.unregisterFailureDetectionEventListener(session);
         Gossiper.instance.unregister(session);
         sessions.remove(session.getId());
     }
@@ -172,9 +170,6 @@ public class ActiveRepairService
      */
     public static Set<InetAddress> getNeighbors(String keyspaceName, Range<Token> toRepair, Collection<String> dataCenters, Collection<String> hosts)
     {
-        if (dataCenters != null && !dataCenters.contains(DatabaseDescriptor.getLocalDataCenter()))
-            throw new IllegalArgumentException("The local data center must be part of the repair");
-
         StorageService ss = StorageService.instance;
         Map<Range<Token>, List<InetAddress>> replicaSets = ss.getRangeToAddressMap(keyspaceName);
         Range<Token> rangeSuperSet = null;
@@ -249,18 +244,23 @@ public class ActiveRepairService
         UUID parentRepairSession = UUIDGen.getTimeUUID();
         registerParentRepairSession(parentRepairSession, columnFamilyStores, ranges);
         final CountDownLatch prepareLatch = new CountDownLatch(endpoints.size());
-        IAsyncCallback callback = new IAsyncCallback()
+        final AtomicBoolean status = new AtomicBoolean(true);
+        IAsyncCallbackWithFailure callback = new IAsyncCallbackWithFailure()
         {
-            @Override
             public void response(MessageIn msg)
             {
                 prepareLatch.countDown();
             }
 
-            @Override
             public boolean isLatencyForSnitch()
             {
                 return false;
+            }
+
+            public void onFailure(InetAddress from)
+            {
+                status.set(false);
+                prepareLatch.countDown();
             }
         };
 
@@ -272,7 +272,7 @@ public class ActiveRepairService
         {
             PrepareMessage message = new PrepareMessage(parentRepairSession, cfIds, ranges);
             MessageOut<RepairMessage> msg = message.createMessage();
-            MessagingService.instance().sendRR(msg, neighbour, callback);
+            MessagingService.instance().sendRRWithFailure(msg, neighbour, callback);
         }
         try
         {
@@ -283,6 +283,13 @@ public class ActiveRepairService
             parentRepairSessions.remove(parentRepairSession);
             throw new RuntimeException("Did not get replies from all endpoints.", e);
         }
+
+        if (!status.get())
+        {
+            parentRepairSessions.remove(parentRepairSession);
+            throw new RuntimeException("Did not get positive replies from all endpoints.");
+        }
+
         return parentRepairSession;
     }
 
@@ -294,7 +301,7 @@ public class ActiveRepairService
             Set<SSTableReader> sstables = new HashSet<>();
             for (SSTableReader sstable : cfs.getSSTables())
             {
-                if (new Bounds<>(sstable.first.token, sstable.last.token).intersects(ranges))
+                if (new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(ranges))
                 {
                     if (!sstable.isRepaired())
                     {
@@ -307,19 +314,21 @@ public class ActiveRepairService
         parentRepairSessions.put(parentRepairSession, new ParentRepairSession(columnFamilyStores, ranges, sstablesToRepair, System.currentTimeMillis()));
     }
 
-    public void finishParentSession(UUID parentSession, Set<InetAddress> neighbors) throws InterruptedException, ExecutionException, IOException
+    public void finishParentSession(UUID parentSession, Set<InetAddress> neighbors, boolean doAntiCompaction)
     {
-
-        for (InetAddress neighbor : neighbors)
-        {
-            AnticompactionRequest acr = new AnticompactionRequest(parentSession);
-            MessageOut<RepairMessage> req = acr.createMessage();
-            MessagingService.instance().sendOneWay(req, neighbor);
-        }
         try
         {
-            List<Future<?>> futures = doAntiCompaction(parentSession);
-            FBUtilities.waitOnFutures(futures);
+            if (doAntiCompaction)
+            {
+                for (InetAddress neighbor : neighbors)
+                {
+                    AnticompactionRequest acr = new AnticompactionRequest(parentSession);
+                    MessageOut<RepairMessage> req = acr.createMessage();
+                    MessagingService.instance().sendOneWay(req, neighbor);
+                }
+                List<Future<?>> futures = doAntiCompaction(parentSession);
+                FBUtilities.waitOnFutures(futures);
+            }
         }
         finally
         {
@@ -332,7 +341,7 @@ public class ActiveRepairService
         return parentRepairSessions.get(parentSessionId);
     }
 
-    public List<Future<?>> doAntiCompaction(UUID parentRepairSession) throws InterruptedException, ExecutionException, IOException
+    public List<Future<?>> doAntiCompaction(UUID parentRepairSession)
     {
         assert parentRepairSession != null;
         ParentRepairSession prs = getParentRepairSession(parentRepairSession);

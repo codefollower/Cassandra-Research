@@ -29,21 +29,25 @@ import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.compress.*;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.CfDef;
 import org.apache.cassandra.thrift.ColumnDef;
 import org.apache.cassandra.thrift.IndexType;
 import org.apache.cassandra.utils.ByteBufferUtil;
-
+import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 
-public class CFMetaDataTest extends SchemaLoader
+public class CFMetaDataTest
 {
-    private static String KEYSPACE = "Keyspace1";
-    private static String COLUMN_FAMILY = "Standard1";
+    private static final String KEYSPACE1 = "CFMetaDataTest1";
+    private static final String CF_STANDARD1 = "Standard1";
 
     private static List<ColumnDef> columnDefs = new ArrayList<ColumnDef>();
 
@@ -58,21 +62,31 @@ public class CFMetaDataTest extends SchemaLoader
                                     .setIndex_type(IndexType.KEYS));
     }
 
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1));
+    }
+
     @Test
     public void testThriftConversion() throws Exception
     {
         CfDef cfDef = new CfDef().setDefault_validation_class(AsciiType.class.getCanonicalName())
                                  .setComment("Test comment")
                                  .setColumn_metadata(columnDefs)
-                                 .setKeyspace(KEYSPACE)
-                                 .setName(COLUMN_FAMILY);
+                                 .setKeyspace(KEYSPACE1)
+                                 .setName(CF_STANDARD1);
 
         // convert Thrift to CFMetaData
         CFMetaData cfMetaData = CFMetaData.fromThrift(cfDef);
 
         CfDef thriftCfDef = new CfDef();
-        thriftCfDef.keyspace = KEYSPACE;
-        thriftCfDef.name = COLUMN_FAMILY;
+        thriftCfDef.keyspace = KEYSPACE1;
+        thriftCfDef.name = CF_STANDARD1;
         thriftCfDef.default_validation_class = cfDef.default_validation_class;
         thriftCfDef.comment = cfDef.comment;
         thriftCfDef.column_metadata = new ArrayList<ColumnDef>();
@@ -109,7 +123,7 @@ public class CFMetaDataTest extends SchemaLoader
                 checkInverses(cfm);
 
                 // Testing with compression to catch #3558
-                CFMetaData withCompression = cfm.clone();
+                CFMetaData withCompression = cfm.copy();
                 withCompression.compressionParameters(new CompressionParameters(SnappyCompressor.instance, 32768, new HashMap<String, String>()));
                 checkInverses(withCompression);
             }
@@ -122,7 +136,7 @@ public class CFMetaDataTest extends SchemaLoader
 
         // Test thrift conversion
         CFMetaData before = cfm;
-        CFMetaData after = CFMetaData.fromThrift(before.toThrift());
+        CFMetaData after = CFMetaData.fromThriftForUpdate(before.toThrift(), before);
         assert before.equals(after) : String.format("%n%s%n!=%n%s", before, after);
 
         // Test schema conversion

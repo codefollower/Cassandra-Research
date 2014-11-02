@@ -36,6 +36,7 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.LengthAvailableInputStream;
 import org.apache.cassandra.io.util.SequentialWriter;
@@ -172,6 +173,8 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 type = OperationType.KEY_CACHE_SAVE;
             else if (cacheType == CacheService.CacheType.ROW_CACHE)
                 type = OperationType.ROW_CACHE_SAVE;
+            else if (cacheType == CacheService.CacheType.COUNTER_CACHE)
+                type = OperationType.COUNTER_CACHE_SAVE;
             else
                 type = OperationType.UNKNOWN;
 
@@ -258,32 +261,37 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         {
             File path = getCachePath(pathInfo.keyspace, pathInfo.columnFamily, pathInfo.cfId, CURRENT_VERSION);
             File tmpFile = FileUtils.createTempFile(path.getName(), null, path.getParentFile());
-            return SequentialWriter.open(tmpFile, true);
+            return SequentialWriter.open(tmpFile);
         }
 
         private void deleteOldCacheFiles()
         {
             File savedCachesDir = new File(DatabaseDescriptor.getSavedCachesLocation());
             assert savedCachesDir.exists() && savedCachesDir.isDirectory();
-
-            for (File file : savedCachesDir.listFiles())
+            File[] files = savedCachesDir.listFiles();
+            if (files != null)
             {
-                if (!file.isFile())
-                    continue; // someone's been messing with our directory.  naughty!
-
-                if (file.getName().endsWith(cacheType.toString())
-                    || file.getName().endsWith(String.format("%s-%s.db", cacheType.toString(), CURRENT_VERSION)))
+                for (File file : files)
                 {
-                    if (!file.delete())
-                        logger.warn("Failed to delete {}", file.getAbsolutePath());
+                    if (!file.isFile())
+                        continue; // someone's been messing with our directory.  naughty!
+
+                    if (file.getName().endsWith(cacheType.toString())
+                            || file.getName().endsWith(String.format("%s-%s.db", cacheType.toString(), CURRENT_VERSION)))
+                    {
+                        if (!file.delete())
+                            logger.warn("Failed to delete {}", file.getAbsolutePath());
+                    }
                 }
             }
+            else
+                logger.warn("Could not list files in {}", savedCachesDir);
         }
     }
 
     public interface CacheSerializer<K extends CacheKey, V>
     {
-        void serialize(K key, DataOutput out) throws IOException;
+        void serialize(K key, DataOutputPlus out) throws IOException;
 
         Future<Pair<K, V>> deserialize(DataInputStream in, ColumnFamilyStore cfs) throws IOException;
     }

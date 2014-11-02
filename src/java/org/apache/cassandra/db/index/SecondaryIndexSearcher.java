@@ -22,6 +22,7 @@ import java.util.*;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ExtendedFilter;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -47,11 +48,31 @@ public abstract class SecondaryIndexSearcher
     public abstract List<Row> search(ExtendedFilter filter);
 
     /**
-     * @return true this index is able to handle given clauses.
+     * @return true this index is able to handle the given index expressions.
      */
-    public boolean isIndexing(List<IndexExpression> clause)
+    public boolean canHandleIndexClause(List<IndexExpression> clause)
     {
-        return highestSelectivityPredicate(clause) != null;
+        for (IndexExpression expression : clause)
+        {
+            if (!columns.contains(expression.column) || !expression.operator.allowsIndexQuery())
+                continue;
+
+            SecondaryIndex index = indexManager.getIndexForColumn(expression.column);
+            if (index != null && index.getIndexCfs() != null)
+                return true;
+        }
+        return false;
+    }
+    
+    /**
+     * Validates the specified {@link IndexExpression}. It will throw an {@link org.apache.cassandra.exceptions.InvalidRequestException}
+     * if the provided clause is not valid for the index implementation.
+     *
+     * @param indexExpression An {@link IndexExpression} to be validated
+     * @throws org.apache.cassandra.exceptions.InvalidRequestException in case of validation errors
+     */
+    public void validate(IndexExpression indexExpression) throws InvalidRequestException
+    {
     }
 
     protected IndexExpression highestSelectivityPredicate(List<IndexExpression> clause)

@@ -20,9 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
-import org.jboss.netty.buffer.ChannelBuffer;
+import io.netty.buffer.ByteBuf;
 
-import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.*;
@@ -32,13 +31,13 @@ public class PrepareMessage extends Message.Request
 {
     public static final Message.Codec<PrepareMessage> codec = new Message.Codec<PrepareMessage>()
     {
-        public PrepareMessage decode(ChannelBuffer body, int version)
+        public PrepareMessage decode(ByteBuf body, int version)
         {
             String query = CBUtil.readLongString(body);
             return new PrepareMessage(query);
         }
 
-        public void encode(PrepareMessage msg, ChannelBuffer dest, int version)
+        public void encode(PrepareMessage msg, ByteBuf dest, int version)
         {
             CBUtil.writeLongString(msg.query, dest);
         }
@@ -74,7 +73,7 @@ public class PrepareMessage extends Message.Request
                 Tracing.instance.begin("Preparing CQL3 query", ImmutableMap.of("query", query));
             }
 
-            Message.Response response = QueryProcessor.prepare(query, state.getClientState(), false);
+            Message.Response response = state.getClientState().getCQLQueryHandler().prepare(query, state);
 
             if (tracingId != null)
                 response.setTracingId(tracingId);

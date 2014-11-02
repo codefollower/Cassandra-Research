@@ -21,7 +21,6 @@ package org.apache.cassandra.utils.btree;
 import java.util.Comparator;
 import java.util.Iterator;
 
-import static org.apache.cassandra.utils.btree.BTree.MAX_DEPTH;
 import static org.apache.cassandra.utils.btree.BTree.NEGATIVE_INFINITY;
 import static org.apache.cassandra.utils.btree.BTree.POSITIVE_INFINITY;
 import static org.apache.cassandra.utils.btree.BTree.getLeafKeyEnd;
@@ -32,7 +31,7 @@ import static org.apache.cassandra.utils.btree.BTree.isLeaf;
  *
  * @param <V>
  */
-public final class Cursor<V> extends Path implements Iterator<V>
+public final class Cursor<K, V extends K> extends Path implements Iterator<V>
 {
     /*
      * Conceptually, a Cursor derives two Paths, one for the first object in the slice requested (inclusive),
@@ -44,31 +43,12 @@ public final class Cursor<V> extends Path implements Iterator<V>
      * the first one.
      */
 
-    /**
-     * Returns a cursor that can be reused to iterate over trees
-     *
-     * @param <V>
-     * @return
-     */
-    static <V> Cursor<V> newCursor()
-    {
-        // try to encourage stack allocation - may be misguided. but no harm
-        Object[][] stack = new Object[MAX_DEPTH][];
-        byte[] index = new byte[MAX_DEPTH];
-        return new Cursor(stack, index);
-    }
-
     // the last node covered by the requested range
     private Object[] endNode;
     // the index within endNode that signals we're finished -- that is, endNode[endIndex] is NOT part of the Cursor
     private byte endIndex;
 
     private boolean forwards;
-
-    private Cursor(Object[][] stack, byte[] index)
-    {
-        super(stack, index);
-    }
 
     /**
      * Reset this cursor for the provided tree, to iterate over its entire range
@@ -90,7 +70,7 @@ public final class Cursor<V> extends Path implements Iterator<V>
      * @param upperBound the last item to include, exclusive
      * @param forwards   if false, the cursor will start at the end and move backwards
      */
-    public void reset(Object[] btree, Comparator<V> comparator, V lowerBound, V upperBound, boolean forwards)
+    public void reset(Object[] btree, Comparator<K> comparator, K lowerBound, K upperBound, boolean forwards)
     {
         _reset(btree, comparator, lowerBound, true, upperBound, false, forwards);
     }
@@ -106,13 +86,14 @@ public final class Cursor<V> extends Path implements Iterator<V>
      * @param inclusiveUpperBound should include end in the iterator, if present in the tree
      * @param forwards            if false, the cursor will start at the end and move backwards
      */
-    public void reset(Object[] btree, Comparator<V> comparator, V lowerBound, boolean inclusiveLowerBound, V upperBound, boolean inclusiveUpperBound, boolean forwards)
+    public void reset(Object[] btree, Comparator<K> comparator, K lowerBound, boolean inclusiveLowerBound, K upperBound, boolean inclusiveUpperBound, boolean forwards)
     {
         _reset(btree, comparator, lowerBound, inclusiveLowerBound, upperBound, inclusiveUpperBound, forwards);
     }
 
-    private void _reset(Object[] btree, Comparator<V> comparator, Object lowerBound, boolean inclusiveLowerBound, Object upperBound, boolean inclusiveUpperBound, boolean forwards)
+    private void _reset(Object[] btree, Comparator<K> comparator, Object lowerBound, boolean inclusiveLowerBound, Object upperBound, boolean inclusiveUpperBound, boolean forwards)
     {
+        init(btree);
         if (lowerBound == null)
             lowerBound = NEGATIVE_INFINITY;
         if (upperBound == null)
@@ -120,16 +101,16 @@ public final class Cursor<V> extends Path implements Iterator<V>
 
         this.forwards = forwards;
 
-        Path findLast = Path.newPath();
+        Path findLast = new Path(this.path.length, btree);
         if (forwards)
         {
-            findLast.find(btree, comparator, upperBound, inclusiveUpperBound ? Op.HIGHER : Op.CEIL, true);
-            find(btree, comparator, lowerBound, inclusiveLowerBound ? Op.CEIL : Op.HIGHER, true);
+            findLast.find(comparator, upperBound, inclusiveUpperBound ? Op.HIGHER : Op.CEIL, true);
+            find(comparator, lowerBound, inclusiveLowerBound ? Op.CEIL : Op.HIGHER, true);
         }
         else
         {
-            findLast.find(btree, comparator, lowerBound, inclusiveLowerBound ? Op.LOWER : Op.FLOOR, false);
-            find(btree, comparator, upperBound, inclusiveUpperBound ? Op.FLOOR : Op.LOWER, false);
+            findLast.find(comparator, lowerBound, inclusiveLowerBound ? Op.LOWER : Op.FLOOR, false);
+            find(comparator, upperBound, inclusiveUpperBound ? Op.FLOOR : Op.LOWER, false);
         }
         int c = this.compareTo(findLast, forwards);
         if (forwards ? c > 0 : c < 0)

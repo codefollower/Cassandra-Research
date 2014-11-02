@@ -87,9 +87,6 @@ public class TokenMetadata
     // nodes which are migrating to the new tokens in the ring
     private final Set<Pair<Token, InetAddress>> movingEndpoints = new HashSet<Pair<Token, InetAddress>>();
 
-    // tokens which are migrating to new endpoints
-    private final ConcurrentMap<Token, InetAddress> relocatingTokens = new ConcurrentHashMap<Token, InetAddress>();
-
     /* Use this lock for manipulating the token map */
     private final ReadWriteLock lock = new ReentrantReadWriteLock(true);
     private volatile ArrayList<Token> sortedTokens;
@@ -388,33 +385,6 @@ public class TokenMetadata
         }
     }
 
-    /**
-     * Add new relocating ranges (tokens moving from their respective endpoints, to another).
-     * @param tokens tokens being moved
-     * @param endpoint destination of moves
-     */
-    public void addRelocatingTokens(Collection<Token> tokens, InetAddress endpoint)
-    {
-        assert endpoint != null;
-        assert tokens != null && tokens.size() > 0;
-
-        lock.writeLock().lock();
-
-        try
-        {
-            for (Token token : tokens)
-            {
-                InetAddress prev = relocatingTokens.put(token, endpoint);
-                if (prev != null && !prev.equals(endpoint))
-                    logger.warn("Relocation of {} to {} overwrites previous to {}", new Object[]{token, endpoint, prev});
-            }
-        }
-        finally
-        {
-            lock.writeLock().unlock();
-        }
-    }
-
     public void removeEndpoint(InetAddress endpoint)
     {
         assert endpoint != null;
@@ -457,38 +427,6 @@ public class TokenMetadata
             }
 
             invalidateCachedRings();
-        }
-        finally
-        {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Remove pair of token/address from relocating ranges.
-     * @param endpoint
-     */
-    public void removeFromRelocating(Token token, InetAddress endpoint)
-    {
-        assert endpoint != null;
-        assert token != null;
-
-        lock.writeLock().lock();
-
-        try
-        {
-            InetAddress previous = relocatingTokens.remove(token);
-
-            if (previous == null)
-            {
-                logger.debug("Cannot remove {}, not found among the relocating (previously removed?)", token);
-            }
-            else if (!previous.equals(endpoint))
-            {
-                logger.warn(
-                        "Removal of relocating token {} with mismatched endpoint ({} != {})",
-                        new Object[]{token, endpoint, previous});
-            }
         }
         finally
         {
@@ -570,22 +508,6 @@ public class TokenMetadata
         }
     }
 
-    public boolean isRelocating(Token token)
-    {
-        assert token != null;
-
-        lock.readLock().lock();
-
-        try
-        {
-            return relocatingTokens.containsKey(token);
-        }
-        finally
-        {
-            lock.readLock().unlock();
-        }
-    }
-
     private final AtomicReference<TokenMetadata> cachedTokenMap = new AtomicReference<TokenMetadata>();
 
     /**
@@ -658,7 +580,7 @@ public class TokenMetadata
 
     /**
      * Create a copy of TokenMetadata with tokenToEndpointMap reflecting situation after all
-     * current leave, move, and relocate operations have finished.
+     * current leave, and move operations have finished.
      *
      * @return new token metadata
      */
@@ -676,9 +598,6 @@ public class TokenMetadata
 
             for (Pair<Token, InetAddress> pair : movingEndpoints)
                 metadata.updateNormalToken(pair.left, pair.right);
-
-            for (Map.Entry<Token, InetAddress> relocating: relocatingTokens.entrySet())
-                metadata.updateNormalToken(relocating.getKey(), relocating.getValue());
 
             return metadata;
         }
@@ -754,9 +673,110 @@ public class TokenMetadata
         return ranges;
     }
 
-    public void setPendingRanges(String keyspaceName, Multimap<Range<Token>, InetAddress> rangeMap)
+     /**
+     * Calculate pending ranges according to bootsrapping and leaving nodes. Reasoning is:
+     *
+     * (1) When in doubt, it is better to write too much to a node than too little. That is, if
+     * there are multiple nodes moving, calculate the biggest ranges a node could have. Cleaning
+     * up unneeded data afterwards is better than missing writes during movement.
+     * (2) When a node leaves, ranges for other nodes can only grow (a node might get additional
+     * ranges, but it will not lose any of its current ranges as a result of a leave). Therefore
+     * we will first remove _all_ leaving tokens for the sake of calculation and then check what
+     * ranges would go where if all nodes are to leave. This way we get the biggest possible
+     * ranges with regard current leave operations, covering all subsets of possible final range
+     * values.
+     * (3) When a node bootstraps, ranges of other nodes can only get smaller. Without doing
+     * complex calculations to see if multiple bootstraps overlap, we simply base calculations
+     * on the same token ring used before (reflecting situation after all leave operations have
+     * completed). Bootstrapping nodes will be added and removed one by one to that metadata and
+     * checked what their ranges would be. This will give us the biggest possible ranges the
+     * node could have. It might be that other bootstraps make our actual final ranges smaller,
+     * but it does not matter as we can clean up the data afterwards.
+     *
+     * NOTE: This is heavy and ineffective operation. This will be done only once when a node
+     * changes state in the cluster, so it should be manageable.
+     */
+    public void calculatePendingRanges(AbstractReplicationStrategy strategy, String keyspaceName)
     {
-        pendingRanges.put(keyspaceName, rangeMap);
+        lock.readLock().lock();
+        try
+        {
+            Multimap<Range<Token>, InetAddress> newPendingRanges = HashMultimap.create();
+
+            if (bootstrapTokens.isEmpty() && leavingEndpoints.isEmpty() && movingEndpoints.isEmpty())
+            {
+                if (logger.isDebugEnabled())
+                    logger.debug("No bootstrapping, leaving or moving nodes -> empty pending ranges for {}", keyspaceName);
+
+                pendingRanges.put(keyspaceName, newPendingRanges);
+                return;
+            }
+
+            Multimap<InetAddress, Range<Token>> addressRanges = strategy.getAddressRanges();
+
+            // Copy of metadata reflecting the situation after all leave operations are finished.
+            TokenMetadata allLeftMetadata = cloneAfterAllLeft();
+
+            // get all ranges that will be affected by leaving nodes
+            Set<Range<Token>> affectedRanges = new HashSet<Range<Token>>();
+            for (InetAddress endpoint : leavingEndpoints)
+                affectedRanges.addAll(addressRanges.get(endpoint));
+
+            // for each of those ranges, find what new nodes will be responsible for the range when
+            // all leaving nodes are gone.
+            TokenMetadata metadata = cloneOnlyTokenMap(); // don't do this in the loop! #7758
+            for (Range<Token> range : affectedRanges)
+            {
+                Set<InetAddress> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, metadata));
+                Set<InetAddress> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, allLeftMetadata));
+                newPendingRanges.putAll(range, Sets.difference(newEndpoints, currentEndpoints));
+            }
+
+            // At this stage newPendingRanges has been updated according to leave operations. We can
+            // now continue the calculation by checking bootstrapping nodes.
+
+            // For each of the bootstrapping nodes, simply add and remove them one by one to
+            // allLeftMetadata and check in between what their ranges would be.
+            Multimap<InetAddress, Token> bootstrapAddresses = bootstrapTokens.inverse();
+            for (InetAddress endpoint : bootstrapAddresses.keySet())
+            {
+                Collection<Token> tokens = bootstrapAddresses.get(endpoint);
+
+                allLeftMetadata.updateNormalTokens(tokens, endpoint);
+                for (Range<Token> range : strategy.getAddressRanges(allLeftMetadata).get(endpoint))
+                    newPendingRanges.put(range, endpoint);
+                allLeftMetadata.removeEndpoint(endpoint);
+            }
+
+            // At this stage newPendingRanges has been updated according to leaving and bootstrapping nodes.
+            // We can now finish the calculation by checking moving nodes.
+
+            // For each of the moving nodes, we do the same thing we did for bootstrapping:
+            // simply add and remove them one by one to allLeftMetadata and check in between what their ranges would be.
+            for (Pair<Token, InetAddress> moving : movingEndpoints)
+            {
+                InetAddress endpoint = moving.right; // address of the moving node
+
+                //  moving.left is a new token of the endpoint
+                allLeftMetadata.updateNormalToken(moving.left, endpoint);
+
+                for (Range<Token> range : strategy.getAddressRanges(allLeftMetadata).get(endpoint))
+                {
+                    newPendingRanges.put(range, endpoint);
+                }
+
+                allLeftMetadata.removeEndpoint(endpoint);
+            }
+
+            pendingRanges.put(keyspaceName, newPendingRanges);
+
+            if (logger.isDebugEnabled())
+                logger.debug("Pending ranges:\n{}", (pendingRanges.isEmpty() ? "<empty>" : printPendingRanges()));
+        }
+        finally
+        {
+            lock.readLock().unlock();
+        }
     }
 
     public Token getPredecessor(Token token)
@@ -833,15 +853,6 @@ public class TokenMetadata
         }
     }
 
-    /**
-     * Ranges which are migrating to new endpoints.
-     * @return set of token-address pairs of relocating ranges
-     */
-    public Map<Token, InetAddress> getRelocatingRanges()
-    {
-        return relocatingTokens;
-    }
-
     public static int firstTokenIndex(final ArrayList ring, Token start, boolean insertMin)
     {
         assert ring.size() > 0;
@@ -908,12 +919,14 @@ public class TokenMetadata
         lock.writeLock().lock();
         try
         {
-            bootstrapTokens.clear();
             tokenToEndpointMap.clear();
-            topology.clear();
+            endpointToHostIdMap.clear();
+            bootstrapTokens.clear();
             leavingEndpoints.clear();
             pendingRanges.clear();
-            endpointToHostIdMap.clear();
+            movingEndpoints.clear();
+            sortedTokens.clear();
+            topology.clear();
             invalidateCachedRings();
         }
         finally
@@ -980,7 +993,7 @@ public class TokenMetadata
         return sb.toString();
     }
 
-    public String printPendingRanges()
+    private String printPendingRanges()
     {
         StringBuilder sb = new StringBuilder();
 
@@ -992,16 +1005,6 @@ public class TokenMetadata
                 sb.append(System.getProperty("line.separator"));
             }
         }
-
-        return sb.toString();
-    }
-
-    public String printRelocatingRanges()
-    {
-        StringBuilder sb = new StringBuilder();
-
-        for (Map.Entry<Token, InetAddress> entry : relocatingTokens.entrySet())
-            sb.append(String.format("%s:%s%n", entry.getKey(), entry.getValue()));
 
         return sb.toString();
     }

@@ -24,15 +24,27 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.ArrayBackedSortedColumns;
+import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.ColumnFamily;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.IndexExpression;
+import org.apache.cassandra.db.Row;
+import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.composites.Composites;
-import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.db.filter.ColumnSlice;
+import org.apache.cassandra.db.filter.ExtendedFilter;
+import org.apache.cassandra.db.filter.IDiskAtomFilter;
+import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 
 public class CompositesSearcher extends SecondaryIndexSearcher
 {
@@ -47,7 +59,14 @@ public class CompositesSearcher extends SecondaryIndexSearcher
     public List<Row> search(ExtendedFilter filter)
     {
         assert filter.getClause() != null && !filter.getClause().isEmpty();
-        return baseCfs.filter(getIndexedIterator(filter), filter);
+        final IndexExpression primary = highestSelectivityPredicate(filter.getClause());
+        final CompositesIndex index = (CompositesIndex)indexManager.getIndexForColumn(primary.column);
+        // TODO: this should perhaps not open and maintain a writeOp for the full duration, but instead only *try* to delete stale entries, without blocking if there's no room
+        // as it stands, we open a writeOp and keep it open for the duration to ensure that should this CF get flushed to make room we don't block the reclamation of any room being made
+        try (OpOrder.Group writeOp = baseCfs.keyspace.writeOrder.start(); OpOrder.Group baseOp = baseCfs.readOrdering.start(); OpOrder.Group indexOp = index.getIndexCfs().readOrdering.start())
+        {
+            return baseCfs.filter(getIndexedIterator(writeOp, filter, primary, index), filter);
+        }
     }
 
     private Composite makePrefix(CompositesIndex index, ByteBuffer key, ExtendedFilter filter, boolean isStart)
@@ -60,7 +79,8 @@ public class CompositesSearcher extends SecondaryIndexSearcher
         if (columnFilter instanceof SliceQueryFilter)
         {
             SliceQueryFilter sqf = (SliceQueryFilter)columnFilter;
-            prefix = index.makeIndexColumnPrefix(key, isStart ? sqf.start() : sqf.finish());
+            Composite columnName = isStart ? sqf.start() : sqf.finish();
+            prefix = columnName.isEmpty() ? index.getIndexComparator().make(key) : index.makeIndexColumnPrefix(key, columnName);
         }
         else
         {
@@ -69,13 +89,11 @@ public class CompositesSearcher extends SecondaryIndexSearcher
         return isStart ? prefix.start() : prefix.end();
     }
 
-    private ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final ExtendedFilter filter)
+    private ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final OpOrder.Group writeOp, final ExtendedFilter filter, final IndexExpression primary, final CompositesIndex index)
     {
         // Start with the most-restrictive indexed clause, then apply remaining clauses
         // to each row matching that clause.
         // TODO: allow merge join instead of just one index + loop
-        final IndexExpression primary = highestSelectivityPredicate(filter.getClause());
-        final CompositesIndex index = (CompositesIndex)indexManager.getIndexForColumn(primary.column);
         assert index != null;
         assert index.getIndexCfs() != null;
         final DecoratedKey indexKey = index.getIndexKeyFor(primary.value);
@@ -90,8 +108,8 @@ public class CompositesSearcher extends SecondaryIndexSearcher
          * indexed row.
          */
         final AbstractBounds<RowPosition> range = filter.dataRange.keyRange();
-        ByteBuffer startKey = range.left instanceof DecoratedKey ? ((DecoratedKey)range.left).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
-        ByteBuffer endKey = range.right instanceof DecoratedKey ? ((DecoratedKey)range.right).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        ByteBuffer startKey = range.left instanceof DecoratedKey ? ((DecoratedKey)range.left).getKey() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        ByteBuffer endKey = range.right instanceof DecoratedKey ? ((DecoratedKey)range.right).getKey() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
         final CellNameType baseComparator = baseCfs.getComparator();
         final CellNameType indexComparator = index.getIndexCfs().getComparator();
@@ -163,7 +181,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                                                                              rowsPerQuery,
                                                                              filter.timestamp);
                         ColumnFamily indexRow = index.getIndexCfs().getColumnFamily(indexFilter);
-                        if (indexRow == null || indexRow.getColumnCount() == 0)
+                        if (indexRow == null || !indexRow.hasColumns())
                             return makeReturn(currentKey, data);
 
                         Collection<Cell> sortedCells = indexRow.getSortedColumns();
@@ -184,7 +202,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                     {
                         Cell cell = indexCells.poll();
                         lastSeenPrefix = cell.name();
-                        if (cell.isMarkedForDelete(filter.timestamp))
+                        if (!cell.isLive(filter.timestamp))
                         {
                             logger.trace("skipping {}", cell.name());
                             continue;
@@ -222,14 +240,14 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                             }
                             else
                             {
-                                logger.debug("Skipping entry {} before assigned scan range", dk.token);
+                                logger.debug("Skipping entry {} before assigned scan range", dk.getToken());
                                 continue;
                             }
                         }
 
                         // Check if this entry cannot be a hit due to the original cell filter
                         Composite start = entry.indexedEntryPrefix;
-                        if (!filter.columnFilter(dk.key).maySelectPrefix(baseComparator, start))
+                        if (!filter.columnFilter(dk.getKey()).maySelectPrefix(baseComparator, start))
                             continue;
 
                         // If we've record the previous prefix, it means we're dealing with an index on the collection value. In
@@ -264,7 +282,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                         ColumnFamily newData = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, dataFilter, filter.timestamp));
                         if (newData == null || index.isStale(entry, newData, filter.timestamp))
                         {
-                            index.delete(entry);
+                            index.delete(entry, writeOp);
                             continue;
                         }
 

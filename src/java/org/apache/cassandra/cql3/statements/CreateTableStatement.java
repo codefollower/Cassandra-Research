@@ -38,7 +38,7 @@ import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.thrift.CqlResult;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /** A <code>CREATE TABLE</code> parsed from a CQL query statement. */
@@ -98,7 +98,6 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
     private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
     private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
-    
     //1.
     //前提条件: 使用CompactStorage并且存在CLUSTERING_COLUMN字段时,
     //除了PARTITION_KEY和CLUSTERING_COLUMN字段之外，最多可以定义一个普通字段，
@@ -107,6 +106,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
     //2.
     //如果不满足前提条件，valueAlias是null
     private ByteBuffer valueAlias; 
+
+    private boolean isDense;
 
     //普通列: org.apache.cassandra.config.ColumnDefinition.Kind.REGULAR
     private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
@@ -169,22 +170,24 @@ public class CreateTableStatement extends SchemaAlteringStatement
         return columnDefs;
     }
 
-    public void announceMigration() throws RequestValidationException
+    public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
         try
         {
-           MigrationManager.announceNewColumnFamily(getCFMetaData());
+            MigrationManager.announceNewColumnFamily(getCFMetaData(), isLocalOnly);
+            return true;
         }
         catch (AlreadyExistsException e)
         {
-            if (!ifNotExists)
-                throw e;
+            if (ifNotExists)
+                return false;
+            throw e;
         }
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
-        return ResultMessage.SchemaChange.Change.CREATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.CREATED, Event.SchemaChange.Target.TABLE, keyspace(), columnFamily());
     }
 
     /**
@@ -209,7 +212,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
     {
         cfmd.defaultValidator(defaultValidator)
             .keyValidator(keyValidator)
-            .addAllColumnDefinitions(getColumns(cfmd));
+            .addAllColumnDefinitions(getColumns(cfmd))
+            .setDense(isDense);
 
         //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
         //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
@@ -286,10 +290,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
             if (!columnFamily().matches("\\w+"))
                 //String.format中给的信息不够准确，不是[0-9A-Za-z]+，而是[a-zA-Z_0-9]+，少了一个下划线
                 //IDENT在文法中也是有下划线的
-                throw new InvalidRequestException(String.format("\"%s\" is not a valid column family name (must be alphanumeric character only: [0-9A-Za-z]+)", columnFamily()));
+                throw new InvalidRequestException(String.format("\"%s\" is not a valid table name (must be alphanumeric character only: [0-9A-Za-z]+)", columnFamily()));
             //列族名就是表名，不能超过48个字符
             if (columnFamily().length() > Schema.NAME_LENGTH)
-                throw new InvalidRequestException(String.format("Column family names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, columnFamily()));
+                throw new InvalidRequestException(String.format("Table names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, columnFamily()));
 
             //定义了重复的字段
             for (Multiset.Entry<ColumnIdentifier> entry : definedNames.entrySet())
@@ -359,9 +363,11 @@ public class CreateTableStatement extends SchemaAlteringStatement
             }
             stmt.keyValidator = keyTypes.size() == 1 ? keyTypes.get(0) : CompositeType.getInstance(keyTypes);
 
-
             //以下代码用于确定stmt.comparator和stmt.columnAliases的值(处理CLUSTERING_COLUMN)
             ///////////////////////////////////////////////////////////////////////////
+            // Dense means that no part of the comparator stores a CQL column name. This means
+            // COMPACT STORAGE with at least one columnAliases (otherwise it's a thrift "static" CF).
+            stmt.isDense = useCompactStorage && !columnAliases.isEmpty();
             // Handle column aliases
             //没有CLUSTERING_COLUMN或有CLUSTERING_COLUMN但是没有使用COMPACT STORAGE时都使用XxxSparseCellNameType(稀疏的)
             //其他情况使用XxxDenseCellNameType(稠密的)

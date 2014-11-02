@@ -30,10 +30,12 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 public class DropUserStatement extends AuthenticationStatement
 {
     private final String username;
+    private final boolean ifExists;
 
-    public DropUserStatement(String username)
+    public DropUserStatement(String username, boolean ifExists)
     {
         this.username = username;
+        this.ifExists = ifExists;
     }
 
     public void validate(ClientState state) throws RequestValidationException
@@ -41,7 +43,7 @@ public class DropUserStatement extends AuthenticationStatement
         // validate login here before checkAccess to avoid leaking user existence to anonymous users.
         state.ensureNotAnonymous();
 
-        if (!Auth.isExistingUser(username))
+        if (!ifExists && !Auth.isExistingUser(username))
             throw new InvalidRequestException(String.format("User %s doesn't exist", username));
 
         AuthenticatedUser user = state.getUser();
@@ -60,6 +62,10 @@ public class DropUserStatement extends AuthenticationStatement
     //事务问题同CreateUserStatement.execute(ClientState)
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
+        // not rejected in validate()
+        if (ifExists && !Auth.isExistingUser(username))
+            return null;
+
         // clean up permissions after the dropped user.
         //删除permissions、users、credentials三个表中与username相关的记录
         DatabaseDescriptor.getAuthorizer().revokeAll(username);

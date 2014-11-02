@@ -18,12 +18,13 @@
 package org.apache.cassandra.db.composites;
 
 import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Comparator;
 
+import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.DeletionInfo;
+import org.apache.cassandra.db.NativeCell;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.TypeSizes;
@@ -33,12 +34,46 @@ import org.apache.cassandra.db.marshal.AbstractCompositeType;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 import static org.apache.cassandra.io.sstable.IndexHelper.IndexInfo;
 
 public abstract class AbstractCType implements CType
 {
+    static final Comparator<Cell> rightNativeCell = new Comparator<Cell>()
+    {
+        public int compare(Cell o1, Cell o2)
+        {
+            return -((NativeCell) o2).compareTo(o1.name());
+        }
+    };
+
+    static final Comparator<Cell> neitherNativeCell = new Comparator<Cell>()
+    {
+        public int compare(Cell o1, Cell o2)
+        {
+            return compareUnsigned(o1.name(), o2.name());
+        }
+    };
+
+    // only one or the other of these will ever be used
+    static final Comparator<Object> asymmetricRightNativeCell = new Comparator<Object>()
+    {
+        public int compare(Object o1, Object o2)
+        {
+            return -((NativeCell) o2).compareTo((Composite) o1);
+        }
+    };
+
+    static final Comparator<Object> asymmetricNeitherNativeCell = new Comparator<Object>()
+    {
+        public int compare(Object o1, Object o2)
+        {
+            return compareUnsigned((Composite) o1, ((Cell) o2).name());
+        }
+    };
+
     private final Comparator<Composite> reverseComparator;
     private final Comparator<IndexInfo> indexComparator;
     private final Comparator<IndexInfo> indexReverseComparator;
@@ -52,7 +87,9 @@ public abstract class AbstractCType implements CType
     private final RangeTombstone.Serializer rangeTombstoneSerializer;
     private final RowIndexEntry.Serializer rowIndexEntrySerializer;
 
-    protected AbstractCType()
+    protected final boolean isByteOrderComparable;
+
+    protected AbstractCType(boolean isByteOrderComparable)
     {
         reverseComparator = new Comparator<Composite>()
         {
@@ -84,57 +121,89 @@ public abstract class AbstractCType implements CType
         deletionInfoSerializer = new DeletionInfo.Serializer(this);
         rangeTombstoneSerializer = new RangeTombstone.Serializer(this);
         rowIndexEntrySerializer = new RowIndexEntry.Serializer(this);
+        this.isByteOrderComparable = isByteOrderComparable;
+    }
+
+    protected static boolean isByteOrderComparable(Iterable<AbstractType<?>> types)
+    {
+        boolean isByteOrderComparable = true;
+        for (AbstractType<?> type : types)
+            isByteOrderComparable &= type.isByteOrderComparable();
+        return isByteOrderComparable;
+    }
+
+    static int compareUnsigned(Composite c1, Composite c2)
+    {
+        if (c1.isStatic() != c2.isStatic())
+        {
+            // Static sorts before non-static no matter what, except for empty which
+            // always sort first
+            if (c1.isEmpty())
+                return c2.isEmpty() ? 0 : -1;
+            if (c2.isEmpty())
+                return 1;
+            return c1.isStatic() ? -1 : 1;
+        }
+
+        int s1 = c1.size();
+        int s2 = c2.size();
+        int minSize = Math.min(s1, s2);
+
+        for (int i = 0; i < minSize; i++)
+        {
+            int cmp = ByteBufferUtil.compareUnsigned(c1.get(i), c2.get(i));
+            if (cmp != 0)
+                return cmp;
+        }
+
+        if (s1 == s2)
+            return c1.eoc().compareTo(c2.eoc());
+        return s1 < s2 ? c1.eoc().prefixComparisonResult : -c2.eoc().prefixComparisonResult;
     }
 
     public int compare(Composite c1, Composite c2)
     {
-        if (c1 == null || c1.isEmpty())
-            return c2 == null || c2.isEmpty() ? 0 : -1;
-        if (c2 == null || c2.isEmpty())
-            return 1;
-
         if (c1.isStatic() != c2.isStatic())
-            return c1.isStatic() ? -1 : 1;
-
-        ByteBuffer previous = null;
-        int i;
-        int minSize = Math.min(c1.size(), c2.size());
-        for (i = 0; i < minSize; i++)
         {
-            AbstractType<?> comparator = subtype(i);
-            ByteBuffer value1 = c1.get(i);
-            ByteBuffer value2 = c2.get(i);
+            // Static sorts before non-static no matter what, except for empty which
+            // always sort first
+            if (c1.isEmpty())
+                return c2.isEmpty() ? 0 : -1;
+            if (c2.isEmpty())
+                return 1;
+            return c1.isStatic() ? -1 : 1;
+        }
 
-            int cmp = comparator.compareCollectionMembers(value1, value2, previous);
+        int s1 = c1.size();
+        int s2 = c2.size();
+        int minSize = Math.min(s1, s2);
+
+        for (int i = 0; i < minSize; i++)
+        {
+            int cmp = isByteOrderComparable
+                      ? ByteBufferUtil.compareUnsigned(c1.get(i), c2.get(i))
+                      : subtype(i).compare(c1.get(i), c2.get(i));
             if (cmp != 0)
                 return cmp;
-
-            previous = value1;
         }
 
-        if (c1.size() == c2.size())
-        {
-            if (c1.eoc() != c2.eoc())
-            {
-                switch (c1.eoc())
-                {
-                    case START: return -1;
-                    case END:   return 1;
-                    case NONE:  return c2.eoc() == Composite.EOC.START ? 1 : -1;
-                }
-            }
-            return 0;
-        }
+        if (s1 == s2)
+            return c1.eoc().compareTo(c2.eoc());
+        return s1 < s2 ? c1.eoc().prefixComparisonResult : -c2.eoc().prefixComparisonResult;
+    }
 
-        if (i == c1.size())
-        {
-            return c1.eoc() == Composite.EOC.END ? 1 : -1;
-        }
-        else
-        {
-            assert i == c2.size();
-            return c2.eoc() == Composite.EOC.END ? -1 : 1;
-        }
+    protected Comparator<Cell> getByteOrderColumnComparator(boolean isRightNative)
+    {
+        if (isRightNative)
+            return rightNativeCell;
+        return neitherNativeCell;
+    }
+
+    protected Comparator<Object> getByteOrderAsymmetricColumnComparator(boolean isRightNative)
+    {
+        if (isRightNative)
+            return asymmetricRightNativeCell;
+        return asymmetricNeitherNativeCell;
     }
 
     public void validate(Composite name)
@@ -318,7 +387,7 @@ public abstract class AbstractCType implements CType
             this.type = type;
         }
 
-        public void serialize(Composite c, DataOutput out) throws IOException
+        public void serialize(Composite c, DataOutputPlus out) throws IOException
         {
             ByteBufferUtil.writeWithShortLength(c.toByteBuffer(), out);
         }

@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.dht.BigIntegerToken;
 import org.apache.cassandra.dht.Range;
@@ -41,9 +40,8 @@ import org.apache.cassandra.utils.Pair;
 import org.junit.Before;
 import org.junit.Test;
 
-public class OldNetworkTopologyStrategyTest extends SchemaLoader
+public class OldNetworkTopologyStrategyTest
 {
-    private List<Token> endpointTokens;
     private List<Token> keyTokens;
     private TokenMetadata tmd;
     private Map<String, ArrayList<InetAddress>> expectedResults;
@@ -51,7 +49,6 @@ public class OldNetworkTopologyStrategyTest extends SchemaLoader
     @Before
     public void init()
     {
-        endpointTokens = new ArrayList<Token>();
         keyTokens = new ArrayList<Token>();
         tmd = new TokenMetadata();
         expectedResults = new HashMap<String, ArrayList<InetAddress>>();
@@ -145,7 +142,6 @@ public class OldNetworkTopologyStrategyTest extends SchemaLoader
     private void addEndpoint(String endpointTokenID, String keyTokenID, String endpointAddress) throws UnknownHostException
     {
         BigIntegerToken endpointToken = new BigIntegerToken(endpointTokenID);
-        endpointTokens.add(endpointToken);
 
         BigIntegerToken keyToken = new BigIntegerToken(keyTokenID);
         keyTokens.add(keyToken);

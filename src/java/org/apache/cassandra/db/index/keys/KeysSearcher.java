@@ -53,17 +53,22 @@ public class KeysSearcher extends SecondaryIndexSearcher
     public List<Row> search(ExtendedFilter filter)
     {
         assert filter.getClause() != null && !filter.getClause().isEmpty();
-        return baseCfs.filter(getIndexedIterator(filter), filter);
+        final IndexExpression primary = highestSelectivityPredicate(filter.getClause());
+        final SecondaryIndex index = indexManager.getIndexForColumn(primary.column);
+        // TODO: this should perhaps not open and maintain a writeOp for the full duration, but instead only *try* to delete stale entries, without blocking if there's no room
+        // as it stands, we open a writeOp and keep it open for the duration to ensure that should this CF get flushed to make room we don't block the reclamation of any room  being made
+        try (OpOrder.Group writeOp = baseCfs.keyspace.writeOrder.start(); OpOrder.Group baseOp = baseCfs.readOrdering.start(); OpOrder.Group indexOp = index.getIndexCfs().readOrdering.start())
+        {
+            return baseCfs.filter(getIndexedIterator(writeOp, filter, primary, index), filter);
+        }
     }
 
-    private ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final ExtendedFilter filter)
+    private ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final OpOrder.Group writeOp, final ExtendedFilter filter, final IndexExpression primary, final SecondaryIndex index)
     {
 
         // Start with the most-restrictive indexed clause, then apply remaining clauses
         // to each row matching that clause.
         // TODO: allow merge join instead of just one index + loop
-        final IndexExpression primary = highestSelectivityPredicate(filter.getClause());
-        final SecondaryIndex index = indexManager.getIndexForColumn(primary.column);
         assert index != null;
         assert index.getIndexCfs() != null;
         final DecoratedKey indexKey = index.getIndexKeyFor(primary.value);
@@ -80,8 +85,8 @@ public class KeysSearcher extends SecondaryIndexSearcher
          */
         final AbstractBounds<RowPosition> range = filter.dataRange.keyRange();
         CellNameType type = index.getIndexCfs().getComparator();
-        final Composite startKey = range.left instanceof DecoratedKey ? type.make(((DecoratedKey)range.left).key) : Composites.EMPTY;
-        final Composite endKey = range.right instanceof DecoratedKey ? type.make(((DecoratedKey)range.right).key) : Composites.EMPTY;
+        final Composite startKey = range.left instanceof DecoratedKey ? type.make(((DecoratedKey)range.left).getKey()) : Composites.EMPTY;
+        final Composite endKey = range.right instanceof DecoratedKey ? type.make(((DecoratedKey)range.right).getKey()) : Composites.EMPTY;
 
         final CellName primaryColumn = baseCfs.getComparator().cellFromByteBuffer(primary.column);
 
@@ -149,7 +154,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                     {
                         Cell cell = indexColumns.next();
                         lastSeenKey = cell.name();
-                        if (cell.isMarkedForDelete(filter.timestamp))
+                        if (!cell.isLive(filter.timestamp))
                         {
                             logger.trace("skipping {}", cell.name());
                             continue;
@@ -163,7 +168,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         }
                         if (!range.contains(dk))
                         {
-                            logger.trace("Skipping entry {} outside of assigned scan range", dk.token);
+                            logger.trace("Skipping entry {} outside of assigned scan range", dk.getToken());
                             continue;
                         }
 
@@ -183,19 +188,11 @@ public class KeysSearcher extends SecondaryIndexSearcher
                                 data.addAll(cf);
                         }
 
-                        if (((KeysIndex)index).isIndexEntryStale(indexKey.key, data, filter.timestamp))
+                        if (((KeysIndex)index).isIndexEntryStale(indexKey.getKey(), data, filter.timestamp))
                         {
                             // delete the index entry w/ its own timestamp
-                            Cell dummyCell = new Cell(primaryColumn, indexKey.key, cell.timestamp());
-                            OpOrder.Group opGroup = baseCfs.keyspace.writeOrder.start();
-                            try
-                            {
-                                ((PerColumnSecondaryIndex)index).delete(dk.key, dummyCell, opGroup);
-                            }
-                            finally
-                            {
-                                opGroup.finishOne();
-                            }
+                            Cell dummyCell = new BufferCell(primaryColumn, indexKey.getKey(), cell.timestamp());
+                            ((PerColumnSecondaryIndex)index).delete(dk.getKey(), dummyCell, writeOp);
                             continue;
                         }
                         return new Row(dk, data);

@@ -94,7 +94,7 @@ public class RowDataResolver extends AbstractRowResolver
         }
         else
         {
-            resolved = replies.iterator().next().payload.row().cf;
+            resolved = replies.get(0).payload.row().cf;
         }
 
         if (logger.isDebugEnabled())
@@ -120,7 +120,7 @@ public class RowDataResolver extends AbstractRowResolver
 
             //只发送新加的内容给那些未同步数据的节点
             // create and send the mutation message based on the diff
-            Mutation mutation = new Mutation(keyspaceName, key.key, diffCf);
+            Mutation mutation = new Mutation(keyspaceName, key.getKey(), diffCf);
             // use a separate verb here because we don't want these to be get the white glove hint-
             // on-timeout behavior that a "real" mutation gets
             results.add(MessagingService.instance().sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR),
@@ -149,23 +149,20 @@ public class RowDataResolver extends AbstractRowResolver
             return null;
 
         // mimic the collectCollatedColumn + removeDeleted path that getColumnFamily takes.
-        // this will handle removing columns and subcolumns that are supressed by a row or
+        // this will handle removing columns and subcolumns that are suppressed by a row or
         // supercolumn tombstone.
         QueryFilter filter = new QueryFilter(null, resolved.metadata().cfName, new IdentityQueryFilter(), now);
-        List<CloseableIterator<Cell>> iters = new ArrayList<CloseableIterator<Cell>>();
+        List<CloseableIterator<Cell>> iters = new ArrayList<>(Iterables.size(versions));
         for (ColumnFamily version : versions)
-        {
-            if (version == null)
-                continue;
-            iters.add(FBUtilities.closeableIterator(version.iterator()));
-        }
+            if (version != null)
+                iters.add(FBUtilities.closeableIterator(version.iterator()));
         filter.collateColumns(resolved, iters, Integer.MIN_VALUE);
         return ColumnFamilyStore.removeDeleted(resolved, Integer.MIN_VALUE);
     }
 
     public Row getData()
     {
-        return replies.iterator().next().payload.row();
+        return replies.get(0).payload.row();
     }
 
     public boolean isDataPresent()

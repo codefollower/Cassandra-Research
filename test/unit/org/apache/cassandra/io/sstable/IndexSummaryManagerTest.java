@@ -24,8 +24,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.slf4j.Logger;
@@ -33,8 +35,12 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
+import org.apache.cassandra.cache.CachingOptions;
+import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.metrics.RestorableMeter;
 
 import static org.apache.cassandra.io.sstable.Downsampling.BASE_SAMPLING_LEVEL;
@@ -46,7 +52,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-public class IndexSummaryManagerTest extends SchemaLoader
+public class IndexSummaryManagerTest
 {
     private static final Logger logger = LoggerFactory.getLogger(IndexSummaryManagerTest.class);
 
@@ -54,11 +60,28 @@ public class IndexSummaryManagerTest extends SchemaLoader
     int originalMaxIndexInterval;
     long originalCapacity;
 
+    private static final String KEYSPACE1 = "IndexSummaryManagerTest";
+    // index interval of 8, no key caching
+    private static final String CF_STANDARDLOWiINTERVAL = "StandardLowIndexInterval";
+
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARDLOWiINTERVAL)
+                                                .minIndexInterval(8)
+                                                .maxIndexInterval(256)
+                                                .caching(CachingOptions.NONE));
+    }
+
     @Before
     public void beforeTest()
     {
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval"; // index interval of 8, no key caching
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL; // index interval of 8, no key caching
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         originalMinIndexInterval = cfs.metadata.getMinIndexInterval();
@@ -69,8 +92,8 @@ public class IndexSummaryManagerTest extends SchemaLoader
     @After
     public void afterTest()
     {
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval"; // index interval of 8, no key caching
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL; // index interval of 8, no key caching
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         cfs.metadata.minIndexInterval(originalMinIndexInterval);
@@ -135,7 +158,7 @@ public class IndexSummaryManagerTest extends SchemaLoader
             for (int row = 0; row < numRows; row++)
             {
                 DecoratedKey key = Util.dk(String.format("%3d", row));
-                Mutation rm = new Mutation(ksname, key.key);
+                Mutation rm = new Mutation(ksname, key.getKey());
                 rm.add(cfname, Util.cellname("column"), value, 0);
                 rm.applyUnsafe();
             }
@@ -162,8 +185,8 @@ public class IndexSummaryManagerTest extends SchemaLoader
     @Test
     public void testChangeMinIndexInterval() throws IOException
     {
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval"; // index interval of 8, no key caching
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL; // index interval of 8, no key caching
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         int numSSTables = 1;
@@ -234,8 +257,8 @@ public class IndexSummaryManagerTest extends SchemaLoader
     @Test
     public void testChangeMaxIndexInterval() throws IOException
     {
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval"; // index interval of 8, no key caching
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL; // index interval of 8, no key caching
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         int numSSTables = 1;
@@ -274,8 +297,8 @@ public class IndexSummaryManagerTest extends SchemaLoader
     @Test(timeout = 10000)
     public void testRedistributeSummaries() throws IOException
     {
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval"; // index interval of 8, no key caching
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL; // index interval of 8, no key caching
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         int numSSTables = 4;
@@ -395,8 +418,8 @@ public class IndexSummaryManagerTest extends SchemaLoader
     @Test
     public void testRebuildAtSamplingLevel() throws IOException
     {
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval";
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL;
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         cfs.truncateBlocking();
@@ -408,9 +431,9 @@ public class IndexSummaryManagerTest extends SchemaLoader
         for (int row = 0; row < numRows; row++)
         {
             DecoratedKey key = Util.dk(String.valueOf(row));
-            Mutation rm = new Mutation(ksname, key.key);
+            Mutation rm = new Mutation(ksname, key.getKey());
             rm.add(cfname, Util.cellname("column"), value, 0);
-            rm.apply();
+            rm.applyUnsafe();
         }
         cfs.forceBlockingFlush();
 
@@ -421,14 +444,14 @@ public class IndexSummaryManagerTest extends SchemaLoader
         SSTableReader sstable = original;
         for (int samplingLevel = 1; samplingLevel < BASE_SAMPLING_LEVEL; samplingLevel++)
         {
-            sstable = sstable.cloneWithNewSummarySamplingLevel(samplingLevel);
+            sstable = sstable.cloneWithNewSummarySamplingLevel(cfs, samplingLevel);
             assertEquals(samplingLevel, sstable.getIndexSummarySamplingLevel());
             int expectedSize = (numRows * samplingLevel) / (sstable.metadata.getMinIndexInterval() * BASE_SAMPLING_LEVEL);
             assertEquals(expectedSize, sstable.getIndexSummarySize(), 1);
         }
 
         // don't leave replaced SSTRs around to break other tests
-        cfs.getDataTracker().replaceReaders(Collections.singleton(original), Collections.singleton(sstable));
+        cfs.getDataTracker().replaceReaders(Collections.singleton(original), Collections.singleton(sstable), true);
     }
 
     @Test
@@ -452,8 +475,8 @@ public class IndexSummaryManagerTest extends SchemaLoader
         manager.setMemoryPoolCapacityInMB(10);
         assertEquals(10, manager.getMemoryPoolCapacityInMB());
 
-        String ksname = "Keyspace1";
-        String cfname = "StandardLowIndexInterval"; // index interval of 8, no key caching
+        String ksname = KEYSPACE1;
+        String cfname = CF_STANDARDLOWiINTERVAL; // index interval of 8, no key caching
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
         cfs.truncateBlocking();
@@ -468,9 +491,9 @@ public class IndexSummaryManagerTest extends SchemaLoader
             for (int row = 0; row < numRows; row++)
             {
                 DecoratedKey key = Util.dk(String.valueOf(row));
-                Mutation rm = new Mutation(ksname, key.key);
+                Mutation rm = new Mutation(ksname, key.getKey());
                 rm.add(cfname, Util.cellname("column"), value, 0);
-                rm.apply();
+                rm.applyUnsafe();
             }
             cfs.forceBlockingFlush();
         }
@@ -478,7 +501,7 @@ public class IndexSummaryManagerTest extends SchemaLoader
         assertTrue(manager.getAverageIndexInterval() >= cfs.metadata.getMinIndexInterval());
         Map<String, Integer> intervals = manager.getIndexIntervals();
         for (Map.Entry<String, Integer> entry : intervals.entrySet())
-            if (entry.getKey().contains("StandardLowIndexInterval"))
+            if (entry.getKey().contains(CF_STANDARDLOWiINTERVAL))
                 assertEquals(cfs.metadata.getMinIndexInterval(), entry.getValue(), 0.001);
 
         manager.setMemoryPoolCapacityInMB(0);
@@ -487,7 +510,7 @@ public class IndexSummaryManagerTest extends SchemaLoader
         intervals = manager.getIndexIntervals();
         for (Map.Entry<String, Integer> entry : intervals.entrySet())
         {
-            if (entry.getKey().contains("StandardLowIndexInterval"))
+            if (entry.getKey().contains(CF_STANDARDLOWiINTERVAL))
                 assertTrue(entry.getValue() >= cfs.metadata.getMinIndexInterval());
         }
     }

@@ -21,6 +21,7 @@ package org.apache.cassandra.db;
 import static org.junit.Assert.assertEquals;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -30,22 +31,26 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
+import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.dht.BytesToken;
 import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class CleanupTest extends SchemaLoader
+public class CleanupTest
 {
     public static final int LOOPS = 200;
-    public static final String KEYSPACE1 = "Keyspace1";
+    public static final String KEYSPACE1 = "CleanupTest1";
     public static final String CF1 = "Indexed1";
     public static final String CF2 = "Standard1";
     public static final ByteBuffer COLUMN = ByteBufferUtil.bytes("birthdate");
@@ -54,6 +59,17 @@ public class CleanupTest extends SchemaLoader
     {
         VALUE.putLong(20101229);
         VALUE.flip();
+    }
+
+    @BeforeClass
+    public static void defineSchema() throws ConfigurationException
+    {
+        SchemaLoader.prepareServer();
+        SchemaLoader.createKeyspace(KEYSPACE1,
+                                    SimpleStrategy.class,
+                                    KSMetaData.optsWithRF(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF2),
+                                    SchemaLoader.indexCFMD(KEYSPACE1, CF1, true));
     }
 
     @Test
@@ -132,6 +148,35 @@ public class CleanupTest extends SchemaLoader
 
         // 2ary indexes should result in no results, too (although tombstones won't be gone until compacted)
         rows = cfs.search(range, clause, filter, Integer.MAX_VALUE);
+        assertEquals(0, rows.size());
+    }
+
+    @Test
+    public void testCleanupWithNewToken() throws ExecutionException, InterruptedException, UnknownHostException
+    {
+        StorageService.instance.getTokenMetadata().clearUnsafe();
+
+        Keyspace keyspace = Keyspace.open(KEYSPACE1);
+        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF2);
+
+        List<Row> rows;
+
+        // insert data and verify we get it back w/ range query
+        fillCF(cfs, LOOPS);
+
+        rows = Util.getRangeSlice(cfs);
+
+        assertEquals(LOOPS, rows.size());
+        TokenMetadata tmd = StorageService.instance.getTokenMetadata();
+
+        byte[] tk1 = new byte[1], tk2 = new byte[1];
+        tk1[0] = 2;
+        tk2[0] = 1;
+        tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
+        tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
+        CompactionManager.instance.performCleanup(cfs);
+
+        rows = Util.getRangeSlice(cfs);
         assertEquals(0, rows.size());
     }
 

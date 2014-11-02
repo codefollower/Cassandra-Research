@@ -29,7 +29,7 @@ import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.transport.Event;
 
 public class CreateTypeStatement extends SchemaAlteringStatement
 {
@@ -50,9 +50,6 @@ public class CreateTypeStatement extends SchemaAlteringStatement
     {
         if (!name.hasKeyspace())
             name.setKeyspace(state.getKeyspace());
-
-        if (name.getKeyspace() == null)
-            throw new InvalidRequestException("You need to be logged in a keyspace or use a fully qualified user type name");
     }
 
     public void addDefinition(ColumnIdentifier name, CQL3Type.Raw type)
@@ -71,18 +68,23 @@ public class CreateTypeStatement extends SchemaAlteringStatement
         KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         if (ksm == null)
             throw new InvalidRequestException(String.format("Cannot add type in unknown keyspace %s", name.getKeyspace()));
+
         if (ksm.userTypes.getType(name.getUserTypeName()) != null && !ifNotExists)
-            throw new InvalidRequestException(String.format("A user type of name %s already exists.", name));
+            throw new InvalidRequestException(String.format("A user type of name %s already exists", name));
+
+        for (CQL3Type.Raw type : columnTypes)
+            if (type.isCounter())
+                throw new InvalidRequestException("A user type cannot contain counters");
     }
 
     public static void checkForDuplicateNames(UserType type) throws InvalidRequestException
     {
-        for (int i = 0; i < type.types.size() - 1; i++)
+        for (int i = 0; i < type.size() - 1; i++)
         {
-            ByteBuffer fieldName = type.columnNames.get(i);
-            for (int j = i+1; j < type.types.size(); j++)
+            ByteBuffer fieldName = type.fieldName(i);
+            for (int j = i+1; j < type.size(); j++)
             {
-                if (fieldName.equals(type.columnNames.get(j)))
+                if (fieldName.equals(type.fieldName(j)))
                     throw new InvalidRequestException(String.format("Duplicate field name %s in type %s",
                                                                     UTF8Type.instance.getString(fieldName),
                                                                     UTF8Type.instance.getString(type.name)));
@@ -90,9 +92,9 @@ public class CreateTypeStatement extends SchemaAlteringStatement
         }
     }
 
-    public ResultMessage.SchemaChange.Change changeType()
+    public Event.SchemaChange changeEvent()
     {
-        return ResultMessage.SchemaChange.Change.UPDATED;
+        return new Event.SchemaChange(Event.SchemaChange.Change.CREATED, Event.SchemaChange.Target.TYPE, keyspace(), name.getStringTypeName());
     }
 
     @Override
@@ -114,17 +116,18 @@ public class CreateTypeStatement extends SchemaAlteringStatement
         return new UserType(name.getKeyspace(), name.getUserTypeName(), names, types);
     }
 
-    public void announceMigration() throws InvalidRequestException, ConfigurationException
+    public boolean announceMigration(boolean isLocalOnly) throws InvalidRequestException, ConfigurationException
     {
         KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         assert ksm != null; // should haven't validate otherwise
 
         // Can happen with ifNotExists
         if (ksm.userTypes.getType(name.getUserTypeName()) != null)
-            return;
+            return false;
 
         UserType type = createType();
         checkForDuplicateNames(type);
-        MigrationManager.announceNewType(type);
+        MigrationManager.announceNewType(type, isLocalOnly);
+        return true;
     }
 }

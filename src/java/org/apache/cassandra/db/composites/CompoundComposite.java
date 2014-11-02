@@ -19,16 +19,16 @@ package org.apache.cassandra.db.composites;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
-import org.apache.cassandra.utils.memory.PoolAllocator;
 
 /**
  * A "truly-composite" Composite.
  */
 public class CompoundComposite extends AbstractComposite
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new CompoundComposite(null, 0, false));
+    private static final long HEAP_SIZE = ObjectSizes.measure(new CompoundComposite(null, 0, false));
 
     // We could use a List, but we'll create such object *a lot* and using a array+size is not
     // all that harder, so we save the List object allocation.
@@ -73,24 +73,16 @@ public class CompoundComposite extends AbstractComposite
 
     public long unsharedHeapSize()
     {
-        return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(elements);
+        return HEAP_SIZE + ObjectSizes.sizeOnHeapOf(elements);
     }
 
-    public long excessHeapSizeExcludingData()
+    public long unsharedHeapSizeExcludingData()
     {
-        return EMPTY_SIZE + ObjectSizes.sizeOnHeapExcludingData(elements);
+        return HEAP_SIZE + ObjectSizes.sizeOnHeapExcludingData(elements);
     }
 
-    public Composite copy(AbstractAllocator allocator)
+    public Composite copy(CFMetaData cfm, AbstractAllocator allocator)
     {
         return new CompoundComposite(elementsCopy(allocator), size, isStatic);
     }
-
-    @Override
-    public void free(PoolAllocator<?> allocator)
-    {
-        for (ByteBuffer element : elements)
-            allocator.free(element);
-    }
-
 }

@@ -31,7 +31,6 @@ import org.apache.cassandra.cql3.statements.CFPropDefs;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.Pair;
 
 public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
@@ -247,7 +246,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 
     private static Map<SSTableReader, Double> getHotnessMap(Collection<SSTableReader> sstables)
     {
-        Map<SSTableReader, Double> hotness = new HashMap<>();
+        Map<SSTableReader, Double> hotness = new HashMap<>(sstables.size());
         for (SSTableReader sstable : sstables)
             hotness.put(sstable, hotness(sstable));
         return hotness;
@@ -277,14 +276,14 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
                 return null;
 
             if (cfs.getDataTracker().markCompacting(hottestBucket))
-                return new CompactionTask(cfs, hottestBucket, gcBefore);
+                return new CompactionTask(cfs, hottestBucket, gcBefore, false);
         }
     }
 
     public Collection<AbstractCompactionTask> getMaximalTask(final int gcBefore)
     {
         Iterable<SSTableReader> allSSTables = cfs.markAllCompacting();
-        if (allSSTables == null)
+        if (allSSTables == null || Iterables.isEmpty(allSSTables))
             return null;
         Set<SSTableReader> sstables = Sets.newHashSet(allSSTables);
         Set<SSTableReader> repaired = new HashSet<>();
@@ -296,7 +295,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             else
                 unrepaired.add(sstable);
         }
-        return Arrays.<AbstractCompactionTask>asList(new CompactionTask(cfs, repaired, gcBefore), new CompactionTask(cfs, unrepaired, gcBefore));
+        return Arrays.<AbstractCompactionTask>asList(new CompactionTask(cfs, repaired, gcBefore, false), new CompactionTask(cfs, unrepaired, gcBefore, false));
     }
 
     public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, final int gcBefore)
@@ -309,7 +308,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             return null;
         }
 
-        return new CompactionTask(cfs, sstables, gcBefore).setUserDefined(true);
+        return new CompactionTask(cfs, sstables, gcBefore, false).setUserDefined(true);
     }
 
     public int getEstimatedRemainingTasks()

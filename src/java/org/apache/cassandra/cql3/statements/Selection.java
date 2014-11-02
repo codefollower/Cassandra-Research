@@ -19,6 +19,7 @@ package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import com.google.common.collect.Iterators;
@@ -28,6 +29,8 @@ import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.udf.UDFunction;
+import org.apache.cassandra.cql3.udf.UDFRegistry;
 import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.CounterCell;
 import org.apache.cassandra.db.ExpiringCell;
@@ -42,14 +45,14 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public abstract class Selection
 {
-    private final List<ColumnDefinition> columnsList;
+    private final Collection<ColumnDefinition> columns;
     private final ResultSet.Metadata metadata;
     private final boolean collectTimestamps;
     private final boolean collectTTLs;
 
-    protected Selection(List<ColumnDefinition> columnsList, List<ColumnSpecification> metadata, boolean collectTimestamps, boolean collectTTLs)
+    protected Selection(Collection<ColumnDefinition> columns, List<ColumnSpecification> metadata, boolean collectTimestamps, boolean collectTTLs)
     {
-        this.columnsList = columnsList;
+        this.columns = columns;
         this.metadata = new ResultSet.Metadata(metadata);
         this.collectTimestamps = collectTimestamps;
         this.collectTTLs = collectTTLs;
@@ -74,16 +77,16 @@ public abstract class Selection
         return new SimpleSelection(all, true);
     }
 
-    public static Selection forColumns(List<ColumnDefinition> columnsList)
+    public static Selection forColumns(Collection<ColumnDefinition> columns)
     {
-        return new SimpleSelection(columnsList, false);
+        return new SimpleSelection(columns, false);
     }
 
     public int addColumnForOrdering(ColumnDefinition c)
     {
-        columnsList.add(c);
+        columns.add(c);
         metadata.addNonSerializedColumn(c);
-        return columnsList.size() - 1;
+        return columns.size() - 1;
     }
 
     private static boolean isUsingFunction(List<RawSelector> rawSelectors)
@@ -142,13 +145,13 @@ public abstract class Selection
                 throw new InvalidRequestException(String.format("Invalid field selection: %s of type %s is not a user type", withField.selected, type.asCQL3Type()));
 
             UserType ut = (UserType)type;
-            for (int i = 0; i < ut.types.size(); i++)
+            for (int i = 0; i < ut.size(); i++)
             {
-                if (!ut.columnNames.get(i).equals(withField.field.bytes))
+                if (!ut.fieldName(i).equals(withField.field.bytes))
                     continue;
 
                 if (metadata != null)
-                    metadata.add(makeFieldSelectSpec(cfm, withField, ut.types.get(i), raw.alias));
+                    metadata.add(makeFieldSelectSpec(cfm, withField, ut.fieldType(i), raw.alias));
                 return new FieldSelector(ut, i, selected);
             }
             throw new InvalidRequestException(String.format("%s of type %s has no field %s", withField.selected, type.asCQL3Type(), withField.field));
@@ -156,13 +159,26 @@ public abstract class Selection
         else
         {
             Selectable.WithFunction withFun = (Selectable.WithFunction)raw.selectable;
-            List<Selector> args = new ArrayList<Selector>(withFun.args.size());
+            List<Selector> args = new ArrayList<>(withFun.args.size());
             for (Selectable rawArg : withFun.args)
                 args.add(makeSelector(cfm, new RawSelector(rawArg, null), defs, null));
 
+            // resolve built-in functions before user defined functions
             AbstractType<?> returnType = Functions.getReturnType(withFun.functionName, cfm.ksName, cfm.cfName);
             if (returnType == null)
-                throw new InvalidRequestException(String.format("Unknown function '%s'", withFun.functionName));
+            {
+                UDFunction userFun = UDFRegistry.resolveFunction(withFun.namespace, withFun.functionName, cfm.ksName, cfm.cfName, args);
+                if (userFun != null)
+                {
+                    // got a user defined function to call
+                    Function fun = userFun.create(args);
+                    ColumnSpecification spec = makeFunctionSpec(cfm, withFun, fun.returnType(), raw.alias);
+                    if (metadata != null)
+                        metadata.add(spec);
+                    return new FunctionSelector(userFun.create(args), args);
+                }
+                throw new InvalidRequestException(String.format("Unknown function '%s'", withFun.namespace.isEmpty() ? withFun.functionName : withFun.namespace + "::" + withFun.functionName));
+            }
             ColumnSpecification spec = makeFunctionSpec(cfm, withFun, returnType, raw.alias);
             Function fun = Functions.get(cfm.ksName, withFun.functionName, args, spec);
             if (metadata != null)
@@ -193,7 +209,7 @@ public abstract class Selection
                                                         ColumnIdentifier alias) throws InvalidRequestException
     {
         if (returnType == null)
-            throw new InvalidRequestException(String.format("Unknown function %s called in selection clause", fun.functionName));
+            throw new InvalidRequestException(String.format("Unknown function %s called in selection clause", fun.namespace.isEmpty() ? fun.functionName : fun.namespace +"::"+fun.functionName));
 
         return new ColumnSpecification(cfm.ksName,
                                        cfm.cfName,
@@ -252,9 +268,9 @@ public abstract class Selection
     /**
      * @return the list of CQL3 columns value this SelectionClause needs.
      */
-    public List<ColumnDefinition> getColumnsList()
+    public Collection<ColumnDefinition> getColumns()
     {
-        return columnsList;
+        return columns;
     }
 
     public ResultSetBuilder resultSetBuilder(long now)
@@ -289,8 +305,8 @@ public abstract class Selection
         private ResultSetBuilder(long now)
         {
             this.resultSet = new ResultSet(getResultMetadata(), new ArrayList<List<ByteBuffer>>());
-            this.timestamps = collectTimestamps ? new long[columnsList.size()] : null;
-            this.ttls = collectTTLs ? new int[columnsList.size()] : null;
+            this.timestamps = collectTimestamps ? new long[columns.size()] : null;
+            this.ttls = collectTTLs ? new int[columns.size()] : null;
             this.now = now;
         }
 
@@ -317,14 +333,14 @@ public abstract class Selection
 
         private boolean isDead(Cell c)
         {
-            return c == null || c.isMarkedForDelete(now);
+            return c == null || !c.isLive(now);
         }
 
         public void newRow() throws InvalidRequestException
         {
             if (current != null)
                 resultSet.addRow(handleRow(this));
-            current = new ArrayList<ByteBuffer>(columnsList.size());
+            current = new ArrayList<ByteBuffer>(columns.size());
         }
 
         public ResultSet build() throws InvalidRequestException
@@ -343,19 +359,19 @@ public abstract class Selection
     {
         private final boolean isWildcard;
 
-        public SimpleSelection(List<ColumnDefinition> columnsList, boolean isWildcard)
+        public SimpleSelection(Collection<ColumnDefinition> columns, boolean isWildcard)
         {
-            this(columnsList, new ArrayList<ColumnSpecification>(columnsList), isWildcard);
+            this(columns, new ArrayList<ColumnSpecification>(columns), isWildcard);
         }
 
-        public SimpleSelection(List<ColumnDefinition> columnsList, List<ColumnSpecification> metadata, boolean isWildcard)
+        public SimpleSelection(Collection<ColumnDefinition> columns, List<ColumnSpecification> metadata, boolean isWildcard)
         {
             /*
              * In theory, even a simple selection could have multiple time the same column, so we
-             * could filter those duplicate out of columnsList. But since we're very unlikely to
+             * could filter those duplicate out of columns. But since we're very unlikely to
              * get much duplicate in practice, it's more efficient not to bother.
              */
-            super(columnsList, metadata, false, false);
+            super(columns, metadata, false, false);
             this.isWildcard = isWildcard;
         }
 
@@ -378,7 +394,7 @@ public abstract class Selection
 
         public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
         {
-            return getType().asCQL3Type().equals(receiver.type.asCQL3Type());
+            return receiver.type.isValueCompatibleWith(getType());
         }
     }
 
@@ -467,19 +483,22 @@ public abstract class Selection
 
         public ByteBuffer compute(ResultSetBuilder rs) throws InvalidRequestException
         {
-            ByteBuffer[] buffers = type.split(selected.compute(rs));
+            ByteBuffer value = selected.compute(rs);
+            if (value == null)
+                return null;
+            ByteBuffer[] buffers = type.split(value);
             return field < buffers.length ? buffers[field] : null;
         }
 
         public AbstractType<?> getType()
         {
-            return type.types.get(field);
+            return type.fieldType(field);
         }
 
         @Override
         public String toString()
         {
-            return String.format("%s.%s", selected, UTF8Type.instance.getString(type.columnNames.get(field)));
+            return String.format("%s.%s", selected, UTF8Type.instance.getString(type.fieldName(field)));
         }
     }
 
@@ -524,9 +543,9 @@ public abstract class Selection
     {
         private final List<Selector> selectors;
 
-        public SelectionWithFunctions(List<ColumnDefinition> columnsList, List<ColumnSpecification> metadata, List<Selector> selectors, boolean collectTimestamps, boolean collectTTLs)
+        public SelectionWithFunctions(Collection<ColumnDefinition> columns, List<ColumnSpecification> metadata, List<Selector> selectors, boolean collectTimestamps, boolean collectTTLs)
         {
-            super(columnsList, metadata, collectTimestamps, collectTTLs);
+            super(columns, metadata, collectTimestamps, collectTTLs);
             this.selectors = selectors;
         }
 
