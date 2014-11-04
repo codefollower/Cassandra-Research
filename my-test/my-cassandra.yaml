@@ -9,7 +9,10 @@ native_transport_port: 9042
 
 #in_memory_compaction_limit_in_mb: 1
 commitlog_sync: batch
-commitlog_sync_batch_window_in_ms: 1.0
+#commitlog_sync_batch_window_in_ms: 1.0
+commitlog_sync_batch_window_in_ms: 3
+
+
 #partitioner: org.apache.cassandra.dht.ByteOrderedPartitioner
 partitioner: org.apache.cassandra.dht.Murmur3Partitioner
 listen_address: 127.0.0.1

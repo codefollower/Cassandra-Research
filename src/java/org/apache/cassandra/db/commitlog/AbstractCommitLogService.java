@@ -102,9 +102,9 @@ public abstract class AbstractCommitLogService
                         totalSyncDuration += now - syncStarted;
 
                         if (firstLagAt > 0 && now - firstLagAt >= LAG_REPORT_INTERVAL)
-                        {
-                            logger.warn(String.format("Out of %d commit log syncs over the past %ds with average duration of %.2fms, %d have exceeded the configured commit interval by an average of %.2fms",
-                                                      syncCount, (now - firstLagAt) / 1000, (double) totalSyncDuration / syncCount, lagCount, (double) syncExceededIntervalBy / lagCount));
+                        {   //我把它屏蔽了
+                            //logger.warn(String.format("Out of %d commit log syncs over the past %ds with average duration of %.2fms, %d have exceeded the configured commit interval by an average of %.2fms",
+                            //                          syncCount, (now - firstLagAt) / 1000, (double) totalSyncDuration / syncCount, lagCount, (double) syncExceededIntervalBy / lagCount));
                             firstLagAt = 0;
                         }
 

@@ -104,8 +104,8 @@ public class DefsTables //都是static方法
      * @throws ConfigurationException If one of metadata attributes has invalid value
      * @throws IOException If data was corrupted during transportation or failed to apply fs operations
      */
-    //都是在本地读
-    //与schema_keyspaces、schema_columnfamilies、schema_usertypes这三个表相关
+    //都是在本地读写
+    //与schema_keyspaces、schema_columnfamilies、schema_usertypes、schema_functions这4个表相关
     public static synchronized void mergeSchema(Collection<Mutation> mutations) throws ConfigurationException, IOException
     {
         mergeSchemaInternal(mutations, true);
@@ -120,13 +120,6 @@ public class DefsTables //都是static方法
             keyspaces.add(ByteBufferUtil.string(mutation.key()));
 
         // current state of the schema
-//<<<<<<< HEAD
-//        //获得schema_keyspaces表中的记录
-//        Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
-//        //获得schema_columnfamilies表中的记录
-//        Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
-//        Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF);
-//=======
         Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, keyspaces);
         Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, keyspaces);
         Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF, keyspaces);
@@ -156,30 +149,6 @@ public class DefsTables //都是static方法
 
     private static Set<String> mergeKeyspaces(Map<DecoratedKey, ColumnFamily> before, Map<DecoratedKey, ColumnFamily> after)
     {
-//<<<<<<< HEAD
-//        // calculate the difference between old and new states (note that entriesOnlyLeft() will be always empty)
-//        MapDifference<DecoratedKey, ColumnFamily> diff = Maps.difference(old, updated);
-//
-//        /**
-//         * At first step we check if any new keyspaces were added.
-//         */
-//        for (Map.Entry<DecoratedKey, ColumnFamily> entry : diff.entriesOnlyOnRight().entrySet())
-//        {
-//            ColumnFamily ksAttrs = entry.getValue();
-//
-//            // we don't care about nested ColumnFamilies here because those are going to be processed separately
-////<<<<<<< HEAD
-////            if (!(ksAttrs.getColumnCount() == 0))
-////                //前面调用mergeSchema时也执行了mutation.apply()，记录也存在system.schema_keyspaces表中了，KSMetaData.fromSchema中再次读出来
-////=======
-//            if (ksAttrs.hasColumns())
-//                addKeyspace(KSMetaData.fromSchema(new Row(entry.getKey(), entry.getValue()), Collections.<CFMetaData>emptyList(), new UTMetaData()));
-//        }
-//
-//        /**
-//         * At second step we check if there were any keyspaces re-created, in this context
-//         * re-created means that they were previously deleted but still exist in the low-level schema as empty keys
-//=======
         List<Row> created = new ArrayList<>();
         List<String> altered = new ArrayList<>();
         Set<String> dropped = new HashSet<>();
@@ -229,12 +198,6 @@ public class DefsTables //都是static方法
         List<CFMetaData> altered = new ArrayList<>();
         List<CFMetaData> dropped = new ArrayList<>();
 
-//<<<<<<< HEAD
-//            if (cfAttrs.hasColumns())
-//            {
-//                //entry.getKey()是keyspace
-//                Map<String, CFMetaData> cfDefs = KSMetaData.deserializeColumnFamilies(new Row(entry.getKey(), cfAttrs));
-//=======
         MapDifference<DecoratedKey, ColumnFamily> diff = Maps.difference(before, after);
 
         for (Map.Entry<DecoratedKey, ColumnFamily> entry : diff.entriesOnlyOnRight().entrySet())
@@ -285,29 +248,15 @@ public class DefsTables //都是static方法
     // see the comments for mergeKeyspaces()
     private static void mergeTypes(Map<DecoratedKey, ColumnFamily> before, Map<DecoratedKey, ColumnFamily> after)
     {
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////        //会触发org.apache.cassandra.db.marshal.UserType.equals(Object)
-////        //这里又再读两次schema_usertypes表
-////        MapDifference<ByteBuffer, UserType> diff = Maps.difference(UTMetaData.fromSchema(old).getAllTypes(),
-////                                                                   UTMetaData.fromSchema(updated).getAllTypes());
-////
-////        //diff的右边是新的，左边是旧的
-////        //对于Maps.difference(left, right)
-////        //diff.entriesOnlyOnRight()意思就是right中有而left中没有的
-////        //diff.entriesOnlyOnLeft()意思就是left中有而right中没有的
-////        //diff.entriesDiffering()意思就是left和right中都有但是值不同的(通过UserType.equals(Object)比较)
-////        
-////        // New types
-////        for (UserType newType : diff.entriesOnlyOnRight().values())
-////            Schema.instance.loadType(newType);
-////=======
-//        MapDifference<DecoratedKey, ColumnFamily> diff = Maps.difference(old, updated);
-//=======
         List<UserType> created = new ArrayList<>();
         List<UserType> altered = new ArrayList<>();
         List<UserType> dropped = new ArrayList<>();
 
+        //diff的右边是新的，左边是旧的
+        //对于Maps.difference(before, after)
+        //diff.entriesOnlyOnRight()意思就是right中有而left中没有的
+        //diff.entriesOnlyOnLeft()意思就是left中有而right中没有的
+        //diff.entriesDiffering()意思就是left和right中都有但是值不同的(通过UserType.equals(Object)比较)
         MapDifference<DecoratedKey, ColumnFamily> diff = Maps.difference(before, after);
 
         // New keyspace with types
@@ -344,25 +293,6 @@ public class DefsTables //都是static方法
             }
             else if (post.hasColumns())
             {
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////                //时间戳最大的优先
-////                long leftTimestamp = firstTimestampOf(u1.name, old);
-////                long rightTimestamp = firstTimestampOf(u1.name, updated);
-////                Schema.instance.loadType(leftTimestamp > rightTimestamp ? u1 : u2);
-////=======
-//                MapDifference<ByteBuffer, UserType> typesDiff = Maps.difference(UTMetaData.fromSchema(new Row(keyspace, prevCFTypes)),
-//                                                                                UTMetaData.fromSchema(new Row(keyspace, newCFTypes)));
-//
-//                for (UserType type : typesDiff.entriesOnlyOnRight().values())
-//                    addType(type);
-//
-//                for (UserType type : typesDiff.entriesOnlyOnLeft().values())
-//                    dropType(type);
-//
-//                for (MapDifference.ValueDifference<UserType> tdiff : typesDiff.entriesDiffering().values())
-//                    updateType(tdiff.rightValue()); // use the most recent value
-//=======
                 created.addAll(UTMetaData.fromSchema(new Row(entry.getKey(), post)).values());
             }
         }

@@ -80,11 +80,25 @@ system_auth
 	) WITH COMMENT='triggers metadata table'
 
 	CREATE TABLE schema_usertypes (
+	    keyspace_name text,
 		type_name text,
 		column_names list<text>,
 		column_types list<text>,
-		PRIMARY KEY (type_name)
+		PRIMARY KEY (keyspace_name, type_name)
 	) WITH COMMENT='Defined user types' AND gc_grace_seconds=8640
+
+    CREATE TABLE schema_functions (
+		namespace text,
+		name text,
+		signature blob,
+		argument_names list<text>,
+		argument_types list<text>,
+		return_type text,
+		deterministic boolean,
+		language text,
+		body text,
+		primary key ((namespace, name), signature)
+	) WITH COMMENT='user defined functions' AND gc_grace_seconds=604800
 
 	CREATE TABLE hints (
 		target_id uuid,

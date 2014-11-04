@@ -30,16 +30,6 @@ import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.serializers.MarshalException;
 
-//有6个子类:
-//org.apache.cassandra.db.Column
-//    org.apache.cassandra.db.CounterColumn
-//    org.apache.cassandra.db.CounterUpdateColumn
-//    org.apache.cassandra.db.DeletedColumn
-//    org.apache.cassandra.db.ExpiringColumn
-//org.apache.cassandra.db.RangeTombstone
-
-//RangeTombstone用org.apache.cassandra.db.RangeTombstone.Serializer来做序列化
-//其他5个子类都用org.apache.cassandra.db.ColumnSerializer做序列化
 public interface OnDiskAtom
 {
     public Composite name();
@@ -63,10 +53,6 @@ public interface OnDiskAtom
             this.type = type;
         }
 
-        //OnDiskAtom有两个直接子类:
-        //org.apache.cassandra.db.Column
-        //org.apache.cassandra.db.RangeTombstone
-        //所以下面的代码分开处理
         public void serializeForSSTable(OnDiskAtom atom, DataOutputPlus out) throws IOException
         {
             if (atom instanceof Cell)

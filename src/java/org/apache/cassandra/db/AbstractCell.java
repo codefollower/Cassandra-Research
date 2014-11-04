@@ -90,6 +90,7 @@ public abstract class AbstractCell implements Cell
          * + entire byte array.
         */
         int valueSize = value().remaining();
+        //因为列名的最大长度是65535(0xffff)个字节，所以这里转成short
         return ((int)type.cellSerializer().serializedSize(name(), typeSizes)) + 1 + typeSizes.sizeof(timestamp()) + typeSizes.sizeof(valueSize) + valueSize;
     }
 
@@ -98,13 +99,14 @@ public abstract class AbstractCell implements Cell
         return 0;
     }
 
-    public Cell diff(Cell cell)
+    public Cell diff(Cell cell) //如果当前Cell的时间戳小于参数Cell cell，则返回此参数Cell cell，否则返回null
     {
         if (timestamp() < cell.timestamp())
             return cell;
         return null;
     }
 
+    //摘要包括列名、列值、时间戳、列MASK标志(列MASK见org.apache.cassandra.db.ColumnSerializer中的常量)
     public void updateDigest(MessageDigest digest)
     {
         digest.update(name().toByteBuffer().duplicate());
@@ -119,6 +121,8 @@ public abstract class AbstractCell implements Cell
         return Integer.MAX_VALUE;
     }
 
+    //reconcile: 使和解, 使和谐, 使顺从
+    //从当前Cell和参数Cell中选一个
     public Cell reconcile(Cell cell)
     {
         long ts1 = timestamp(), ts2 = cell.timestamp();
