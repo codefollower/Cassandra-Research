@@ -42,6 +42,8 @@ public class SnitchProperties
             URL url;
             if (configURL == null)
                 url = SnitchProperties.class.getClassLoader().getResource(RACKDC_PROPERTY_FILENAME);
+            else if (!RACKDC_PROPERTY_FILENAME.equalsIgnoreCase(configURL)) //我加的
+                url = SnitchProperties.class.getClassLoader().getResource(configURL);
             else 
             	url = new URL(configURL);
             

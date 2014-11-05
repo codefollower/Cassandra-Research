@@ -608,22 +608,11 @@ public class StorageProxy implements StorageProxyMBean
                                           boolean mutateAtomically)
     throws WriteTimeoutException, UnavailableException, OverloadedException, InvalidRequestException
     {
-//<<<<<<< HEAD
-//        Collection<Mutation> tmutations = TriggerExecutor.instance.execute(mutations);
-//        //mutateAtomically为true时实际上就是由BatchStatement触发的
-//        if (mutateAtomically || tmutations != null)
-//        {
-//            Collection<Mutation> allMutations = (Collection<Mutation>) mutations;
-//            if (tmutations != null)
-//                allMutations.addAll(tmutations);
-//            StorageProxy.mutateAtomically(allMutations, consistencyLevel);
-//        }
-//=======
         Collection<Mutation> augmented = TriggerExecutor.instance.execute(mutations);
 
         if (augmented != null)
             mutateAtomically(augmented, consistencyLevel);
-        else if (mutateAtomically)
+        else if (mutateAtomically) //由BatchStatement触发的
             mutateAtomically((Collection<Mutation>) mutations, consistencyLevel);
         else
             mutate(mutations, consistencyLevel);
@@ -1566,11 +1555,6 @@ public class StorageProxy implements StorageProxyMBean
         try
         {
             int cql3RowCount = 0;
-//<<<<<<< HEAD
-//            rows = new ArrayList<Row>();
-//            //根据rowKey(是command.keyRange)取得一个范围，如果没指定rowKey只是按索引字段查，还是会把查询请求发给所有节点的
-//            List<AbstractBounds<RowPosition>> ranges = getRestrictedRanges(command.keyRange);
-//=======
             rows = new ArrayList<>();
 
             // when dealing with LocalStrategy keyspaces, we can skip the range splitting and merging (which can be
@@ -1578,7 +1562,7 @@ public class StorageProxy implements StorageProxyMBean
             List<? extends AbstractBounds<RowPosition>> ranges;
             if (keyspace.getReplicationStrategy() instanceof LocalStrategy)
                 ranges = command.keyRange.unwrap();
-            else
+            else //根据rowKey(是command.keyRange)取得一个范围，如果没指定rowKey只是按索引字段查，还是会把查询请求发给所有节点的
                 ranges = getRestrictedRanges(command.keyRange);
 
             // our estimate of how many result rows there will be per-range

@@ -19,10 +19,13 @@
  */
 package my.test.cluster;
 
+import org.apache.cassandra.locator.SnitchProperties;
+
 import my.test.start.CassandraDaemonStart;
 
 public class Node3 extends CassandraDaemonStart {
     public static void main(String[] args) {
+        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1.properties");
         setConfigLoader(Node3.class);
         run(args);
     }

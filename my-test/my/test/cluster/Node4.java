@@ -23,15 +23,15 @@ import org.apache.cassandra.locator.SnitchProperties;
 
 import my.test.start.CassandraDaemonStart;
 
-public class Node2 extends CassandraDaemonStart {
+public class Node4 extends CassandraDaemonStart {
     public static void main(String[] args) {
-        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1-2.properties");
-        setConfigLoader(Node2.class);
+        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc2.properties");
+        setConfigLoader(Node4.class);
         run(args);
     }
 
-    public Node2() {
-        this.listen_address = "127.0.0.2";
-        this.dir = "cluster/node2";
+    public Node4() {
+        this.listen_address = "127.0.0.4";
+        this.dir = "cluster/node4";
     }
 }
