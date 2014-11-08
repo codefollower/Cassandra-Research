@@ -260,6 +260,9 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         for (SSTable sstable : hintStore.getDataTracker().getUncompactingSSTables())
             descriptors.add(sstable.descriptor);
 
+        if (descriptors.isEmpty())
+            return;
+
         try
         {
             CompactionManager.instance.submitUserDefined(hintStore, descriptors, (int) (System.currentTimeMillis() / 1000)).get();
@@ -591,7 +594,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                                                           columnCount);
 
         // From keys "" to ""...
-        IPartitioner<?> partitioner = StorageService.getPartitioner();
+        IPartitioner partitioner = StorageService.getPartitioner();
         RowPosition minPos = partitioner.getMinimumToken().minKeyBound();
         Range<RowPosition> range = new Range<RowPosition>(minPos, minPos);
 

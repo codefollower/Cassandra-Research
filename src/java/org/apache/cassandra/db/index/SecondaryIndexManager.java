@@ -495,7 +495,7 @@ public class SecondaryIndexManager
                 }
                 else
                 {
-                    ((PerColumnSecondaryIndex) index).delete(key.getKey(), cell, opGroup);
+                    ((PerColumnSecondaryIndex) index).deleteForCleanup(key.getKey(), cell, opGroup);
                 }
             }
         }
@@ -538,7 +538,7 @@ public class SecondaryIndexManager
         {
             SecondaryIndex index = getIndexForColumn(ix.column);
 
-            if (index == null)
+            if (index == null || !index.supportsOperator(ix.operator))
                 continue;
 
             Set<ByteBuffer> columns = groupByIndexType.get(index.indexTypeForGrouping());
@@ -768,7 +768,7 @@ public class SecondaryIndexManager
         {
             if (oldCell.equals(cell))
                 return;
-            
+
             for (SecondaryIndex index : indexFor(cell.name()))
             {
                 if (index instanceof PerColumnSecondaryIndex)

@@ -97,6 +97,11 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
     public void delete(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
     {
+        deleteForCleanup(rowKey, cell, opGroup);
+    }
+
+    public void deleteForCleanup(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
+    {
         if (!cell.isLive())
             return;
 

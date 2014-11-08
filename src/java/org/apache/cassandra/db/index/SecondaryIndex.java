@@ -27,12 +27,15 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import com.google.common.base.Objects;
 import org.apache.commons.lang3.StringUtils;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -63,6 +66,16 @@ public abstract class SecondaryIndex
     protected static final Logger logger = LoggerFactory.getLogger(SecondaryIndex.class);
 
     public static final String CUSTOM_INDEX_OPTION_NAME = "class_name";
+
+    /**
+     * The name of the option used to specify that the index is on the collection keys.
+     */
+    public static final String INDEX_KEYS_OPTION_NAME = "index_keys";
+
+    /**
+     * The name of the option used to specify that the index is on the collection values.
+     */
+    public static final String INDEX_VALUES_OPTION_NAME = "index_values";
 
     //preservesOrder返回true的只有:
     //AbstractByteOrderedPartitioner(ByteOrderedPartitioner)、LocalPartitioner、OrderPreservingPartitioner
@@ -282,6 +295,12 @@ public abstract class SecondaryIndex
         }
     }
 
+    /** Returns true if the index supports lookups for the given operator, false otherwise. */
+    public boolean supportsOperator(Operator operator)
+    {
+        return operator == Operator.EQ;
+    }
+
     /**
      * Returns the decoratedKey for a column value
      * @param value column value
@@ -373,5 +392,11 @@ public abstract class SecondaryIndex
                 return null;
         }
         throw new AssertionError();
+    }
+
+    @Override
+    public String toString()
+    {
+        return Objects.toStringHelper(this).add("columnDefs", columnDefs).toString();
     }
 }

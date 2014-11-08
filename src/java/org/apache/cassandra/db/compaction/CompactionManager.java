@@ -181,7 +181,7 @@ public class CompactionManager implements CompactionManagerMBean
         logger.debug("Scheduling a background task check for {}.{} with {}",
                      cfs.keyspace.getName(),
                      cfs.name,
-                     cfs.getCompactionStrategy().getClass().getSimpleName());
+                     cfs.getCompactionStrategy().getName());
         List<Future<?>> futures = new ArrayList<Future<?>>();
 
         // we must schedule it at least once, otherwise compaction will stop for a CF until next flush
@@ -691,8 +691,9 @@ public class CompactionManager implements CompactionManagerMBean
         CleanupInfo ci = new CleanupInfo(sstable, scanner);
 
         metrics.beginCompaction(ci);
-        SSTableRewriter writer = new SSTableRewriter(cfs, new HashSet<>(ImmutableSet.of(sstable)), sstable.maxDataAge, OperationType.CLEANUP, false);
-
+        Set<SSTableReader> oldSSTable = Sets.newHashSet(sstable);
+        SSTableRewriter writer = new SSTableRewriter(cfs, oldSSTable, sstable.maxDataAge, false);
+        List<SSTableReader> finished;
         try (CompactionController controller = new CompactionController(cfs, Collections.singleton(sstable), getDefaultGcBefore(cfs)))
         {
             writer.switchWriter(createWriter(cfs, compactionFileLocation, expectedBloomFilterSize, sstable.getSSTableMetadata().repairedAt, sstable));
@@ -714,7 +715,8 @@ public class CompactionManager implements CompactionManagerMBean
             // flush to ensure we don't lose the tombstones on a restart, since they are not commitlog'd
             cfs.indexManager.flushIndexesBlocking();
 
-            writer.finish();
+            finished = writer.finish();
+            cfs.getDataTracker().markCompactedSSTablesReplaced(oldSSTable, finished, OperationType.CLEANUP);
         }
         catch (Throwable e)
         {
@@ -727,17 +729,16 @@ public class CompactionManager implements CompactionManagerMBean
             metrics.finishCompaction(ci);
         }
 
-        List<SSTableReader> results = writer.finished();
-        if (!results.isEmpty())
+        if (!finished.isEmpty())
         {
             String format = "Cleaned up to %s.  %,d to %,d (~%d%% of original) bytes for %,d keys.  Time: %,dms.";
             long dTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
             long startsize = sstable.onDiskLength();
             long endsize = 0;
-            for (SSTableReader newSstable : results)
+            for (SSTableReader newSstable : finished)
                 endsize += newSstable.onDiskLength();
             double ratio = (double) endsize / (double) startsize;
-            logger.info(String.format(format, results.get(0).getFilename(), startsize, endsize, (int) (ratio * 100), totalkeysWritten, dTime));
+            logger.info(String.format(format, finished.get(0).getFilename(), startsize, endsize, (int) (ratio * 100), totalkeysWritten, dTime));
         }
 
     }
@@ -906,7 +907,10 @@ public class CompactionManager implements CompactionManagerMBean
             if (isSnapshotValidation)
             {
                 // If there is a snapshot created for the session then read from there.
+                // note that we populate the parent repair session when creating the snapshot, meaning the sstables in the snapshot are the ones we
+                // are supposed to validate.
                 sstables = cfs.getSnapshotSSTableReader(snapshotName);
+
 
                 // Computing gcbefore based on the current time wouldn't be very good because we know each replica will execute
                 // this at a different time (that's the whole purpose of repair with snaphsot). So instead we take the creation
@@ -918,12 +922,21 @@ public class CompactionManager implements CompactionManagerMBean
             {
                 // flush first so everyone is validating data that is as similar as possible
                 StorageService.instance.forceKeyspaceFlush(cfs.keyspace.getName(), cfs.name);
-                // we don't mark validating sstables as compacting in DataTracker, so we have to mark them referenced
-                // instead so they won't be cleaned up if they do get compacted during the validation
-                if (validator.desc.parentSessionId == null || ActiveRepairService.instance.getParentRepairSession(validator.desc.parentSessionId) == null)
-                    sstables = cfs.markCurrentSSTablesReferenced();
-                else
-                    sstables = ActiveRepairService.instance.getParentRepairSession(validator.desc.parentSessionId).getAndReferenceSSTables(cfs.metadata.cfId);
+                ActiveRepairService.ParentRepairSession prs = ActiveRepairService.instance.getParentRepairSession(validator.desc.parentSessionId);
+                Set<SSTableReader> sstablesToValidate = new HashSet<>();
+                for (SSTableReader sstable : cfs.getSSTables())
+                {
+                    if (new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(Arrays.asList(validator.desc.range)))
+                    {
+                        if (!prs.isIncremental || !sstable.isRepaired())
+                        {
+                            sstablesToValidate.add(sstable);
+                        }
+                    }
+                }
+                prs.addSSTables(cfs.metadata.cfId, sstablesToValidate);
+
+                sstables = prs.getAndReferenceSSTablesInRange(cfs.metadata.cfId, validator.desc.range);
 
                 if (validator.gcBefore > 0)
                     gcBefore = validator.gcBefore;
@@ -1054,8 +1067,8 @@ public class CompactionManager implements CompactionManagerMBean
         Set<SSTableReader> sstableAsSet = new HashSet<>(anticompactionGroup);
 
         File destination = cfs.directories.getDirectoryForNewSSTables();
-        SSTableRewriter repairedSSTableWriter = new SSTableRewriter(cfs, sstableAsSet, groupMaxDataAge, OperationType.ANTICOMPACTION, false);
-        SSTableRewriter unRepairedSSTableWriter = new SSTableRewriter(cfs, sstableAsSet, groupMaxDataAge, OperationType.ANTICOMPACTION, false);
+        SSTableRewriter repairedSSTableWriter = new SSTableRewriter(cfs, sstableAsSet, groupMaxDataAge, false);
+        SSTableRewriter unRepairedSSTableWriter = new SSTableRewriter(cfs, sstableAsSet, groupMaxDataAge, false);
 
         long repairedKeyCount = 0;
         long unrepairedKeyCount = 0;
@@ -1088,15 +1101,17 @@ public class CompactionManager implements CompactionManagerMBean
             }
             // we have the same readers being rewritten by both writers, so we ask the first one NOT to close them
             // so that the second one can do so safely, without leaving us with references < 0 or any other ugliness
-            repairedSSTableWriter.finish(false, repairedAt);
-            unRepairedSSTableWriter.finish(ActiveRepairService.UNREPAIRED_SSTABLE);
-            // add repaired table with a non-null timestamp field to be saved in SSTableMetadata#repairedAt
+            List<SSTableReader> anticompactedSSTables = new ArrayList<>();
+            anticompactedSSTables.addAll(repairedSSTableWriter.finish(repairedAt));
+            anticompactedSSTables.addAll(unRepairedSSTableWriter.finish(ActiveRepairService.UNREPAIRED_SSTABLE));
+            cfs.getDataTracker().markCompactedSSTablesReplaced(sstableAsSet, anticompactedSSTables, OperationType.ANTICOMPACTION);
+
             logger.debug("Repaired {} keys out of {} for {}/{} in {}", repairedKeyCount,
                                                                        repairedKeyCount + unrepairedKeyCount,
                                                                        cfs.keyspace.getName(),
                                                                        cfs.getColumnFamilyName(),
                                                                        anticompactionGroup);
-            return repairedSSTableWriter.finished().size() + unRepairedSSTableWriter.finished().size();
+            return anticompactedSSTables.size();
         }
         catch (Throwable e)
         {

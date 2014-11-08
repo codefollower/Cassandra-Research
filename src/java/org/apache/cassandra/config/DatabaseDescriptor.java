@@ -97,7 +97,7 @@ public class DatabaseDescriptor
     private static IInternodeAuthenticator internodeAuthenticator;
 
     /* Hashing strategy Random or OPHF */
-    private static IPartitioner<?> partitioner;
+    private static IPartitioner partitioner;
     private static String paritionerName;
 
     private static Config.DiskAccessMode indexAccessMode;
@@ -773,7 +773,7 @@ public class DatabaseDescriptor
         }
     }
 
-    public static IPartitioner<?> getPartitioner()
+    public static IPartitioner getPartitioner()
     {
         return partitioner;
     }
@@ -784,7 +784,7 @@ public class DatabaseDescriptor
     }
 
     /* For tests ONLY, don't use otherwise or all hell will break loose */
-    public static void setPartitioner(IPartitioner<?> newPartitioner)
+    public static void setPartitioner(IPartitioner newPartitioner)
     {
         partitioner = newPartitioner;
     }

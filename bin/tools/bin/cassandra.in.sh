@@ -47,3 +47,16 @@ done
 for jar in "$CASSANDRA_HOME"/lib/*.jar; do
     CLASSPATH="$CLASSPATH:$jar"
 done
+<<<<<<< HEAD:bin/tools/bin/cassandra.in.sh
+=======
+
+# set JVM javaagent opts to avoid warnings/errors
+if [ "$JVM_VENDOR" != "OpenJDK" -o "$JVM_VERSION" \> "1.6.0" ] \
+      || [ "$JVM_VERSION" = "1.6.0" -a "$JVM_PATCH_VERSION" -ge 23 ]
+then
+    JAVA_AGENT="$JAVA_AGENT -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.8.jar"
+fi
+
+# Added sigar-bin to the java.library.path CASSANDRA-7838
+JAVA_OPTS="$JAVA_OPTS:-Djava.library.path=$CASSANDRA_HOME/lib/sigar-bin"
+>>>>>>> 203efd0221ba103be85e86d38278a996b31e88ad:bin/cassandra.in.sh

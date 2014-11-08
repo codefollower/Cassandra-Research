@@ -924,6 +924,7 @@ public final class MessagingService implements MessagingServiceMBean
                     }
 
                     socket.setKeepAlive(true);
+                    socket.setSoTimeout(2 * OutboundTcpConnection.WAIT_FOR_VERSION_MAX_TIME);
                     // determine the connection type to decide whether to buffer
                     DataInputStream in = new DataInputStream(socket.getInputStream());
                     //写入的格式见:OutboundTcpConnection.connect()
@@ -932,6 +933,7 @@ public final class MessagingService implements MessagingServiceMBean
                     boolean isStream = MessagingService.getBits(header, 3, 1) == 1;
                     int version = MessagingService.getBits(header, 15, 8);
                     logger.debug("Connection version {} from {}", version, socket.getInetAddress());
+                    socket.setSoTimeout(0);
 
                     Thread thread = isStream
                                   ? new IncomingStreamingConnection(version, socket)

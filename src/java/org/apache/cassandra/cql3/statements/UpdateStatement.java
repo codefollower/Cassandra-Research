@@ -25,6 +25,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
@@ -107,7 +108,7 @@ public class UpdateStatement extends ModificationStatement
 
     public static class ParsedInsert extends ModificationStatement.Parsed
     {
-        private final List<ColumnIdentifier> columnNames;
+        private final List<ColumnIdentifier.Raw> columnNames;
         private final List<Term.Raw> columnValues;
 
         /**
@@ -120,7 +121,7 @@ public class UpdateStatement extends ModificationStatement
          */
         public ParsedInsert(CFName name,
                             Attributes.Raw attrs,
-                            List<ColumnIdentifier> columnNames, List<Term.Raw> columnValues,
+                            List<ColumnIdentifier.Raw> columnNames, List<Term.Raw> columnValues,
                             boolean ifNotExists)
         {
             super(name, attrs, null, ifNotExists, false);
@@ -142,7 +143,7 @@ public class UpdateStatement extends ModificationStatement
 
             for (int i = 0; i < columnNames.size(); i++)
             {
-                ColumnDefinition def = cfm.getColumnDefinition(columnNames.get(i));
+                ColumnDefinition def = cfm.getColumnDefinition(columnNames.get(i).prepare(cfm));
                 if (def == null)
                     throw new InvalidRequestException(String.format("Unknown identifier %s", columnNames.get(i)));
 
@@ -174,7 +175,7 @@ public class UpdateStatement extends ModificationStatement
     public static class ParsedUpdate extends ModificationStatement.Parsed
     {
         // Provided for an UPDATE
-        private final List<Pair<ColumnIdentifier, Operation.RawUpdate>> updates;
+        private final List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> updates;
         private final List<Relation> whereClause;
 
         /**
@@ -188,9 +189,9 @@ public class UpdateStatement extends ModificationStatement
          */
         public ParsedUpdate(CFName name,
                             Attributes.Raw attrs,
-                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> updates,
+                            List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> updates,
                             List<Relation> whereClause,
-                            List<Pair<ColumnIdentifier, ColumnCondition.Raw>> conditions)
+                            List<Pair<ColumnIdentifier.Raw, ColumnCondition.Raw>> conditions)
         {
             super(name, attrs, conditions, false, false);
             this.updates = updates;
@@ -201,9 +202,9 @@ public class UpdateStatement extends ModificationStatement
         {
             UpdateStatement stmt = new UpdateStatement(ModificationStatement.StatementType.UPDATE, boundNames.size(), cfm, attrs);
 
-            for (Pair<ColumnIdentifier, Operation.RawUpdate> entry : updates)
+            for (Pair<ColumnIdentifier.Raw, Operation.RawUpdate> entry : updates)
             {
-                ColumnDefinition def = cfm.getColumnDefinition(entry.left);
+                ColumnDefinition def = cfm.getColumnDefinition(entry.left.prepare(cfm));
                 if (def == null)
                     throw new InvalidRequestException(String.format("Unknown identifier %s", entry.left));
 

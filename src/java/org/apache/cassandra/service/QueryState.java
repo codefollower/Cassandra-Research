@@ -30,7 +30,6 @@ import org.apache.cassandra.utils.FBUtilities;
 public class QueryState
 {
     private final ClientState clientState;
-    private volatile long clock;
     private volatile UUID preparedTracingSession;
 
     public QueryState(ClientState clientState)
@@ -57,9 +56,7 @@ public class QueryState
      */
     public long getTimestamp() //纳秒
     {
-        long current = System.currentTimeMillis() * 1000;
-        clock = clock >= current ? clock + 1 : current;
-        return clock;
+        return clientState.getTimestamp();
     }
 
     public boolean traceNextQuery()

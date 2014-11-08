@@ -20,7 +20,7 @@ package org.apache.cassandra.dht;
 import java.math.BigInteger;
 
 //用于RandomPartitioner
-public class BigIntegerToken extends Token<BigInteger>
+public class BigIntegerToken extends ComparableObjectToken<BigInteger>
 {
     static final long serialVersionUID = -5833589141319293006L;
 
@@ -32,10 +32,5 @@ public class BigIntegerToken extends Token<BigInteger>
     // convenience method for testing
     public BigIntegerToken(String token) {
         this(new BigInteger(token));
-    }
-
-    public int compareTo(Token<BigInteger> o)
-    {
-        return token.compareTo(o.token);
     }
 }
