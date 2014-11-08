@@ -58,7 +58,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 //OutboundTcpConnection负责发消息，MessagingService.SocketThread.run()负责接收消息
-//此类的流程是通过enqueue方法加消息，然后在run()中轮训，最后写往指定的Socket
+//此类的流程是通过enqueue方法加消息，然后在run()中轮循，最后写往指定的Socket
 public class OutboundTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
@@ -134,6 +134,7 @@ public class OutboundTcpConnection extends Thread
         outer:
         while (true)
         {
+            //从BlockingQueue批量抽出所有的消息放到drainedMessages，会删除BlockingQueue中原有的消息
             if (backlog.drainTo(drainedMessages, drainedMessages.size()) == 0)
             {
                 try
@@ -161,14 +162,13 @@ public class OutboundTcpConnection extends Thread
                             break outer;
                         continue;
                     }
-//<<<<<<< HEAD
-//                    //m.getTimeout是消息超时时间，
-//                    //qm.timestamp是进行队列的时间，
-//                    //qm.timestamp < System.currentTimeMillis() - m.getTimeout()相当于
-//                    //qm.timestamp+m.getTimeout() < System.currentTimeMillis()
-//                    //意思就是消息进入队列太久了，都超过超时时间了，所以必须废弃，不再处理
-//                    if (qm.timestamp < System.currentTimeMillis() - m.getTimeout())
-//=======
+                    //qm.isTimedOut方法的内部代码是: 
+                    //droppable && timestamp < System.currentTimeMillis() - maxTime;
+                    //maxTime = m.getTimeout是消息超时时间长度，比如3000毫秒，就是3秒钟，并不是一个具体的时间
+                    //timestamp是进行队列的时间，是一个具体的时间
+                    //timestamp < System.currentTimeMillis() - maxTime相当于
+                    //qm.timestamp + maxTime < System.currentTimeMillis()
+                    //意思就是消息进入队列太久了，都超过超时时间了，如果消息是可丢弃的，那么就丢弃它，不再处理
                     if (qm.isTimedOut(m.getTimeout()))
                         dropped.incrementAndGet();
                     else if (socket != null || connect())

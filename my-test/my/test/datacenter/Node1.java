@@ -17,21 +17,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package my.test.cluster;
+package my.test.datacenter;
 
 import org.apache.cassandra.locator.SnitchProperties;
 
 import my.test.start.CassandraDaemonStart;
 
-public class Node4 extends CassandraDaemonStart {
+//加vm参数-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
+//-agentpath:E:\jcdl\git\build\Release\jcdl.dll=trace=method,include=org/apache/cassandra/*
+//-agentpath:E:\jcdl\git\build\Release\jcdl.dll=trace=method,include=org/apache/cassandra/service/CassandraDaemon
+//加-Dcom.sun.management.jmxremote可以启用jmx
+public class Node1 extends CassandraDaemonStart {
     public static void main(String[] args) {
-        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc2.properties");
-        setConfigLoader(Node4.class);
+        //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
+        System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
+        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1.properties");
+        setConfigLoader(Node1.class);
         run(args);
     }
 
-    public Node4() {
-        this.listen_address = "127.0.0.4";
-        this.dir = "cluster/node4";
+    public Node1() {
+        this.listen_address = "127.0.0.1";
+        this.dir = "dc/node1";
     }
 }

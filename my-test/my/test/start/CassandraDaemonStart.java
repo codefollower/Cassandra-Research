@@ -49,6 +49,8 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
         config.commitlog_directory = dir + "commitlog";
         config.saved_caches_directory = dir + "saved_caches";
         config.data_file_directories = new String[] { dir + "data" };
+
+        //config.dynamic_snitch_update_interval_in_ms = 100000;
         return config;
     }
 
@@ -57,13 +59,17 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
     }
 
     public static void run(String[] args) {
+        run(args, "dc-cassandra.yaml");
+    }
+
+    public static void run(String[] args, String yaml) {
 
         System.setProperty("cassandra.rpc_port", "9160");
         System.setProperty("cassandra.start_native_transport", "true"); // 启用native
                                                                         // server，用于支持CQL
         System.setProperty("cassandra.native_transport_port", "9042");
 
-        System.setProperty("cassandra.config", "my-cassandra.yaml");
+        System.setProperty("cassandra.config", yaml);
 
         System.setProperty("log4j.defaultInitOverride", "true");
         System.setProperty("log4j.configuration", "my-log4j-server.properties");

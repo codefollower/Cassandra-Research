@@ -280,8 +280,7 @@ public class Memtable
         return lastReplayPosition.get();
     }
 
-    //同org.apache.cassandra.db.MeteredFlusher线程触发
-    //或直接调用org.apache.cassandra.db.ColumnFamilyStore.forceFlush()强制刷新
+    //由org.apache.cassandra.db.ColumnFamilyStore.Flush()触发
     class FlushRunnable extends DiskAwareRunnable
     {
         private final ReplayPosition context;

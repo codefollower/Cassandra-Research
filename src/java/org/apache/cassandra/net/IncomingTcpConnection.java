@@ -100,10 +100,7 @@ public class IncomingTcpConnection extends Thread
         }
     }
 
-//<<<<<<< HEAD
-//    //对照OutboundTcpConnection.connect()看它如何发数据
-//    private void handleModernVersion() throws IOException
-//=======
+    //对照OutboundTcpConnection.connect()看它如何发数据
     private void receiveMessages() throws IOException
     {
         // handshake (true) endpoint versions

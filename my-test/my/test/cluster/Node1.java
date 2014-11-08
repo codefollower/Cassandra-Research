@@ -19,8 +19,6 @@
  */
 package my.test.cluster;
 
-import org.apache.cassandra.locator.SnitchProperties;
-
 import my.test.start.CassandraDaemonStart;
 
 //加vm参数-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
@@ -31,9 +29,8 @@ public class Node1 extends CassandraDaemonStart {
     public static void main(String[] args) {
         //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
         System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
-        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1.properties");
         setConfigLoader(Node1.class);
-        run(args);
+        run(args, "my-cassandra.yaml");
     }
 
     public Node1() {

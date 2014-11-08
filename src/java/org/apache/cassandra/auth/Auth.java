@@ -103,7 +103,7 @@ public class Auth implements AuthMBean
         if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
             return null;
 
-        int validityPeriod = DatabaseDescriptor.getPermissionsValidity();
+        int validityPeriod = DatabaseDescriptor.getPermissionsValidity(); //默认是两秒
         if (validityPeriod <= 0)
             return null;
 

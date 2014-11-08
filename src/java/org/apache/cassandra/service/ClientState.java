@@ -273,29 +273,6 @@ public class ClientState
         return new SemanticVersion[]{ QueryProcessor.CQL_VERSION };
     }
 
-//<<<<<<< HEAD
-//    private static LoadingCache<Pair<AuthenticatedUser, IResource>, Set<Permission>> initPermissionsCache()
-//    {
-//        if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
-//            return null;
-//
-//        int validityPeriod = DatabaseDescriptor.getPermissionsValidity(); //默认是两秒
-//        if (validityPeriod <= 0)
-//            return null;
-//
-//        return CacheBuilder.newBuilder().expireAfterWrite(validityPeriod, TimeUnit.MILLISECONDS)
-//                                        .build(new CacheLoader<Pair<AuthenticatedUser, IResource>, Set<Permission>>()
-//                                        {
-//                                            public Set<Permission> load(Pair<AuthenticatedUser, IResource> userResource)
-//                                            {
-//                                                return DatabaseDescriptor.getAuthorizer().authorize(userResource.left,
-//                                                                                                    userResource.right);
-//                                            }
-//                                        });
-//    }
-//
-//=======
-//>>>>>>> 9274197b4bdb343731b964f2fcd8f70814f42a41
     private Set<Permission> authorize(IResource resource)
     {
         // AllowAllAuthorizer or manually disabled caching.

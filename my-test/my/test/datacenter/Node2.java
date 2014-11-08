@@ -17,18 +17,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package my.test.cluster;
+package my.test.datacenter;
+
+import org.apache.cassandra.locator.SnitchProperties;
 
 import my.test.start.CassandraDaemonStart;
 
-public class Node3 extends CassandraDaemonStart {
+public class Node2 extends CassandraDaemonStart {
     public static void main(String[] args) {
-        setConfigLoader(Node3.class);
-        run(args, "my-cassandra.yaml");
+        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1-2.properties");
+        setConfigLoader(Node2.class);
+        run(args);
     }
 
-    public Node3() {
-        this.listen_address = "127.0.0.3";
-        this.dir = "cluster/node3";
+    public Node2() {
+        this.listen_address = "127.0.0.2";
+        this.dir = "dc/node2";
     }
 }

@@ -25,10 +25,10 @@ disk_access_mode: mmap
 seed_provider:
     - class_name: org.apache.cassandra.locator.SimpleSeedProvider
       parameters:
-          - seeds: "127.0.0.1"
+          - seeds: "127.0.0.1,127.0.0.4"
 #- seeds: "127.0.0.1,127.0.0.2,127.0.0.3,127.0.0.4,127.0.0.5,127.0.0.6"
-endpoint_snitch: org.apache.cassandra.locator.SimpleSnitch
-#endpoint_snitch: GossipingPropertyFileSnitch
+#endpoint_snitch: org.apache.cassandra.locator.SimpleSnitch
+endpoint_snitch: GossipingPropertyFileSnitch
 dynamic_snitch: true
 request_scheduler: org.apache.cassandra.scheduler.RoundRobinScheduler
 request_scheduler_id: keyspace
