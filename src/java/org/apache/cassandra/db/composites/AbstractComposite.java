@@ -73,6 +73,7 @@ public abstract class AbstractComposite implements Composite
     {
         // This is the legacy format of composites.
         // See org.apache.cassandra.db.marshal.CompositeType for details.
+        //这里的数字3对应下面两个注释1、2
         ByteBuffer result = ByteBuffer.allocate(dataSize() + 3 * size() + (isStatic() ? 2 : 0));
         if (isStatic())
             ByteBufferUtil.writeShortLength(result, CompositeType.STATIC_MARKER);
@@ -80,9 +81,9 @@ public abstract class AbstractComposite implements Composite
         for (int i = 0; i < size(); i++)
         {
             ByteBuffer bb = get(i);
-            ByteBufferUtil.writeShortLength(result, bb.remaining());
+            ByteBufferUtil.writeShortLength(result, bb.remaining()); //注释1 : 长度占两字节
             result.put(bb.duplicate());
-            result.put((byte)0);
+            result.put((byte)0); //注释1 : 分隔位占一个字节
         }
         result.flip();
         return result;

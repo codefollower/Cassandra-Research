@@ -70,6 +70,7 @@ public class UpdateStatement extends ModificationStatement
         if (type == StatementType.INSERT && cfm.isCQL3Table() && !prefix.isStatic())
             cf.addColumn(params.makeColumn(cfm.comparator.rowMarker(prefix), ByteBufferUtil.EMPTY_BYTE_BUFFER));
 
+        //cf.toString(); //我加上的
         List<Operation> updates = getOperations();
 
         if (cfm.comparator.isDense())

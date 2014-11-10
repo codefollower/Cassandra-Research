@@ -271,6 +271,8 @@ public class MigrationManager
             throw new AlreadyExistsException(cfm.ksName, cfm.cfName);
 
         logger.info(String.format("Create new table: %s", cfm));
+        //addSerializedKeyspace把schema_keyspaces表中对应cfm.ksName的那条记录也生成一个ColumnFamily实例然后加到Mutation中，
+        //这样Mutation中就有三个ColumnFamily实例
         announce(addSerializedKeyspace(cfm.toSchema(FBUtilities.timestampMicros()), cfm.ksName), announceLocally);
     }
 

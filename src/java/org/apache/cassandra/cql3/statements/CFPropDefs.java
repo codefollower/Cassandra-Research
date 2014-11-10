@@ -58,7 +58,7 @@ public class CFPropDefs extends PropertyDefinitions
 
     static
     {
-        //总共14个选项
+        //总共13个选项
         //不包含上面的KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD
         //所以这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
         //KW_MINCOMPACTIONTHRESHOLD、KW_MAXCOMPACTIONTHRESHOLD只用在KW_COMPACTION对应的map中，
@@ -103,7 +103,7 @@ public class CFPropDefs extends PropertyDefinitions
             compactionStrategyClass = CFMetaData.createCompactionStrategy(strategy);
             //删除getCompactionOptions()返回的map中的"class"子选项，
             //会影响后面的applyToCFMetadata方法调用getCompactionOptions()返回的map
-            compactionOptions.remove(COMPACTION_STRATEGY_CLASS_KEY);
+            compactionOptions.remove(COMPACTION_STRATEGY_CLASS_KEY); //同时会修改超类properties字段的内容
 
             CFMetaData.validateCompactionOptions(compactionStrategyClass, compactionOptions);
         }

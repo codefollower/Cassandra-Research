@@ -32,7 +32,7 @@ org.apache.cassandra.db.Column的MASK是0
 文件格式
 =================
 <Row> {
-	2字节:                 key.length
+	2字节:                 key.length //这里的key就是partition_key
 	key.length个字节:      key本身的字节
 	DeletionTime {
 		4字节:                          localDeletionTime

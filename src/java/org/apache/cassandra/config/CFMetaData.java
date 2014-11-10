@@ -1514,6 +1514,7 @@ public final class CFMetaData
         adder.add("key_aliases", aliasesToJson(partitionKeyColumns));
         adder.add("column_aliases", aliasesToJson(clusteringColumns));
         adder.add("value_alias", compactValueColumn == null ? null : compactValueColumn.name.toString());
+        //cf.toString(); //我加上的
     }
 
     @VisibleForTesting

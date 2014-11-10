@@ -206,18 +206,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
         int limit = getLimit(options);
         long now = System.currentTimeMillis();
-//<<<<<<< HEAD
-//        Pageable command;
-//        if (isKeyRange || usesSecondaryIndexing) //查询一个范围
-//        {
-//            command = getRangeCommand(variables, limit, now);
-//        }
-//        else //查询具体的某一行
-//        {
-//            List<ReadCommand> commands = getSliceCommands(variables, limit, now);
-//            command = commands == null ? null : new Pageable.ReadCommands(commands);
-//        }
-//=======
         Pageable command = getPageableCommand(options, limit, now);
 
         int pageSize = options.getPageSize();
@@ -232,16 +220,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         {
             return execute(command, options, limit, now, state);
         }
-//<<<<<<< HEAD
-//        else
-//        {
-//            //org.apache.cassandra.service.pager包里的类只有分页查询时才用得到
-//            QueryPager pager = QueryPagers.pager(command, cl, options.getPagingState());
-//            if (parameters.isCount)
-//                return pageCountQuery(pager, options, pageSize, now, limit);
-//=======
-//>>>>>>> 9274197b4bdb343731b964f2fcd8f70814f42a41
-
+        
+        //org.apache.cassandra.service.pager包里的类只有分页查询时才用得到
         QueryPager pager = QueryPagers.pager(command, cl, state.getClientState(), options.getPagingState());
         if (selection.isAggregate())
             return pageAggregateQuery(pager, options, pageSize, now);
@@ -263,9 +243,10 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     private Pageable getPageableCommand(QueryOptions options, int limit, long now) throws RequestValidationException
     {
         int limitForQuery = updateLimitForQuery(limit);
-        if (isKeyRange || usesSecondaryIndexing)
+        if (isKeyRange || usesSecondaryIndexing) //查询一个范围
             return getRangeCommand(options, limitForQuery, now);
-
+        
+        //查询具体的某一行
         List<ReadCommand> commands = getSliceCommands(options, limitForQuery, now);
         return commands == null ? null : new Pageable.ReadCommands(commands);
     }
@@ -1405,24 +1386,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                                 ? Selection.wildcard(cfm)
                                 : Selection.fromSelectors(cfm, selectClause);
 
-//<<<<<<< HEAD
-//            //如果是DISTINCT查询，那么只能指定partitionKey的字段并且必须指定所有的partitionKey
-//            if (parameters.isDistinct)
-//                validateDistinctSelection(selection.getColumnsList(), cfm.partitionKeyColumns());
-//
-//            Term prepLimit = null;
-//            if (limit != null)
-//            {
-//                prepLimit = limit.prepare(keyspace(), limitReceiver());
-//                prepLimit.collectMarkerSpecification(names);
-//            }
-//
-//            SelectStatement stmt = new SelectStatement(cfm, names.size(), parameters, selection, prepLimit);
-//=======
             SelectStatement stmt = new SelectStatement(cfm, boundNames.size(), parameters, selection, prepareLimit(boundNames));
 
-            //以下代码用于分析where子句
-            ///////////////////////////////////////////////////////////////////////////
             /*
              * WHERE clause. For a given entity, rules are:
              *   - EQ relation conflicts with anything else (including a 2nd EQ)
@@ -1459,11 +1424,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 }
                 else
                 {
-//<<<<<<< HEAD
-//                    //不允许在where子句中使用别名
-//                    if (containsAlias(rel.getEntity()))
-//                        throw new InvalidRequestException(String.format("Aliases aren't allowed in where clause ('%s')", rel));
-//=======
                     SingleColumnRelation rel = (SingleColumnRelation) relation;
                     ColumnIdentifier entity = rel.getEntity().prepare(cfm);
                     ColumnDefinition def = cfm.getColumnDefinition(entity);
@@ -1514,6 +1474,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
             checkNeedsFiltering(stmt);
 
+            //如果是DISTINCT查询，那么只能指定partitionKey的字段并且必须指定所有的partitionKey
             if (parameters.isDistinct)
                 stmt.validateDistinctSelection();
 
@@ -1533,6 +1494,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             stmt.restrictedColumns.add(def);
 
             SecondaryIndex index = indexManager.getIndexForColumn(def.name.bytes);
+            //只有EQ, CONTAINS, CONTAINS_KEY三种情况允许通过索引查询
             if (index != null && index.supportsOperator(relation.operator()))
                 return new boolean[]{true, def.kind == ColumnDefinition.Kind.CLUSTERING_COLUMN};
             return new boolean[]{false, false};
@@ -1587,11 +1549,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 }
                 previousPosition++;
 
-//<<<<<<< HEAD
-//                stmt.restrictedColumns.add(def);
-//                //只有EQ, CONTAINS, CONTAINS_KEY三种情况允许通过索引查询
-//                if (def.isIndexed() && rel.operator().allowsIndexQuery())
-//=======
                 Restriction existing = getExistingRestriction(stmt, def);
                 Operator operator = relation.operator();
                 if (existing != null)
@@ -1601,29 +1558,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     else if (!existing.isSlice())
                         throw new InvalidRequestException(String.format("Column \"%s\" cannot be restricted by an equality relation and an inequality relation", def));
                 }
-//<<<<<<< HEAD
-//                //where子句中只能有PARTITION_KEY、CLUSTERING_COLUMN、REGULAR这三种列，不能有COMPACT_VALUE
-//                switch (def.kind)
-//                {
-//                    case PARTITION_KEY:
-//                        stmt.keyRestrictions[def.position()] = updateRestriction(cfm, def, stmt.keyRestrictions[def.position()], rel, names);
-//                        break;
-//                    case CLUSTERING_COLUMN:
-//                        stmt.columnRestrictions[def.position()] = updateRestriction(cfm, def, stmt.columnRestrictions[def.position()], rel, names);
-//                        break;
-//                    case COMPACT_VALUE:
-//                        throw new InvalidRequestException(String.format("Predicates on the non-primary-key column (%s) of a COMPACT table are not yet supported", def.name));
-//                    case REGULAR:
-//                    case STATIC:
-//                        // We only all IN on the row key and last clustering key so far, never on non-PK columns, and this even if there's an index
-//                        //非PK列不允许在IN中有多个值，只能为1
-//                        Restriction r = updateRestriction(cfm, def, stmt.metadataRestrictions.get(def.name), rel, names);
-//                        if (r.isIN() && !((Restriction.IN)r).canHaveOnlyOneValue())
-//                            // Note: for backward compatibility reason, we conside a IN of 1 value the same as a EQ, so we let that slide.
-//                            throw new InvalidRequestException(String.format("IN predicates on non-primary-key columns (%s) is not yet supported", def.name));
-//                        stmt.metadataRestrictions.put(def.name, r);
-//                        break;
-//=======
+
                 restrictedColumns.add(def);
             }
 
@@ -1691,13 +1626,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             }
         }
 
-//<<<<<<< HEAD
-//            //以下代码在分析完where子句后，再对其中与PARTITION_KEY相关的字段进行分析
-//            ///////////////////////////////////////////////////////////////////////////
-//            /*
-//             * At this point, the select statement if fully constructed, but we still have a few things to validate
-//             */
-//=======
         private Restriction getExistingRestriction(SelectStatement stmt, ColumnDefinition def)
         {
             switch (def.kind)
@@ -1716,7 +1644,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
         private void updateRestrictionsForRelation(SelectStatement stmt, ColumnDefinition def, SingleColumnRelation relation, VariableSpecifications names) throws InvalidRequestException
         {
-            switch (def.kind)
+            switch (def.kind) //where子句中只能有PARTITION_KEY、CLUSTERING_COLUMN、REGULAR、STATIC这4种列，不能有COMPACT_VALUE
             {
                 case PARTITION_KEY:
                     stmt.keyRestrictions[def.position()] = updateSingleColumnRestriction(def, stmt.keyRestrictions[def.position()], relation, names);
@@ -1729,6 +1657,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 case REGULAR:
                 case STATIC:
                     // We only all IN on the row key and last clustering key so far, never on non-PK columns, and this even if there's an index
+                    //非PK列不允许在IN中有多个值，只能为1
                     Restriction r = updateSingleColumnRestriction(def, stmt.metadataRestrictions.get(def.name), relation, names);
                     if (r.isIN() && !((Restriction.IN)r).canHaveOnlyOneValue())
                         // Note: for backward compatibility reason, we conside a IN of 1 value the same as a EQ, so we let that slide.
@@ -1950,20 +1879,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             }
         }
 
-//<<<<<<< HEAD
-//            // All (or none) of the partition key columns have been specified;
-//            // hence there is no need to turn these restrictions into index expressions.
-//            //keyRestrictions中已有PARTITION_KEY字段，如果不使用辅助索引，那么留在restrictedColumns中也没用
-//            if (!stmt.usesSecondaryIndexing)
-//                stmt.restrictedColumns.removeAll(cfm.partitionKeyColumns());
-//            
-//            //以下代码在分析完where子句后，再对其中与CLUSTERING_COLUMN相关的字段进行分析
-//            ///////////////////////////////////////////////////////////////////////////
-//
-//            if (stmt.selectsOnlyStaticColumns && stmt.hasClusteringColumnsRestriction())
-//                throw new InvalidRequestException("Cannot restrict clustering columns when selecting only static columns");
-//
-//=======
         private void processColumnRestrictions(SelectStatement stmt, boolean hasQueriableIndex, CFMetaData cfm) throws InvalidRequestException
         {
             // If a clustering key column is restricted by a non-EQ relation, all preceding
@@ -2022,27 +1937,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             }
         }
 
-//<<<<<<< HEAD
-//            // Covers indexes on the first clustering column (among others).
-//            if (stmt.isKeyRange && hasQueriableClusteringColumnIndex)
-//                stmt.usesSecondaryIndexing = true;
-//
-//            if (!stmt.usesSecondaryIndexing)
-//                stmt.restrictedColumns.removeAll(cfm.clusteringColumns());
-//            
-//            
-//            //以下代码在分析完where子句后，再对其中与REGULAR相关的字段进行分析
-//            ///////////////////////////////////////////////////////////////////////////
-//
-//            // Even if usesSecondaryIndexing is false at this point, we'll still have to use one if
-//            // there is restrictions not covered by the PK.
-//            if (!stmt.metadataRestrictions.isEmpty())
-//            {
-//                if (!hasQueriableIndex)
-//                    throw new InvalidRequestException("No indexed columns present in by-columns clause with Equal operator");
-//                stmt.usesSecondaryIndexing = true;
-//            }
-//=======
         private void validateSecondaryIndexSelections(SelectStatement stmt) throws InvalidRequestException
         {
             if (stmt.keyIsInRelation)
@@ -2059,15 +1953,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             if (stmt.usesSecondaryIndexing)
                 throw new InvalidRequestException("ORDER BY with 2ndary indexes is not supported.");
 
-//<<<<<<< HEAD
-//            
-//            //以下代码分析order by子句
-//            ///////////////////////////////////////////////////////////////////////////
-//            if (!stmt.parameters.orderings.isEmpty())
-//            {
-//                if (stmt.usesSecondaryIndexing)
-//                    throw new InvalidRequestException("ORDER BY with 2ndary indexes is not supported.");
-//=======
             if (stmt.isKeyRange)
                 throw new InvalidRequestException("ORDER BY is only supported when the partition key is restricted by an EQ or an IN.");
         }
@@ -2118,34 +2003,16 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 if (def == null)
                     handleUnrecognizedOrderingColumn(column);
 
-//<<<<<<< HEAD
-//                    //排序字段必须是CLUSTERING_COLUMN
-//                    if (def.kind != ColumnDefinition.Kind.CLUSTERING_COLUMN)
-//                        throw new InvalidRequestException(String.format("Order by is currently only supported on the clustered columns of the PRIMARY KEY, got %s", column));
-//
-//                    //排序字段的顺序必须跟CLUSTERING_COLUMN中的一样
-//                    if (i++ != def.position())
-//                        throw new InvalidRequestException(String.format("Order by currently only support the ordering of columns following their declared order in the PRIMARY KEY"));
-//=======
-                if (def.kind != ColumnDefinition.Kind.CLUSTERING_COLUMN)
+                if (def.kind != ColumnDefinition.Kind.CLUSTERING_COLUMN) //排序字段必须是CLUSTERING_COLUMN
                     throw new InvalidRequestException(String.format("Order by is currently only supported on the clustered columns of the PRIMARY KEY, got %s", column));
 
-                if (i++ != def.position())
+                if (i++ != def.position()) //排序字段的顺序必须跟CLUSTERING_COLUMN中的一样
                     throw new InvalidRequestException(String.format("Order by currently only support the ordering of columns following their declared order in the PRIMARY KEY"));
 
                 reversedMap[def.position()] = (reversed != isReversedType(def));
             }
 
-//<<<<<<< HEAD
-//                // Check that all boolean in reversedMap, if set, agrees
-//                //排序顺序要么全是ASC要么全是DESC
-//                Boolean isReversed = null;
-//                for (Boolean b : reversedMap)
-//                {
-//                    // Cell on which order is specified can be in any order
-//                    if (b == null)
-//                        continue;
-//=======
+            //排序顺序要么全是ASC要么全是DESC
             // Check that all boolean in reversedMap, if set, agrees
             Boolean isReversed = null;
             for (Boolean b : reversedMap)
@@ -2166,24 +2033,16 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             return isReversed;
         }
 
-//<<<<<<< HEAD
-//            // Make sure this queries is allowed (note: non key range non indexed cannot involve filtering underneath)
-//            //在进行rowKey的范围查询或按辅助索引查询时，如果没有显示指定"ALLOW FILTERING"，那么对于一些特殊情况会发生错误
-//            //秘密查询大量的记录导致性能问题
-//=======
         /** If ALLOW FILTERING was not specified, this verifies that it is not needed */
         private void checkNeedsFiltering(SelectStatement stmt) throws InvalidRequestException
-        {
+        {   //在进行rowKey的范围查询或按辅助索引查询时，如果没有显示指定"ALLOW FILTERING"，那么对于一些特殊情况会发生错误
+            //查询大量的记录导致性能问题
             // non-key-range non-indexed queries cannot involve filtering underneath
             if (!parameters.allowFiltering && (stmt.isKeyRange || stmt.usesSecondaryIndexing))
             {
                 // We will potentially filter data if either:
                 //  - Have more than one IndexExpression
                 //  - Have no index expression and the column filter is not the identity
-//<<<<<<< HEAD
-//                //"!stmt.columnFilterIsIdentity()"表示在where子句中出现了CLUSTERING_COLUMN字段
-//                if (stmt.restrictedColumns.size() > 1 || (stmt.restrictedColumns.isEmpty() && !stmt.columnFilterIsIdentity()))
-//=======
                 if (needFiltering(stmt))
                     throw new InvalidRequestException("Cannot execute this query as it might involve data filtering and " +
                                                       "thus may have unpredictable performance. If you want to execute " +
@@ -2209,9 +2068,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             }
         }
 
-//<<<<<<< HEAD
-//        //SELECT DISTINCT必须出现所有的PARTITION_KEY
-//=======
         /**
          * Checks if the specified statement will need to filter the data.
          *
@@ -2221,6 +2077,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
          */
         private static boolean needFiltering(SelectStatement stmt)
         {
+            //"!stmt.columnFilterIsIdentity()"表示在where子句中出现了CLUSTERING_COLUMN字段
             return stmt.restrictedColumns.size() > 1
                     || (stmt.restrictedColumns.isEmpty() && !stmt.columnFilterIsIdentity())
                     || (!stmt.restrictedColumns.isEmpty()

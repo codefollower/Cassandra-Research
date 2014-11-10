@@ -315,12 +315,10 @@ public abstract class Constants
         {
             //对于COMPACT_VALUE列，cname为null
             CellName cname = cf.getComparator().create(prefix, column);
-//<<<<<<< HEAD
-//            ByteBuffer value = t.bindAndGet(params.variables);
-//            //生成一个org.apache.cassandra.db.Column或其子类的实例
-//=======
             ByteBuffer value = t.bindAndGet(params.options);
+            //生成一个org.apache.cassandra.db.Column或其子类的实例
             cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
+            //cf.toString(); //我加上的
         }
     }
 

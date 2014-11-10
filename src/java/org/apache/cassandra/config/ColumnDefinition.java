@@ -298,6 +298,7 @@ public class ColumnDefinition extends ColumnSpecification
         adder.add(INDEX_NAME, indexName);
         adder.add(COMPONENT_INDEX, componentIndex);
         adder.add(KIND, kind.serialize());
+        cf.toString();
     }
 
     public ColumnDefinition apply(ColumnDefinition def)  throws ConfigurationException
