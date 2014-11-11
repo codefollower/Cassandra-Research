@@ -616,7 +616,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             else
             {
                 // Note: for backward compatibility reasons, we let INs with 1 value slide
-                //在SelectStatement.RawStatement.prepare()中已检查过了
+                //在SelectStatement.RawStatement.prepare()中已检查过了，通过forSelection方法触发也有可能
                 if (values.size() != 1)
                     throw new InvalidRequestException("IN is only supported on the last column of the partition key");
                 ByteBuffer val = values.get(0);
@@ -1448,6 +1448,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             if (stmt.selectsOnlyStaticColumns && stmt.hasClusteringColumnsRestriction())
                 throw new InvalidRequestException("Cannot restrict clustering columns when selecting only static columns");
 
+            //检查clustering columns
             processColumnRestrictions(stmt, hasQueriableIndex, cfm);
 
             // Covers indexes on the first clustering column (among others).
@@ -1858,7 +1859,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             }
 
             if (stmt.onToken)
-                checkTokenFunctionArgumentsOrder(cfm);
+                checkTokenFunctionArgumentsOrder(cfm); //token应用到partition key时，在where子句中出现的顺序需要跟在建表时的PK定义顺序一样
         }
 
         /**
@@ -1924,6 +1925,9 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     // For non-composite slices, we don't support internally the difference between exclusive and
                     // inclusive bounds, so we deal with it manually.
                     //见CreateTableStatement类中comparator字段的注释，只有第3种满足"!cfm.hasCompositeComparator()"
+                    //例如:
+                    //CREATE TABLE IF NOT EXISTS users (id int, f1 int, age int, PRIMARY KEY (id, f1)) WITH COMPACT STORAGE
+                    //select age, f1 from users2 where f1 > 0
                     if (!cfm.comparator.isCompound() && (!slice.isInclusive(Bound.START) || !slice.isInclusive(Bound.END)))
                         stmt.sliceRestriction = slice;
                 }

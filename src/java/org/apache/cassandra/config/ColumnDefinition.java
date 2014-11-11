@@ -236,14 +236,18 @@ public class ColumnDefinition extends ColumnSpecification
     @Override
     public String toString()
     {
+//        return Objects.toStringHelper(this)
+//                      .add("name", name)
+//                      .add("type", type)
+//                      .add("kind", kind)
+//                      .add("componentIndex", componentIndex)
+//                      .add("indexName", indexName)
+//                      .add("indexType", indexType)
+//                      .toString();
+        
         return Objects.toStringHelper(this)
-                      .add("name", name)
-                      .add("type", type)
-                      .add("kind", kind)
-                      .add("componentIndex", componentIndex)
-                      .add("indexName", indexName)
-                      .add("indexType", indexType)
-                      .toString();
+                .add("name", name)
+                .toString();
     }
 
     public boolean isThriftCompatible()

@@ -30,6 +30,7 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.serializers.MarshalException;
 
+//在insert之类的语句中调用函数就可以测试这个类，在select中用到的函数不会触发这个类
 public class FunctionCall extends Term.NonTerminal
 {
     private final ScalarFunction fun;
