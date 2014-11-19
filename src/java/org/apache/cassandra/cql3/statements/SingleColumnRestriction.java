@@ -43,6 +43,11 @@ public abstract class SingleColumnRestriction implements Restriction
             this.onToken = onToken;
         }
 
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            return value != null && value.usesFunction(ksName, functionName);
+        }
+
         public List<ByteBuffer> values(QueryOptions options) throws InvalidRequestException
         {
             return Collections.singletonList(value.bindAndGet(options));
@@ -73,6 +78,11 @@ public abstract class SingleColumnRestriction implements Restriction
             return onToken;
         }
 
+        public boolean canEvaluateWithSlices()
+        {
+            return true;
+        }
+
         @Override
         public String toString()
         {
@@ -87,6 +97,15 @@ public abstract class SingleColumnRestriction implements Restriction
         public InWithValues(List<Term> values)
         {
             this.values = values;
+        }
+
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            if (values != null)
+                for (Term value : values)
+                    if (value != null && value.usesFunction(ksName, functionName))
+                        return true;
+            return false;
         }
 
         public List<ByteBuffer> values(QueryOptions options) throws InvalidRequestException
@@ -127,6 +146,11 @@ public abstract class SingleColumnRestriction implements Restriction
             return false;
         }
 
+        public boolean canEvaluateWithSlices()
+        {
+            return true;
+        }
+
         @Override
         public String toString()
         {
@@ -141,6 +165,11 @@ public abstract class SingleColumnRestriction implements Restriction
         public InWithMarker(AbstractMarker marker)
         {
             this.marker = marker;
+        }
+
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            return false;
         }
 
         public List<ByteBuffer> values(QueryOptions options) throws InvalidRequestException
@@ -181,6 +210,11 @@ public abstract class SingleColumnRestriction implements Restriction
             return false;
         }
 
+        public boolean canEvaluateWithSlices()
+        {
+            return true;
+        }
+
         @Override
         public String toString()
         {
@@ -199,6 +233,14 @@ public abstract class SingleColumnRestriction implements Restriction
             this.bounds = new Term[2];
             this.boundInclusive = new boolean[2];
             this.onToken = onToken;
+        }
+
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            for (Term value : bounds)
+                if (value != null && value.usesFunction(ksName, functionName))
+                    return true;
+            return false;
         }
 
         public boolean isSlice()
@@ -229,6 +271,11 @@ public abstract class SingleColumnRestriction implements Restriction
         public boolean isOnToken()
         {
             return onToken;
+        }
+
+        public boolean canEvaluateWithSlices()
+        {
+            return true;
         }
 
         /** Returns true if the start or end bound (depending on the argument) is set, false otherwise */
@@ -323,6 +370,19 @@ public abstract class SingleColumnRestriction implements Restriction
         private List<Term> values; // for CONTAINS
         private List<Term> keys;   // for CONTAINS_KEY
 
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            if (values != null)
+                for (Term value : values)
+                    if (value != null && value.usesFunction(ksName, functionName))
+                        return true;
+            if (keys != null)
+                for (Term key : keys)
+                    if (key != null && key.usesFunction(ksName, functionName))
+                        return true;
+            return false;
+        }
+
         public boolean hasContains()
         {
             return values != null;
@@ -412,6 +472,10 @@ public abstract class SingleColumnRestriction implements Restriction
             return false;
         }
 
+        public boolean canEvaluateWithSlices()
+        {
+            return false;
+        }
 
         @Override
         public String toString()

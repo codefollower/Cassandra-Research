@@ -39,7 +39,7 @@ NONALTERBALE_KEYSPACES = ('system')
 class Cql3ParsingRuleSet(CqlParsingRuleSet):
     keywords = set((
         'select', 'from', 'where', 'and', 'key', 'insert', 'update', 'with',
-        'limit', 'using', 'use', 'count', 'set',
+        'limit', 'using', 'use', 'set',
         'begin', 'apply', 'batch', 'truncate', 'delete', 'in', 'create',
         'function', 'keyspace', 'schema', 'columnfamily', 'table', 'index', 'on', 'drop',
         'primary', 'into', 'values', 'timestamp', 'ttl', 'alter', 'add', 'type',
@@ -209,7 +209,7 @@ JUNK ::= /([ \t\r\f\v]+|(--|[/][/])[^\n\r]*([\n\r]|$)|[/][*].*?[*][/])/ ;
 <mapLiteral> ::= "{" <term> ":" <term> ( "," <term> ":" <term> )* "}"
                ;
 
-<functionName> ::= <identifier> ( ":" ":" <identifier> )? 
+<functionName> ::= <identifier> ( "." <identifier> )?
                  | "TOKEN"
                  ;
 
@@ -261,12 +261,19 @@ JUNK ::= /([ \t\r\f\v]+|(--|[/][/])[^\n\r]*([\n\r]|$)|[/][*].*?[*][/])/ ;
 
 <userType> ::= utname=<cfOrKsName> ;
 
-<storageType> ::= <simpleStorageType> | <collectionType> | <userType> ;
+<storageType> ::= <simpleStorageType> | <collectionType> | <frozenCollectionType> | <userType> ;
 
+# Note: autocomplete for frozen collection types does not handle nesting past depth 1 properly,
+# but that's a lot of work to fix for little benefit.
 <collectionType> ::= "map" "<" <simpleStorageType> "," ( <simpleStorageType> | <userType> ) ">"
                    | "list" "<" ( <simpleStorageType> | <userType> ) ">"
                    | "set" "<" ( <simpleStorageType> | <userType> ) ">"
                    ;
+
+<frozenCollectionType> ::= "frozen" "<" "map"  "<" <storageType> "," <storageType> ">" ">"
+                         | "frozen" "<" "list" "<" <storageType> ">" ">"
+                         | "frozen" "<" "set"  "<" <storageType> ">" ">"
+                         ;
 
 <columnFamilyName> ::= ( ksname=<cfOrKsName> dot="." )? cfname=<cfOrKsName> ;
 
@@ -285,7 +292,6 @@ JUNK ::= /([ \t\r\f\v]+|(--|[/][/])[^\n\r]*([\n\r]|$)|[/][*].*?[*][/])/ ;
 <unreservedKeyword> ::= nocomplete=
                         ( <K_KEY>
                         | <K_CLUSTERING>
-                        # | <K_COUNT>  -- to get count(*) completion, treat count as reserved
                         | <K_TTL>
                         | <K_COMPACT>
                         | <K_STORAGE>
@@ -613,7 +619,6 @@ syntax_rules += r'''
              ;
 <selectClause> ::= "DISTINCT"? <selector> ("AS" <cident>)? ("," <selector> ("AS" <cident>)?)*
                  | "*"
-                 | "COUNT" "(" star=( "*" | "1" ) ")" ("AS" <cident>)?
                  ;
 <udtSubfieldSelection> ::= <identifier> "." <identifier>
                          ;
@@ -621,6 +626,7 @@ syntax_rules += r'''
              | <udtSubfieldSelection>
              | "WRITETIME" "(" [colname]=<cident> ")"
              | "TTL" "(" [colname]=<cident> ")"
+             | "COUNT" "(" star=( "*" | "1" ) ")"
              | <functionName> <selectionFunctionArguments>
              ;
 <selectionFunctionArguments> ::= "(" ( <selector> ( "," <selector> )* )? ")"
@@ -671,10 +677,6 @@ def select_relation_lhs_completer(ctxt, cass):
         if cd.index:
             filterable.add(cd.name)
     return map(maybe_escape_name, filterable)
-
-@completer_for('selectClause', 'star')
-def select_count_star_completer(ctxt, cass):
-    return ['*']
 
 explain_completion('selector', 'colname')
 
@@ -912,11 +914,11 @@ syntax_rules += r'''
 <cfamOrdering> ::= [ordercol]=<cident> ( "ASC" | "DESC" )
                  ;
 
-<singleKeyCfSpec> ::= [newcolname]=<cident> <simpleStorageType> "PRIMARY" "KEY"
+<singleKeyCfSpec> ::= [newcolname]=<cident> <storageType> "PRIMARY" "KEY"
                       ( "," [newcolname]=<cident> <storageType> )*
                     ;
 
-<compositeKeyCfSpec> ::= [newcolname]=<cident> <simpleStorageType>
+<compositeKeyCfSpec> ::= [newcolname]=<cident> <storageType>
                          "," [newcolname]=<cident> <storageType> ( "static" )?
                          ( "," [newcolname]=<cident> <storageType> ( "static" )? )*
                          "," "PRIMARY" k="KEY" p="(" ( partkey=<pkDef> | [pkey]=<cident> )
@@ -992,7 +994,11 @@ def create_cf_composite_primary_key_comma_completer(ctxt, cass):
 
 syntax_rules += r'''
 <createIndexStatement> ::= "CREATE" "CUSTOM"? "INDEX" ("IF" "NOT" "EXISTS")? indexname=<identifier>? "ON"
-                               cf=<columnFamilyName> ( "(" col=<cident> ")" | "(" "KEYS"  "(" col=<cident> ")" ")")
+                               cf=<columnFamilyName> "(" (
+                                   col=<cident> |
+                                   "keys(" col=<cident> ")" |
+                                   "fullCollection(" col=<cident> ")"
+                               ) ")"
                                ( "USING" <stringLiteral> ( "WITH" "OPTIONS" "=" <mapLiteral> )? )?
                          ;
 

@@ -19,12 +19,8 @@ package org.apache.cassandra.cql3.selection;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.selection.Selection.ResultSetBuilder;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.exceptions.InvalidRequestException;
 
 public final class SimpleSelector extends Selector
 {
@@ -37,14 +33,19 @@ public final class SimpleSelector extends Selector
     {
         return new Factory()
         {
-            public ColumnSpecification getColumnSpecification(CFMetaData cfm)
+            @Override
+            protected String getColumnName()
             {
-                return new ColumnSpecification(cfm.ksName,
-                                               cfm.cfName,
-                                               new ColumnIdentifier(columnName, true),
-                                               type);
+                return columnName;
             }
 
+            @Override
+            protected AbstractType<?> getReturnType()
+            {
+                return type;
+            }
+
+            @Override
             public Selector newInstance()
             {
                 return new SimpleSelector(columnName, idx, type);
@@ -52,21 +53,25 @@ public final class SimpleSelector extends Selector
         };
     }
 
-    public void addInput(ResultSetBuilder rs) throws InvalidRequestException
+    @Override
+    public void addInput(ResultSetBuilder rs)
     {
         current = rs.current.get(idx);
     }
 
-    public ByteBuffer getOutput() throws InvalidRequestException
+    @Override
+    public ByteBuffer getOutput()
     {
         return current;
     }
 
+    @Override
     public void reset()
     {
         current = null;
     }
 
+    @Override
     public AbstractType<?> getType()
     {
         return type;

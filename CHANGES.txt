@@ -1,5 +1,7 @@
 3.0
- * Mark sstables as repaired after full repair (CASSANDRA-7586) 
+ * Fix aggregate fn results on empty selection, result column name,
+   and cqlsh parsing (CASSANDRA-8229)
+ * Mark sstables as repaired after full repair (CASSANDRA-7586)
  * Extend Descriptor to include a format value and refactor reader/writer apis (CASSANDRA-7443)
  * Integrate JMH for microbenchmarks (CASSANDRA-8151)
  * Keep sstable levels when bootstrapping (CASSANDRA-7460)
@@ -13,7 +15,7 @@
  * Remove YamlFileNetworkTopologySnitch (CASSANDRA-7917)
  * Do anticompaction in groups (CASSANDRA-6851)
  * Support pure user-defined functions (CASSANDRA-7395, 7526, 7562, 7740, 7781, 7929,
-   7924, 7812, 8063)
+   7924, 7812, 8063, 7813)
  * Permit configurable timestamps with cassandra-stress (CASSANDRA-7416)
  * Move sstable RandomAccessReader to nio2, which allows using the
    FILE_SHARE_DELETE flag on Windows (CASSANDRA-4050)
@@ -28,15 +30,25 @@
  * Use unsafe mutations for most unit tests (CASSANDRA-6969)
  * Fix race condition during calculation of pending ranges (CASSANDRA-7390)
  * Fail on very large batch sizes (CASSANDRA-8011)
- * improve concurrency of repair (CASSANDRA-6455)
+ * improve concurrency of repair (CASSANDRA-6455, 8208)
 
 2.1.3
+ * Do more aggressive entire-sstable TTL expiry checks (CASSANDRA-8243)
+ * Add more log info if readMeter is null (CASSANDRA-8238)
+ * add check of the system wall clock time at startup (CASSANDRA-8305)
+ * Support for frozen collections (CASSANDRA-7859)
  * Fix overflow on histogram computation (CASSANDRA-8028)
  * Have paxos reuse the timestamp generation of normal queries (CASSANDRA-7801)
+ * Fix incremental repair not remove parent session on remote (CASSANDRA-8291)
 Merged from 2.0:
+ * Disable SSLv3 for POODLE (CASSANDRA-8265)
+ * Fix millisecond timestamps in Tracing (CASSANDRA-8297)
+ * Include keyspace name in error message when there are insufficient
+   live nodes to stream from (CASSANDRA-8221)
  * Avoid overlap in L1 when L0 contains many nonoverlapping
    sstables (CASSANDRA-8211)
  * Improve PropertyFileSnitch logging (CASSANDRA-8183)
+
 
 2.1.2
  * (cqlsh) parse_for_table_meta errors out on queries with undefined

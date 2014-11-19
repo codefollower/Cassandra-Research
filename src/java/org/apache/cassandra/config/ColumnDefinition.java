@@ -277,19 +277,19 @@ public class ColumnDefinition extends ColumnSpecification
      */
     public void deleteFromSchema(Mutation mutation, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(CFMetaData.SchemaColumnsCf);
+        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SchemaColumnsTable);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
         // Note: we do want to use name.toString(), not name.bytes directly for backward compatibility (For CQL3, this won't make a difference).
-        Composite prefix = CFMetaData.SchemaColumnsCf.comparator.make(cfName, name.toString());
+        Composite prefix = SystemKeyspace.SchemaColumnsTable.comparator.make(cfName, name.toString());
         cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
     }
 
     //每一个字段对应schema_columns表中的一条记录
     public void toSchema(Mutation mutation, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(CFMetaData.SchemaColumnsCf);
-        Composite prefix = CFMetaData.SchemaColumnsCf.comparator.make(cfName, name.toString());
+        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SchemaColumnsTable);
+        Composite prefix = SystemKeyspace.SchemaColumnsTable.comparator.make(cfName, name.toString());
         CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
 
         //对应schema_columns表除keyspace_name和columnfamily_name、column_name之外的6个普通字段
@@ -334,7 +334,7 @@ public class ColumnDefinition extends ColumnSpecification
 
     public static UntypedResultSet resultify(Row serializedColumns)
     {
-        String query = String.format("SELECT * FROM %s.%s", Keyspace.SYSTEM_KS, SystemKeyspace.SCHEMA_COLUMNS_CF);
+        String query = String.format("SELECT * FROM %s.%s", SystemKeyspace.NAME, SystemKeyspace.SCHEMA_COLUMNS_TABLE);
         return QueryProcessor.resultify(query, serializedColumns);
     }
 

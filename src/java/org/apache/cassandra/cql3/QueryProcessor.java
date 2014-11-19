@@ -22,7 +22,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.primitives.Ints;
 import com.googlecode.concurrentlinkedhashmap.ConcurrentLinkedHashMap;
 import com.googlecode.concurrentlinkedhashmap.EntryWeigher;
@@ -32,6 +31,7 @@ import org.antlr.runtime.*;
 import org.github.jamm.MemoryMeter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.cql3.statements.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.*;
@@ -148,7 +148,7 @@ public class QueryProcessor implements QueryHandler
             ClientState state = ClientState.forInternalCalls();
             try
             {
-                state.setKeyspace(Keyspace.SYSTEM_KS);
+                state.setKeyspace(SystemKeyspace.NAME);
             }
             catch (InvalidRequestException e)
             {
@@ -600,11 +600,20 @@ public class QueryProcessor implements QueryHandler
         public void onCreateKeyspace(String ksName) { }
         public void onCreateColumnFamily(String ksName, String cfName) { }
         public void onCreateUserType(String ksName, String typeName) { }
-        public void onCreateFunction(String namespace, String functionName) { }
+        public void onCreateFunction(String ksName, String functionName) {
+            if (Functions.getOverloadCount(new FunctionName(ksName, functionName)) > 1)
+            {
+                // in case there are other overloads, we have to remove all overloads since argument type
+                // matching may change (due to type casting)
+                removeInvalidPreparedStatementsForFunction(preparedStatements.values().iterator(), ksName, functionName);
+                removeInvalidPreparedStatementsForFunction(thriftPreparedStatements.values().iterator(), ksName, functionName);
+            }
+        }
+
         public void onUpdateKeyspace(String ksName) { }
         public void onUpdateColumnFamily(String ksName, String cfName) { }
         public void onUpdateUserType(String ksName, String typeName) { }
-        public void onUpdateFunction(String namespace, String functionName) { }
+        public void onUpdateFunction(String ksName, String functionName) { }
 
         public void onDropKeyspace(String ksName)
         {
@@ -617,6 +626,17 @@ public class QueryProcessor implements QueryHandler
         }
 
         public void onDropUserType(String ksName, String typeName) { }
-        public void onDropFunction(String namespace, String functionName) { }
-	}
+        public void onDropFunction(String ksName, String functionName) {
+            removeInvalidPreparedStatementsForFunction(preparedStatements.values().iterator(), ksName, functionName);
+            removeInvalidPreparedStatementsForFunction(thriftPreparedStatements.values().iterator(), ksName, functionName);
+        }
+
+        private void removeInvalidPreparedStatementsForFunction(Iterator<ParsedStatement.Prepared> iterator,
+                                                                String ksName, String functionName)
+        {
+            while (iterator.hasNext())
+                if (iterator.next().statement.usesFunction(ksName, functionName))
+                    iterator.remove();
+        }
+    }
 }

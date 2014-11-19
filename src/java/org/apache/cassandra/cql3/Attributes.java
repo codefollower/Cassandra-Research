@@ -47,6 +47,12 @@ public class Attributes
         this.timeToLive = timeToLive;
     }
 
+    public boolean usesFunction(String ksName, String functionName)
+    {
+        return (timestamp != null && timestamp.usesFunction(ksName, functionName))
+            || (timeToLive != null && timeToLive.usesFunction(ksName, functionName));
+    }
+
     public boolean isTimestampSet()
     {
         return timestamp != null;

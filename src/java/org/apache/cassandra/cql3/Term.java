@@ -67,6 +67,8 @@ public interface Term
      */
     public abstract boolean containsBindMarker();
 
+    boolean usesFunction(String ksName, String functionName);
+
     /**
      * A parsed, non prepared (thus untyped) term.
      *
@@ -115,6 +117,11 @@ public interface Term
         public void collectMarkerSpecification(VariableSpecifications boundNames) {}
         public Terminal bind(QueryOptions options) { return this; }
 
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            return false;
+        }
+
         // While some NonTerminal may not have bind markers, no Term can be Terminal
         // with a bind marker
         public boolean containsBindMarker()
@@ -138,6 +145,12 @@ public interface Term
         public abstract List<ByteBuffer> getElements();
     }
 
+    public interface CollectionTerminal
+    {
+        /** Gets the value of the collection when serialized with the given protocol version format */
+        public ByteBuffer getWithProtocolVersion(int protocolVersion);
+    }
+
     /**
      * A non terminal term, i.e. a term that can only be reduce to a byte buffer
      * at execution time.
@@ -150,6 +163,11 @@ public interface Term
      */
     public abstract class NonTerminal implements Term
     {
+        public boolean usesFunction(String ksName, String functionName)
+        {
+            return false;
+        }
+
         public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException
         {
             Terminal t = bind(options);

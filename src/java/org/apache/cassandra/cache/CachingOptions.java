@@ -130,11 +130,7 @@ public class CachingOptions
         return result;
     }
 
-    public static boolean isLegacy(String CachingOptions)
-    {
-        return legacyOptions.contains(CachingOptions.toUpperCase());
-    }
-
+    // FIXME: move to ThriftConversion
     public static CachingOptions fromThrift(String caching, String cellsPerRow) throws ConfigurationException
     {
 
@@ -153,6 +149,7 @@ public class CachingOptions
         return new CachingOptions(kc, rc);
     }
 
+    // FIXME: move to ThriftConversion
     public String toThriftCaching()
     {
         if (rowCache.isEnabled() && keyCache.isEnabled())
@@ -164,13 +161,13 @@ public class CachingOptions
         return "NONE";
     }
 
+    // FIXME: move to ThriftConversion
     public String toThriftCellsPerRow()
     {
         if (rowCache.cacheFullPartitions())
             return "ALL";
         return String.valueOf(rowCache.rowsToCache);
     }
-
 
     public static class KeyCache
     {
@@ -191,7 +188,7 @@ public class CachingOptions
 
         public boolean isEnabled()
         {
-            return type.equals(Type.ALL);
+            return type == Type.ALL;
         }
 
         @Override
@@ -226,7 +223,7 @@ public class CachingOptions
 
         public RowCache(Type type)
         {
-            this(type, type.equals(Type.ALL) ? Integer.MAX_VALUE : 0);
+            this(type, (type == Type.ALL) ? Integer.MAX_VALUE : 0);
         }
         public RowCache(Type type, int rowsToCache)
         {
@@ -249,17 +246,17 @@ public class CachingOptions
         }
         public boolean isEnabled()
         {
-            return type.equals(Type.ALL) || type.equals(Type.HEAD);
+            return (type == Type.ALL) || (type == Type.HEAD);
         }
         public boolean cacheFullPartitions()
         {
-            return type.equals(Type.ALL);
+            return type == Type.ALL;
         }
         @Override
         public String toString()
         {
-            if (type.equals(Type.ALL)) return "ALL";
-            if (type.equals(Type.NONE)) return "NONE";
+            if (type == Type.ALL) return "ALL";
+            if (type == Type.NONE) return "NONE";
             return String.valueOf(rowsToCache);
         }
 

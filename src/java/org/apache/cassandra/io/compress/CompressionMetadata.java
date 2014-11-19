@@ -105,7 +105,7 @@ public class CompressionMetadata
             //格式见: org.apache.cassandra.io.compress.CompressionMetadata.Writer.writeHeader(CompressionParameters)
             String compressorName = stream.readUTF();
             int optionCount = stream.readInt();
-            Map<String, String> options = new HashMap<>();
+            Map<String, String> options = new HashMap<>(optionCount);
             for (int i = 0; i < optionCount; ++i)
             {
                 String key = stream.readUTF();

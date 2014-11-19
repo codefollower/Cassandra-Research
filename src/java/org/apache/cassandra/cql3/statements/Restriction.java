@@ -40,8 +40,16 @@ public interface Restriction
     public boolean isContains();
     public boolean isMultiColumn();
 
+    /**
+     * Returns true if, when applied to a clustering column, this restriction can be handled through one or more slices
+     * alone without filtering.  For example, EQ restrictions can be represented as a slice, but CONTAINS cannot.
+     */
+    public boolean canEvaluateWithSlices();
+
     // Not supported by Slice, but it's convenient to have here
     public List<ByteBuffer> values(QueryOptions options) throws InvalidRequestException;
+
+    boolean usesFunction(String ksName, String functionName);
 
     public static interface EQ extends Restriction {}
 

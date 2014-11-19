@@ -25,7 +25,6 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -617,15 +616,12 @@ public class DatabaseDescriptor
             conf.server_encryption_options = conf.encryption_options;
         }
 
-        // Hardcoded system keyspaces
+        // hardcoded system keyspace
         //指system中的列族，不包含system_auth和system_traces
-        List<KSMetaData> systemKeyspaces = Arrays.asList(KSMetaData.systemKeyspace());
-        assert systemKeyspaces.size() == Schema.systemKeyspaceNames.size();
         //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
-        for (KSMetaData ksmd : systemKeyspaces)
-            Schema.instance.load(ksmd);
+        Schema.instance.load(SystemKeyspace.definition());
 
-        /* Load the seeds for node contact points */
+        // load the seeds for node contact points
         if (conf.seed_provider == null)
         {
             throw new ConfigurationException("seeds configuration is missing; a minimum of one seed is required.");
@@ -660,14 +656,12 @@ public class DatabaseDescriptor
     /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
     public static void loadSchemas()
     {
-//<<<<<<< HEAD
+
 //        //读取system.schema_usertypes表中的所有记录，加载到内存后每条记录对应一个UserType实例，
 //        //所有这些UserType实例都放在Schema类的UTMetaData userTypes字段中
 //        Schema.instance.loadUserTypes();
 //        //读取schema_keyspaces表
-//=======
-//>>>>>>> d63d07b9270d73a289086c69002b5a0023b2d233
-        ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_CF);
+        ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_TABLE);
 
         // if keyspace with definitions is empty try loading the old way
         if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录
@@ -700,7 +694,7 @@ public class DatabaseDescriptor
                     //除"system"之外的目录名
                     public boolean accept(File pathname)
                     {
-                        return (pathname.isDirectory() && !Schema.systemKeyspaceNames.contains(pathname.getName()));
+                        return pathname.isDirectory() && !pathname.getName().equals(SystemKeyspace.NAME);
                     }
                 }).length;
 

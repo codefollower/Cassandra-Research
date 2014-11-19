@@ -29,6 +29,7 @@ import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
+import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.Event;
 
 /**
@@ -36,7 +37,7 @@ import org.apache.cassandra.transport.Event;
  */
 public final class DropFunctionStatement extends SchemaAlteringStatement
 {
-    private final FunctionName functionName;
+    private FunctionName functionName;
     private final boolean ifExists;
     private final List<CQL3Type.Raw> argRawTypes;
     private final boolean argsPresent;
@@ -52,29 +53,43 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         this.ifExists = ifExists;
     }
 
-    public void checkAccess(ClientState state) throws UnauthorizedException
+    @Override
+    public void prepareKeyspace(ClientState state) throws InvalidRequestException
+    {
+        if (!functionName.hasKeyspace() && state.getRawKeyspace() != null)
+            functionName = new FunctionName(state.getKeyspace(), functionName.name);
+
+        if (!functionName.hasKeyspace())
+            throw new InvalidRequestException("You need to be logged in a keyspace or use a fully qualified function name");
+
+        ThriftValidation.validateKeyspaceNotSystem(functionName.keyspace);
+    }
+
+    @Override
+    public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
     {
         // TODO CASSANDRA-7557 (function DDL permission)
 
-        state.hasAllKeyspacesAccess(Permission.DROP);
+        state.hasKeyspaceAccess(functionName.keyspace, Permission.DROP);
     }
 
     /**
      * The <code>CqlParser</code> only goes as far as extracting the keyword arguments
      * from these statements, so this method is responsible for processing and
      * validating.
-     *
-     * @throws org.apache.cassandra.exceptions.InvalidRequestException if arguments are missing or unacceptable
      */
-    public void validate(ClientState state) throws RequestValidationException
+    @Override
+    public void validate(ClientState state)
     {
     }
 
+    @Override
     public Event.SchemaChange changeEvent()
     {
         return null;
     }
 
+    @Override
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
         List<Function> olds = Functions.find(functionName);
@@ -88,11 +103,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
 
         List<AbstractType<?>> argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-        {
-            // We have no proper keyspace to give, which means that this will break (NPE currently)
-            // for UDT: #7791 is open to fix this
-            argTypes.add(rawType.prepare(null).getType());
-        }
+            argTypes.add(rawType.prepare(functionName.keyspace).getType());
 
         Function old;
         if (argsPresent)
@@ -124,10 +135,6 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
             }
             old = olds.get(0);
         }
-
-        if (old.isNative())
-            throw new InvalidRequestException(String.format("Cannot drop function '%s' because it is a " +
-                                                            "native (built-in) function", functionName));
 
         MigrationManager.announceFunctionDrop((UDFunction)old, isLocalOnly);
         return true;

@@ -37,12 +37,12 @@ import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.cql3.functions.UDFunction;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
@@ -55,14 +55,14 @@ public class DefsTables //都是static方法
     private static final Logger logger = LoggerFactory.getLogger(DefsTables.class);
 
     /**
-     * Load keyspace definitions for the system keyspace (system.SCHEMA_KEYSPACES_CF)
+     * Load keyspace definitions for the system keyspace (system.SCHEMA_KEYSPACES_TABLE)
      *
      * @return Collection of found keyspace definitions
      */
     public static Collection<KSMetaData> loadFromKeyspace()
     {
         //读取schema_keyspaces表中的记录，看看有哪些keyspace
-        List<Row> serializedSchema = SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
+        List<Row> serializedSchema = SystemKeyspace.serializedSchema(SystemKeyspace.SCHEMA_KEYSPACES_TABLE);
 
         List<KSMetaData> keyspaces = new ArrayList<>(serializedSchema.size());
 
@@ -81,17 +81,17 @@ public class DefsTables //都是static方法
     private static Row serializedColumnFamilies(DecoratedKey ksNameKey)
     {
         //查询schema_columnfamilies表
-        ColumnFamilyStore cfsStore = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF);
+        ColumnFamilyStore cfsStore = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_COLUMNFAMILIES_TABLE);
         return new Row(ksNameKey, cfsStore.getColumnFamily(QueryFilter.getIdentityFilter(ksNameKey,
-                                                                                         SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF,
+                                                                                         SystemKeyspace.SCHEMA_COLUMNFAMILIES_TABLE,
                                                                                          System.currentTimeMillis())));
     }
 
     private static Row serializedUserTypes(DecoratedKey ksNameKey)
     {
-        ColumnFamilyStore cfsStore = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_USER_TYPES_CF);
+        ColumnFamilyStore cfsStore = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_USER_TYPES_TABLE);
         return new Row(ksNameKey, cfsStore.getColumnFamily(QueryFilter.getIdentityFilter(ksNameKey,
-                                                                                         SystemKeyspace.SCHEMA_USER_TYPES_CF,
+                                                                                         SystemKeyspace.SCHEMA_USER_TYPES_TABLE,
                                                                                          System.currentTimeMillis())));
     }
 
@@ -120,10 +120,10 @@ public class DefsTables //都是static方法
             keyspaces.add(ByteBufferUtil.string(mutation.key()));
 
         // current state of the schema
-        Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, keyspaces);
-        Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, keyspaces);
-        Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF, keyspaces);
-        Map<DecoratedKey, ColumnFamily> oldFunctions = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
+        Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_TABLE, keyspaces);
+        Map<DecoratedKey, ColumnFamily> oldColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_TABLE, keyspaces);
+        Map<DecoratedKey, ColumnFamily> oldTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_TABLE, keyspaces);
+        Map<DecoratedKey, ColumnFamily> oldFunctions = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_FUNCTIONS_TABLE);
 
         for (Mutation mutation : mutations)
             mutation.apply();
@@ -132,10 +132,10 @@ public class DefsTables //都是static方法
             flushSchemaCFs(); //会强制刷新memtable
 
         // with new data applied
-        Map<DecoratedKey, ColumnFamily> newKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, keyspaces);
-        Map<DecoratedKey, ColumnFamily> newColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, keyspaces);
-        Map<DecoratedKey, ColumnFamily> newTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_CF, keyspaces);
-        Map<DecoratedKey, ColumnFamily> newFunctions = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
+        Map<DecoratedKey, ColumnFamily> newKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_TABLE, keyspaces);
+        Map<DecoratedKey, ColumnFamily> newColumnFamilies = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_TABLE, keyspaces);
+        Map<DecoratedKey, ColumnFamily> newTypes = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_USER_TYPES_TABLE, keyspaces);
+        Map<DecoratedKey, ColumnFamily> newFunctions = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_FUNCTIONS_TABLE);
 
         Set<String> keyspacesToDrop = mergeKeyspaces(oldKeyspaces, newKeyspaces);
         mergeColumnFamilies(oldColumnFamilies, newColumnFamilies);
@@ -314,7 +314,7 @@ public class DefsTables //都是static方法
 
         MapDifference<DecoratedKey, ColumnFamily> diff = Maps.difference(before, after);
 
-        // New namespace with functions
+        // New keyspace with functions
         for (Map.Entry<DecoratedKey, ColumnFamily> entry : diff.entriesOnlyOnRight().entrySet())
             if (entry.getValue().hasColumns())
                 created.addAll(UDFunction.fromSchema(new Row(entry.getKey(), entry.getValue())).values());
@@ -326,7 +326,7 @@ public class DefsTables //都是static方法
 
             if (pre.hasColumns() && post.hasColumns())
             {
-                MapDifference<ByteBuffer, UDFunction> delta =
+                MapDifference<Composite, UDFunction> delta =
                         Maps.difference(UDFunction.fromSchema(new Row(entry.getKey(), pre)),
                                         UDFunction.fromSchema(new Row(entry.getKey(), post)));
 
@@ -541,7 +541,7 @@ public class DefsTables //都是static方法
 
     private static void flushSchemaCFs()
     {
-        for (String cf : SystemKeyspace.allSchemaCfs)
+        for (String cf : SystemKeyspace.ALL_SCHEMA_TABLES)
             SystemKeyspace.forceBlockingFlush(cf);
     }
 }

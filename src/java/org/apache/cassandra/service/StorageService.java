@@ -30,7 +30,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.annotation.Nullable;
 import javax.management.JMX;
 import javax.management.MBeanServer;
 import javax.management.Notification;
@@ -78,6 +77,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.ResponseVerbHandler;
 import org.apache.cassandra.repair.RepairMessageVerbHandler;
+import org.apache.cassandra.repair.RepairSessionResult;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.repair.RepairResult;
 import org.apache.cassandra.repair.RepairSession;
@@ -88,7 +88,7 @@ import org.apache.cassandra.streaming.*;
 import org.apache.cassandra.thrift.EndpointDetails;
 import org.apache.cassandra.thrift.TokenRange;
 import org.apache.cassandra.thrift.cassandraConstants;
-import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.utils.*;
 
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
@@ -890,11 +890,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         // if we don't have system_traces keyspace at this point, then create it manually
-        if (Schema.instance.getKSMetaData(Tracing.TRACE_KS) == null)
-        {
-            KSMetaData tracingKeyspace = KSMetaData.traceKeyspace();
-            MigrationManager.announceNewKeyspace(tracingKeyspace, 0, false);
-        }
+        if (Schema.instance.getKSMetaData(TraceKeyspace.NAME) == null)
+            MigrationManager.announceNewKeyspace(TraceKeyspace.definition(), 0, false);
 
         if (!isSurveyMode)
         {
@@ -1340,7 +1337,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     */
     private Map<Range<Token>, List<InetAddress>> constructRangeToEndpointMap(String keyspace, List<Range<Token>> ranges)
     {
-        Map<Range<Token>, List<InetAddress>> rangeToEndpointMap = new HashMap<>();
+        Map<Range<Token>, List<InetAddress>> rangeToEndpointMap = new HashMap<>(ranges.size());
         for (Range<Token> range : ranges)
         {
             rangeToEndpointMap.put(range, Keyspace.open(keyspace).getReplicationStrategy().getNaturalEndpoints(range.right));
@@ -1387,7 +1384,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public void onChange(InetAddress endpoint, ApplicationState state, VersionedValue value)
     {
-        if (state.equals(ApplicationState.STATUS))
+        if (state == ApplicationState.STATUS)
         {
             String apStateValue = value.value;
             String[] pieces = apStateValue.split(VersionedValue.DELIMITER_STR, -1);
@@ -1975,7 +1972,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (logger.isDebugEnabled())
             logger.debug("Node {} ranges [{}]", endpoint, StringUtils.join(ranges, ", "));
 
-        Map<Range<Token>, List<InetAddress>> currentReplicaEndpoints = new HashMap<>();
+        Map<Range<Token>, List<InetAddress>> currentReplicaEndpoints = new HashMap<>(ranges.size());
 
         // Find (for each range) all nodes that store replicas for these ranges as well
         TokenMetadata metadata = tokenMetadata.cloneOnlyTokenMap(); // don't do this in the loop! #7758
@@ -2193,7 +2190,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public int forceKeyspaceCleanup(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
-        if (keyspaceName.equals(Keyspace.SYSTEM_KS))
+        if (keyspaceName.equals(SystemKeyspace.NAME))
             throw new RuntimeException("Cleanup of the system keyspace is neither necessary nor wise");
 
         CompactionManager.AllSSTableOpStatus status = CompactionManager.AllSSTableOpStatus.SUCCESSFUL;
@@ -2246,7 +2243,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public void takeSnapshot(String tag, String... keyspaceNames) throws IOException
     {
-        if (operationMode.equals(Mode.JOINING))
+        if (operationMode == Mode.JOINING)
             throw new IOException("Cannot snapshot until bootstrap completes");
         if (tag == null || tag.equals(""))
             throw new IOException("You must supply a snapshot name.");
@@ -2285,7 +2282,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         if (keyspaceName == null)
             throw new IOException("You must supply a keyspace name");
-        if (operationMode.equals(Mode.JOINING))
+        if (operationMode == Mode.JOINING)
             throw new IOException("Cannot snapshot until bootstrap completes");
 
         if (columnFamilyName == null)
@@ -2345,7 +2342,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         Map<String, TabularData> snapshotMap = new HashMap<>();
         for (Keyspace keyspace : Keyspace.all())
         {
-            if (Keyspace.SYSTEM_KS.equals(keyspace.getName()))
+            if (SystemKeyspace.NAME.equals(keyspace.getName()))
                 continue;
 
             for (ColumnFamilyStore cfStore : keyspace.getColumnFamilyStores())
@@ -2371,7 +2368,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         long total = 0;
         for (Keyspace keyspace : Keyspace.all())
         {
-            if (Keyspace.SYSTEM_KS.equals(keyspace.getName()))
+            if (SystemKeyspace.NAME.equals(keyspace.getName()))
                 continue;
 
             for (ColumnFamilyStore cfStore : keyspace.getColumnFamilyStores())
@@ -2731,7 +2728,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                                                                                            new NamedThreadFactory("Repair#" + cmd),
                                                                                                                            "internal"));
 
-                List<ListenableFuture<?>> futures = new ArrayList<>(options.getRanges().size());
+                List<ListenableFuture<RepairSessionResult>> futures = new ArrayList<>(options.getRanges().size());
                 String[] cfnames = new String[columnFamilyStores.size()];
                 for (int i = 0; i < columnFamilyStores.size(); i++)
                 {
@@ -2750,9 +2747,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     if (session == null)
                         continue;
                     // After repair session completes, notify client its result
-                    Futures.addCallback(session, new FutureCallback<List<RepairResult>>()
+                    Futures.addCallback(session, new FutureCallback<RepairSessionResult>()
                     {
-                        public void onSuccess(List<RepairResult> results)
+                        public void onSuccess(RepairSessionResult result)
                         {
                             String message = String.format("Repair session %s for range %s finished", session.getId(), session.getRange().toString());
                             logger.info(message);
@@ -2771,14 +2768,23 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                 // After all repair sessions completes(successful or not),
                 // run anticompaction if necessary and send finish notice back to client
-                ListenableFuture<?> allSessions = Futures.allAsList(futures);
-                Futures.addCallback(allSessions, new FutureCallback<Object>()
+                final ListenableFuture<List<RepairSessionResult>> allSessions = Futures.successfulAsList(futures);
+                Futures.addCallback(allSessions, new FutureCallback<List<RepairSessionResult>>()
                 {
-                    public void onSuccess(@Nullable Object result)
+                    public void onSuccess(List<RepairSessionResult> result)
                     {
+                        // filter out null(=failed) results and get successful ranges
+                        Collection<Range<Token>> successfulRanges = new ArrayList<>();
+                        for (RepairSessionResult sessionResult : result)
+                        {
+                            if (sessionResult != null)
+                            {
+                                successfulRanges.add(sessionResult.range);
+                            }
+                        }
                         try
                         {
-                            ActiveRepairService.instance.finishParentSession(parentSession, allNeighbors);
+                            ActiveRepairService.instance.finishParentSession(parentSession, allNeighbors, successfulRanges);
                         }
                         catch (Exception e)
                         {
@@ -2794,14 +2800,15 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                     private void repairComplete()
                     {
-                        String duration = DurationFormatUtils.formatDurationWords(System.currentTimeMillis() - startTime, true, true);
+                        String duration = DurationFormatUtils.formatDurationWords(System.currentTimeMillis() - startTime,
+                                                                                  true, true);
                         String message = String.format("Repair command #%d finished in %s", cmd, duration);
                         sendNotification("repair", message,
                                          new int[]{cmd, ActiveRepairService.Status.FINISHED.ordinal()});
                         logger.info(message);
                         executor.shutdownNow();
                     }
-                }, MoreExecutors.sameThreadExecutor());
+                });
             }
         }, null);
     }
@@ -3182,7 +3189,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private Future<StreamState> streamHints()
     {
         // StreamPlan will not fail if there are zero files to transfer, so flush anyway (need to get any in-memory hints, as well)
-        ColumnFamilyStore hintsCF = Keyspace.open(Keyspace.SYSTEM_KS).getColumnFamilyStore(SystemKeyspace.HINTS_CF);
+        ColumnFamilyStore hintsCF = Keyspace.open(SystemKeyspace.NAME).getColumnFamilyStore(SystemKeyspace.HINTS_TABLE);
         FBUtilities.waitOnFuture(hintsCF.forceFlush());
 
         // gather all live nodes in the cluster that aren't also leaving
@@ -3213,10 +3220,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
             return new StreamPlan("Hints").transferRanges(hintsDestinationHost,
                                                           preferred,
-                                                                      Keyspace.SYSTEM_KS,
-                                                                      ranges,
-                                                                      SystemKeyspace.HINTS_CF)
-                                                      .execute();
+                                                          SystemKeyspace.NAME,
+                                                          ranges,
+                                                          SystemKeyspace.HINTS_TABLE)
+                                          .execute();
         }
     }
 
@@ -3418,7 +3425,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     }
 
                     // stream requests
-                    Multimap<InetAddress, Range<Token>> workMap = RangeStreamer.getWorkMap(rangesToFetchWithPreferredEndpoints);
+                    Multimap<InetAddress, Range<Token>> workMap = RangeStreamer.getWorkMap(rangesToFetchWithPreferredEndpoints, keyspace);
                     for (InetAddress address : workMap.keySet())
                     {
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
