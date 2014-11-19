@@ -23,6 +23,7 @@ import java.util.UUID;
 public abstract class TypeSizes
 {
     public static final TypeSizes NATIVE = new NativeDBTypeSizes();
+    //只看到org.apache.cassandra.cache.SerializingCache和一些测试例子中用到
     public static final TypeSizes VINT = new VIntEncodedTypeSizes();
 
     private static final int BOOL_SIZE = 1;

@@ -29,11 +29,4 @@ public interface DataOutputPlus extends DataOutput
 
     void write(Memory memory) throws IOException;
 
-//<<<<<<< HEAD:src/java/org/apache/cassandra/db/columniterator/SimpleAbstractColumnIterator.java
-////目前没有子类
-//public abstract class SimpleAbstractColumnIterator extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
-//{
-//    public void close() throws IOException {}
-//=======
-//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963:src/java/org/apache/cassandra/io/util/DataOutputPlus.java
 }

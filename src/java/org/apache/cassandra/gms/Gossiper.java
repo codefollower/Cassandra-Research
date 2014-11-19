@@ -80,7 +80,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
     private ScheduledFuture<?> scheduledGossipTask;
     private static final ReentrantLock taskLock = new ReentrantLock();
-    public final static int intervalInMillis = 1000;
+    public final static int intervalInMillis = 5000; //默认是1000毫秒(1秒钟)，为了不影响在本机的eclipse运行速度，我把它改为5000.
     //StorageService.RING_DELAY默认是30秒，所以隔离延时时间默认是1分钟，
     public final static int QUARANTINE_DELAY = StorageService.RING_DELAY * 2;
     private static final Logger logger = LoggerFactory.getLogger(Gossiper.class);
@@ -123,12 +123,6 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
     private final Map<InetAddress, Long> expireTimeEndpointMap = new ConcurrentHashMap<InetAddress, Long>();
 
-//<<<<<<< HEAD
-//    // have we ever in our lifetime reached a seed?
-//    private boolean seedContacted = false; //是否跟种子节点联系过?
-//
-//=======
-//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
     private boolean inShadowRound = false;
 
     private volatile long lastProcessedMessageAt = System.currentTimeMillis();
