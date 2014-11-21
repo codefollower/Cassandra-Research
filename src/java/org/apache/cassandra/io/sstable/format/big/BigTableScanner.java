@@ -246,7 +246,7 @@ public class BigTableScanner implements ICompactionScanner
                     currentEntry = nextEntry;
                 }
 
-                long readEnd;
+                long readEnd; //readEnd是下一行的开始位置，这变量没用到
                 if (ifile.isEOF())
                 {
                     nextEntry = null;
@@ -271,16 +271,6 @@ public class BigTableScanner implements ICompactionScanner
                 {
                     dfile.seek(currentEntry.position + currentEntry.headerOffset());
                     ByteBufferUtil.readWithShortLength(dfile); // key
-//<<<<<<< HEAD:src/java/org/apache/cassandra/io/sstable/SSTableScanner.java
-////<<<<<<< HEAD
-////                    if (sstable.descriptor.version.hasRowSizeAndColumnCount)
-////                        dfile.readLong();
-////                    //readEnd是下一行的开始位置
-////=======
-////>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
-//                    long dataSize = readEnd - dfile.getFilePointer();
-//                    return new SSTableIdentityIterator(sstable, dfile, currentKey, dataSize); //只是读一行
-//=======
                     return new SSTableIdentityIterator(sstable, dfile, currentKey);
                 }
 

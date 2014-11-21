@@ -135,9 +135,6 @@ public class IndexSummaryBuilder
         assert keys.size() > 0;
         assert keys.size() == positions.size();
 
-//<<<<<<< HEAD
-//        //keyPosition经过for循环后的值就是(offheapSize + (keys.size() * 4))
-//=======
         int length;
         if (exclusiveUpperBound == null)
             length = keys.size();
@@ -155,7 +152,7 @@ public class IndexSummaryBuilder
         // then we write out (key, actual index position) pairs
         RefCountedMemory memory = new RefCountedMemory(offheapSize + (length * 4));
         int idxPosition = 0;
-        int keyPosition = length * 4;
+        int keyPosition = length * 4; //keyPosition经过for循环后的值就是(offheapSize + (keys.size() * 4))
         for (int i = 0; i < length; i++)
         {
             // write the position of the actual entry in the index summary (4 bytes)

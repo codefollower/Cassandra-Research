@@ -98,6 +98,7 @@ public abstract class SSTableWriter extends SSTable
 
     private static Set<Component> components(CFMetaData metadata)
     {
+        //9个Component类型，要么选COMPRESSION_INFO要么选DIGEST和CRC
         Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,
                 Component.PRIMARY_INDEX,
                 Component.STATS,
@@ -171,6 +172,7 @@ public abstract class SSTableWriter extends SSTable
 
     public static void rename(Descriptor tmpdesc, Descriptor newdesc, Set<Component> components)
     {
+        //先重命名Data.db和Summary.db以外的文件，注意，在这一步可能没有生成Summary.db文件
         for (Component component : Sets.difference(components, Sets.newHashSet(Component.DATA, Component.SUMMARY)))
         {
             FileUtils.renameWithConfirm(tmpdesc.filenameFor(component), newdesc.filenameFor(component));
@@ -180,6 +182,7 @@ public abstract class SSTableWriter extends SSTable
         FileUtils.renameWithConfirm(tmpdesc.filenameFor(Component.DATA), newdesc.filenameFor(Component.DATA));
 
         // rename it without confirmation because summary can be available for loadNewSSTables but not for closeAndOpenReader
+        //如果没有Summary.db文件，这一步也不抛出异常
         FileUtils.renameWithOutConfirm(tmpdesc.filenameFor(Component.SUMMARY), newdesc.filenameFor(Component.SUMMARY));
     }
 

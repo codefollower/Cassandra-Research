@@ -39,6 +39,8 @@ org.apache.cassandra.db.Column的MASK是0
 		8字节:                          markedForDeleteAt
 	} 见: org.apache.cassandra.db.DeletionTime.Serializer.serialize(DeletionTime, DataOutput)
 
+    //对每行的数据索引时会直接跳过行头，从行里面的列开始
+	//就是从这里开始
 	多个<Column> {
 		2字节:              列名.length
 		列名.length个字节:  列名
@@ -59,3 +61,4 @@ org.apache.cassandra.db.Column的MASK是0
 	} 见: org.apache.cassandra.db.ColumnSerializer.serialize(Column, DataOutput)
 } 见: org.apache.cassandra.db.ColumnIndex.Builder的build和add
 
+写完一行后，还会跟两字节的结束标志，值是0

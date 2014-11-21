@@ -268,7 +268,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         sstableMetadataCollector.addCompressionRatio(compressedSize, originalSize);
         try
         {
-            metadataWriter.close(current, chunkCount);
+            metadataWriter.close(current, chunkCount); //在这一步生成CompressionInfo.db文件
         }
         catch (IOException e)
         {

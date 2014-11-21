@@ -323,7 +323,7 @@ public final class SystemKeyspace
         return CFMetaData.compile(String.format(cql, table), NAME).comment(comment);
     }
 
-    public static KSMetaData definition()
+    public static KSMetaData definition() //17个表
     {
         List<CFMetaData> tables =
             Arrays.asList(SchemaKeyspacesTable,

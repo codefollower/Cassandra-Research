@@ -303,16 +303,7 @@ public class CompressionMetadata
                 }
 
                 // store the length of the chunk
-//<<<<<<< HEAD
-//                writeInt(parameters.chunkLength()); //默认64K
-//                // store position and reserve a place for uncompressed data length and chunks count
-//                dataLengthOffset = getFilePointer();
-//                //先记下dataLengthOffset，
-//                //然后在finalizeHeader中回填
-//                writeLong(-1);
-//                writeInt(-1);
-//=======
-                out.writeInt(parameters.chunkLength());
+                out.writeInt(parameters.chunkLength()); //默认64K
                 // store position and reserve a place for uncompressed data length and chunks count
                 out.writeLong(dataLength);
                 out.writeInt(chunks);

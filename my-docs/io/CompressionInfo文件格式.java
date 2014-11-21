@@ -25,7 +25,7 @@ N个 Options:
 8字节:             dataLength
 4字节:             chunk个数(M)
 
-Body 见: org.apache.cassandra.io.compress.CompressedSequentialWriter.flushData()
+Body 见: org.apache.cassandra.io.compress.CompressionMetadata.Writer.close(long, int)
 ==========
 8字节:             chunkOffset //M个
 

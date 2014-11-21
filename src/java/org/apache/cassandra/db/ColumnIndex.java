@@ -227,6 +227,7 @@ public class ColumnIndex
             // the last column may have fallen on an index boundary already.  if not, index it explicitly.
             if (result.columnsIndex.isEmpty() || lastBlockClosing != lastColumn)
             {
+                //对每行的数据索引时会直接跳过行头，从行里面的列开始
                 IndexHelper.IndexInfo cIndexInfo = new IndexHelper.IndexInfo(firstColumn.name(), lastColumn.name(), indexOffset + startPosition, endPosition - startPosition);
                 result.columnsIndex.add(cIndexInfo);
             }

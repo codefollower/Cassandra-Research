@@ -188,7 +188,10 @@ public class Directories
         // secondary indicies go in the same directory as the base cf
         String directoryName;
         if (idx >= 0)
-        {
+        {   
+            //索引也用一个独立的目条来存放，
+            //例如keysindextest.KeysIndexTest_index_f1,
+            //变成keysindextest-71e4fce06fdf11e4954d35ee8e523b2d\.KeysIndexTest_index_f1
             directoryName = metadata.cfName.substring(0, idx) + "-" + cfId + File.separator + metadata.cfName.substring(idx);
         }
         else
@@ -210,37 +213,6 @@ public class Directories
                 return file.exists();
             }
         });
-//<<<<<<< HEAD
-//        if (olderDirectoryExists)
-//            return;
-//
-//        // create directory name
-//        String directoryName;
-//        String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.cfId));
-//        int idx = metadata.cfName.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
-//        if (idx > 0)
-//            // secondary index, goes in the same directory than the base cf
-////<<<<<<< HEAD
-////            //例如cfname="schema_triggers.747269676765725f6e616d65"
-////            //Directories内部得到directoryName=cfname.substring(0, idx)="schema_triggers"
-////            //触发栈:
-////            /*
-////             *  at org.apache.cassandra.db.Directories.create(Directories.java:88)
-////                at org.apache.cassandra.db.ColumnFamilyStore.scrubDataDirectories(ColumnFamilyStore.java:422)
-////                at org.apache.cassandra.db.ColumnFamilyStore.scrubDataDirectories(ColumnFamilyStore.java:465)
-////                at org.apache.cassandra.service.CassandraDaemon.setup(CassandraDaemon.java:228)
-////                at org.apache.cassandra.service.CassandraDaemon.activate(CassandraDaemon.java:447)
-////                at org.apache.cassandra.service.CassandraDaemon.main(CassandraDaemon.java:490)
-////                at my.test.start.CassandraDaemonStart.main(CassandraDaemonStart.java:40)
-////             */
-////            //创建keyspacename/cfname.substring(0, idx)目录
-////            // secondary index, goes in the same directory than the base cf
-////            return new Directories(keyspacename, cfname, cfname.substring(0, idx));
-////=======
-//            directoryName = metadata.cfName.substring(0, idx) + "-" + cfId;
-//        else
-//            directoryName = metadata.cfName + "-" + cfId;
-//=======
         if (!olderDirectoryExists)
         {
             // use 2.1-style path names

@@ -26,7 +26,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-//Row相当于RowMutation的简化版，只有一个ColumnFamily
+//Row相当于Mutation的简化版，只有一个ColumnFamily
 //rowKey放在DecoratedKey中
 public class Row
 {

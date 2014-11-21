@@ -80,7 +80,7 @@ public class CassandraDaemon
      * Date roughly taken from http://perspectives.mvdirona.com/2008/07/12/FacebookReleasesCassandraAsOpenSource.aspx
      * We use this to ensure the system clock is at least somewhat correct at startup.
      */
-    private static final long EARLIEST_LAUNCH_DATE = 1215820800000L;
+    private static final long EARLIEST_LAUNCH_DATE = 1215820800000L; //是Sat Jul 12 08:00:00 CST 2008
 
     public Server thriftServer; //用于thrift客户端
     public Server nativeServer; //用于CQL3客户端
@@ -366,7 +366,7 @@ public class CassandraDaemon
             exitOrFail(1, "Fatal configuration error", e);
         }
 
-        Mx4jTool.maybeLoad(); //支持XSLT(可选的)
+        Mx4jTool.maybeLoad(); //使用Mx4j通过http的方式访问JMX，默认不支持，除非增加mx4j-tools.jar到类路径
 
         // Metrics
         String metricsReporterConfigFile = System.getProperty("cassandra.metricsReporterConfigFile");

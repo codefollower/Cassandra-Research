@@ -81,54 +81,6 @@ public class BigTableWriter extends SSTableWriter
 
     BigTableWriter(Descriptor descriptor, Long keyCount, Long repairedAt, CFMetaData metadata, IPartitioner partitioner, MetadataCollector metadataCollector)
     {
-//<<<<<<< HEAD:src/java/org/apache/cassandra/io/sstable/SSTableWriter.java
-//        this(filename,
-//             keyCount,
-//             repairedAt,
-//             Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)),
-//             StorageService.getPartitioner(),
-//             new MetadataCollector(Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)).comparator));
-//    }
-//
-//    //9个Component类型，要么选COMPRESSION_INFO要么选DIGEST和CRC
-//    private static Set<Component> components(CFMetaData metadata)
-//    {
-//        Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,
-//                                                                         Component.PRIMARY_INDEX,
-//                                                                         Component.STATS,
-//                                                                         Component.SUMMARY,
-//                                                                         Component.TOC,
-//                                                                         Component.DIGEST));
-//
-//        if (metadata.getBloomFilterFpChance() < 1.0)
-//            components.add(Component.FILTER);
-//
-//        if (metadata.compressionParameters().sstableCompressor != null)
-//        {
-//            components.add(Component.COMPRESSION_INFO);
-//        }
-//        else
-//        {
-//            // it would feel safer to actually add this component later in maybeWriteDigest(),
-//            // but the components are unmodifiable after construction
-//            components.add(Component.CRC);
-//        }
-//        return components;
-//    }
-//
-//    public SSTableWriter(String filename,
-//                         long keyCount,
-//                         long repairedAt,
-//                         CFMetaData metadata,
-//                         IPartitioner<?> partitioner,
-//                         MetadataCollector sstableMetadataCollector)
-//    {
-//        super(Descriptor.fromFilename(filename), //不包含component部分
-//              components(metadata),
-//              metadata,
-//              partitioner);
-//        this.repairedAt = repairedAt;
-//=======
         super(descriptor, keyCount, repairedAt, metadata, partitioner, metadataCollector);
         iwriter = new IndexWriter(keyCount);
 
@@ -228,12 +180,8 @@ public class BigTableWriter extends SSTableWriter
     {
         assert cf.hasColumns() || cf.isMarkedForDelete();
 
-//<<<<<<< HEAD
-//        ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, key.key, out);
-//        ColumnIndex index = builder.build(cf); //里面会往Data.db文件中写一行数据
-//=======
         ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, key.getKey(), out);
-        ColumnIndex index = builder.build(cf);
+        ColumnIndex index = builder.build(cf); //里面会往Data.db文件中写一行数据
 
         out.writeShort(END_OF_ROW); //行结束标志
         //返回的RowIndexEntry用于Index.db文件
@@ -443,7 +391,7 @@ public class BigTableWriter extends SSTableWriter
         sstable.first = getMinimalKey(first);
         sstable.last = getMinimalKey(last);
         // try to save the summaries to disk
-        sstable.saveSummary(iwriter.builder, dbuilder);
+        sstable.saveSummary(iwriter.builder, dbuilder); //在这一步才生成Summary.db文件
         iwriter = null;
         dbuilder = null;
         return sstable;
@@ -462,18 +410,19 @@ public class BigTableWriter extends SSTableWriter
         iwriter.close();
         // main data, close will truncate if necessary
         dataFile.close();
-        dataFile.writeFullChecksum(descriptor);
+        dataFile.writeFullChecksum(descriptor); //在这一步生成Digest.sha1文件
         // write sstable statistics
         Map<MetadataType, MetadataComponent> metadataComponents = metadataCollector.finalizeMetadata(
                                                                                     partitioner.getClass().getCanonicalName(),
                                                                                     metadata.getBloomFilterFpChance(),
                                                                                     repairedAt);
-        writeMetadata(descriptor, metadataComponents);
+        writeMetadata(descriptor, metadataComponents); //在这一步生成Statistics.db文件
 
         // save the table of components
-        SSTable.appendTOC(descriptor, components);
+        SSTable.appendTOC(descriptor, components); //在这一步生成TOC.txt文件
 
         // remove the 'tmp' marker from all components
+        //前面生成的文件名都是有tmp前缀的，在这里把它去掉，重命名。
         return Pair.create(SSTableWriter.rename(descriptor, components), (StatsMetadata) metadataComponents.get(MetadataType.STATS));
 
     }
@@ -564,6 +513,7 @@ public class BigTableWriter extends SSTableWriter
                 try
                 {
                     // bloom filter
+                    //创建BloomFilter对应的文件Filter.db，并向它写数据
                     FileOutputStream fos = new FileOutputStream(path);
                     DataOutputStreamAndChannel stream = new DataOutputStreamAndChannel(fos);
                     FilterFactory.serialize(bf, stream);

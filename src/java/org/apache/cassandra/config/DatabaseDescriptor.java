@@ -129,24 +129,6 @@ public class DatabaseDescriptor
     {
         try
         {
-//<<<<<<< HEAD
-//            if (Config.isClientMode()) //默认是false，如果是true，那么就不读配置文件了
-//            {
-//                conf = new Config();
-//                // at least we have to set memoryAllocator to open SSTable in client mode
-//                memoryAllocator = FBUtilities.newOffHeapAllocator(conf.memory_allocator); //是NativeAllocator
-//            }
-//            else
-//            {
-//                applyConfig(loadConfig());
-//            }
-//        }
-//        catch (ConfigurationException e)
-//        {
-//            logger.error("Fatal configuration error", e);
-//            System.err.println(e.getMessage() + "\nFatal configuration error; unable to start. See log for stacktrace.");
-//            System.exit(1);
-//=======
             applyConfig(loadConfig());
         }
         catch (Exception e)

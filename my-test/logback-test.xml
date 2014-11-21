@@ -52,7 +52,8 @@
     </filter>
   </appender>
         
-  <root level="DEBUG">
+  <!-- <root level="DEBUG"> -->
+  <root level="INFO">
     <!--<appender-ref ref="FILE" />-->
     <appender-ref ref="STDERR" />
     <appender-ref ref="STDOUT" />

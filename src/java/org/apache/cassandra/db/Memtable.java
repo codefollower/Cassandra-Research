@@ -224,6 +224,7 @@ public class Memtable
      * @param startWith Include data in the result from and including this key and to the end of the memtable
      * @return An iterator of entries with the data from the start key
      */
+    //用于按rowkey进行范围扫描的情况
     public Iterator<Map.Entry<DecoratedKey, ColumnFamily>> getEntryIterator(final RowPosition startWith, final RowPosition stopAt)
     {
         return new Iterator<Map.Entry<DecoratedKey, ColumnFamily>>()
@@ -266,6 +267,7 @@ public class Memtable
         };
     }
 
+    //只找单个rowkey的情况
     public ColumnFamily getColumnFamily(DecoratedKey key)
     {
         return rows.get(key);
