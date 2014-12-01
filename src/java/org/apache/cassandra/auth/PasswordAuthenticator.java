@@ -185,26 +185,14 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
         // the delay is here to give the node some time to see its peers - to reduce
         // "skipped default user setup: some nodes are were not ready" log spam.
         // It's the only reason for the delay.
-<<<<<<< HEAD
-        //见org.apache.cassandra.auth.Auth.setup()的对应注释
-        StorageService.tasks.schedule(new Runnable()
-                                      {
-                                          public void run()
-                                          {
-                                              setupDefaultUser(); //创建默认超级用户cassandra/cassandra
-                                          }
-                                      },
-                                      Auth.SUPERUSER_SETUP_DELAY,
-                                      TimeUnit.MILLISECONDS);
-=======
+        //见org.apache.cassandra.auth.Auth.setup()的对应注
         ScheduledExecutors.nonPeriodicTasks.schedule(new Runnable()
         {
             public void run()
             {
-              setupDefaultUser();
+              setupDefaultUser(); //创建默认超级用户cassandra/cassandra
             }
         }, Auth.SUPERUSER_SETUP_DELAY, TimeUnit.MILLISECONDS);
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
 
         try
         {

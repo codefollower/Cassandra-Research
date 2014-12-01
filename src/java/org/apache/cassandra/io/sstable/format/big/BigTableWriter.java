@@ -163,9 +163,7 @@ public class BigTableWriter extends SSTableWriter
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf)
     {
-<<<<<<< HEAD
         //beforeAppend返回的是Data.db文件的当前位置，decoratedKey就从这个位置开始存放
-=======
         if (decoratedKey.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
         {
             logger.error("Key size {} exceeds maximum of {}, skipping row",
@@ -174,7 +172,6 @@ public class BigTableWriter extends SSTableWriter
             return;
         }
 
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
         long startPosition = beforeAppend(decoratedKey);
         try
         {

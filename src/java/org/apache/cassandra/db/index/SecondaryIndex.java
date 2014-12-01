@@ -307,17 +307,7 @@ public abstract class SecondaryIndex
     //子类AbstractSimplePerColumnSecondaryIndex覆盖了此方法
     public DecoratedKey getIndexKeyFor(ByteBuffer value) //value是索引字段值
     {
-<<<<<<< HEAD
-        // FIXME: this imply one column definition per index
-//<<<<<<< HEAD
-//        ByteBuffer name = columnDefs.iterator().next().name.bytes; //索引字段名
-//        return new DecoratedKey(new LocalToken(baseCfs.metadata.getColumnDefinition(name).type, value), value);
-//=======
-        ByteBuffer name = columnDefs.iterator().next().name.bytes;
-        return new BufferDecoratedKey(new LocalToken(baseCfs.metadata.getColumnDefinition(name).type, value), value);
-=======
         return getIndexCfs().partitioner.decorateKey(value);
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
     }
 
     /**

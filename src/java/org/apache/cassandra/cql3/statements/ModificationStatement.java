@@ -45,12 +45,8 @@ import org.apache.cassandra.utils.Pair;
 /*
  * Abstract parent class of individual modifications, i.e. INSERT, UPDATE and DELETE.
  */
-<<<<<<< HEAD
 //insert、update、delete三种类型的语句共用
-public abstract class ModificationStatement implements CQLStatement, MeasurableForPreparedCache
-=======
 public abstract class ModificationStatement implements CQLStatement
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
 {
     private static final ColumnIdentifier CAS_RESULT_COLUMN = new ColumnIdentifier("[applied]", false);
 
@@ -112,20 +108,7 @@ public abstract class ModificationStatement implements CQLStatement
         return false;
     }
 
-<<<<<<< HEAD
-    public long measureForPreparedCache(MemoryMeter meter)
-    {
-        return meter.measure(this)
-             + meter.measureDeep(attrs)
-             + meter.measureDeep(processedKeys)
-             + meter.measureDeep(columnOperations)
-             + (columnConditions == null ? 0 : meter.measureDeep(columnConditions))
-             + (staticConditions == null ? 0 : meter.measureDeep(staticConditions));
-    }
-
     //update和insert返回true，delete返回false
-=======
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
     public abstract boolean requireFullClusteringKey();
     public abstract void addUpdateForKey(ColumnFamily updates, ByteBuffer key, Composite prefix, UpdateParameters params) throws InvalidRequestException;
 

@@ -92,12 +92,7 @@ public abstract class Selection
     {
         for (RawSelector rawSelector : rawSelectors)
         {
-<<<<<<< HEAD
-            //if (!(rawSelector.selectable instanceof ColumnIdentifier)) //是个bug
-            if (!(rawSelector.selectable instanceof ColumnIdentifier.Raw))
-=======
             if (rawSelector.processesSelection())
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
                 return true;
         }
         return false;
