@@ -40,6 +40,7 @@ import org.slf4j.LoggerFactory;
 
 import com.addthis.metrics.reporter.config.ReporterConfig;
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
+import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
@@ -352,7 +353,12 @@ public class CassandraDaemon
                 }
             }
         };
+<<<<<<< HEAD
         StorageService.optionalTasks.schedule(runnable, 5 * 60, TimeUnit.SECONDS);
+=======
+        ScheduledExecutors.optionalTasks.schedule(runnable, 5 * 60, TimeUnit.SECONDS);
+
+>>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
         SystemKeyspace.finishStartup();
         // start server internals
         StorageService.instance.registerDaemon(this);

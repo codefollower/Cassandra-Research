@@ -30,6 +30,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -37,7 +38,6 @@ import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.QueryState;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.mindrot.jbcrypt.BCrypt;
@@ -185,6 +185,7 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
         // the delay is here to give the node some time to see its peers - to reduce
         // "skipped default user setup: some nodes are were not ready" log spam.
         // It's the only reason for the delay.
+<<<<<<< HEAD
         //见org.apache.cassandra.auth.Auth.setup()的对应注释
         StorageService.tasks.schedule(new Runnable()
                                       {
@@ -195,6 +196,15 @@ public class PasswordAuthenticator implements ISaslAwareAuthenticator
                                       },
                                       Auth.SUPERUSER_SETUP_DELAY,
                                       TimeUnit.MILLISECONDS);
+=======
+        ScheduledExecutors.nonPeriodicTasks.schedule(new Runnable()
+        {
+            public void run()
+            {
+              setupDefaultUser();
+            }
+        }, Auth.SUPERUSER_SETUP_DELAY, TimeUnit.MILLISECONDS);
+>>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
 
         try
         {

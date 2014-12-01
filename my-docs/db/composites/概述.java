@@ -20,7 +20,7 @@ Cassandra的表中的列细分为4中类型:
 	}
 
 
-org.apache.cassandra.db.composites包中有东西都与聚簇列相关
+org.apache.cassandra.db.composites包中所有东西都与聚簇列相关
 
 两对关健词:
 Sparse(稀疏)与Dense(稠密) //与数据库中的稀疏索引和稠密索引有相似之处
@@ -67,4 +67,4 @@ CompoundDenseCellNameType                   CompositeType(所有聚簇列的类�
 CompoundSparseCellNameType                  CompositeType(所有聚簇列的类型)
 CompoundSparseCellNameType.WithCollection   CompositeType(所有聚簇列的类型 + UTF8Type(用于列名本身的序列化) + ColumnToCollectionType)
 
-基中ColumnToCollectionType是普通列中所有Collection类型的列的组合类型
+其中ColumnToCollectionType是普通列中所有Collection类型的列的组合类型

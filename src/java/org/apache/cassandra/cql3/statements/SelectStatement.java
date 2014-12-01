@@ -27,8 +27,6 @@ import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 
-import org.github.jamm.MemoryMeter;
-
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.statements.SingleColumnRestriction.Contains;
@@ -62,7 +60,7 @@ import org.apache.cassandra.utils.FBUtilities;
  * column family, expression, result count, and ordering clause.
  *
  */
-public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
+public class SelectStatement implements CQLStatement
 {
     private static final int DEFAULT_COUNT_PAGE_SIZE = 10000;
 
@@ -181,20 +179,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return selection.getResultMetadata();
     }
 
-    public long measureForPreparedCache(MemoryMeter meter)
-    {
-        return meter.measure(this)
-             + meter.measureDeep(parameters)
-             + meter.measureDeep(selection)
-             + (limit == null ? 0 : meter.measureDeep(limit))
-             + meter.measureDeep(keyRestrictions)
-             + meter.measureDeep(columnRestrictions)
-             + meter.measureDeep(metadataRestrictions)
-             + meter.measureDeep(restrictedColumns)
-             + (sliceRestriction == null ? 0 : meter.measureDeep(sliceRestriction))
-             + (orderingIndexes == null ? 0 : meter.measureDeep(orderingIndexes));
-    }
-
     public int getBoundTerms()
     {
         return boundTerms;
@@ -302,7 +286,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 processColumnFamily(row.key.getKey(), row.cf, options, now, result);
             }
         }
-        return new ResultMessage.Rows(result.build());
+        return new ResultMessage.Rows(result.build(options.getProtocolVersion()));
     }
 
     public ResultMessage.Rows processResults(List<Row> rows, QueryOptions options, int limit, long now) throws RequestValidationException
@@ -431,7 +415,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             RowPosition startKey = RowPosition.ForKey.get(startKeyBytes, p);
             RowPosition finishKey = RowPosition.ForKey.get(finishKeyBytes, p);
 
-            if (startKey.compareTo(finishKey) > 0 && !finishKey.isMinimum(p))
+            if (startKey.compareTo(finishKey) > 0 && !finishKey.isMinimum())
                 return null;
 
             if (includeKeyBound(Bound.START))
@@ -1125,13 +1109,24 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return value;
     }
 
+    private CellName makeExclusiveSliceBound(Bound bound, CellNameType type, QueryOptions options) throws InvalidRequestException
+    {
+        if (sliceRestriction.isInclusive(bound))
+            return null;
+
+        if (sliceRestriction.isMultiColumn())
+            return type.makeCellName(((MultiColumnRestriction.Slice) sliceRestriction).componentBounds(bound, options).toArray());
+        else
+            return type.makeCellName(sliceRestriction.bound(bound, options));
+    }
+
     private Iterator<Cell> applySliceRestriction(final Iterator<Cell> cells, final QueryOptions options) throws InvalidRequestException
     {
         assert sliceRestriction != null;
 
         final CellNameType type = cfm.comparator;
-        final CellName excludedStart = sliceRestriction.isInclusive(Bound.START) ? null : type.makeCellName(sliceRestriction.bound(Bound.START, options));
-        final CellName excludedEnd = sliceRestriction.isInclusive(Bound.END) ? null : type.makeCellName(sliceRestriction.bound(Bound.END, options));
+        final CellName excludedStart = makeExclusiveSliceBound(Bound.START, type, options);
+        final CellName excludedEnd = makeExclusiveSliceBound(Bound.END, type, options);
 
         return new AbstractIterator<Cell>()
         {
@@ -1178,7 +1173,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             processColumnFamily(row.key.getKey(), row.cf, options, now, result);
         }
 
-        ResultSet cqlRows = result.build();
+        ResultSet cqlRows = result.build(options.getProtocolVersion());
 
         orderResults(cqlRows);
 
@@ -1218,7 +1213,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         CQL3Row staticRow = iter.getStaticRow();
         if (staticRow != null && !iter.hasNext() && !usesSecondaryIndexing && hasNoClusteringColumnsRestriction())
         {
-            result.newRow();
+            result.newRow(options.getProtocolVersion());
             for (ColumnDefinition def : selection.getColumns())
             {
                 switch (def.kind)
@@ -1241,7 +1236,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             CQL3Row cql3Row = iter.next();
 
             // Respect requested order
-            result.newRow();
+            result.newRow(options.getProtocolVersion());
             // Respect selection order
             for (ColumnDefinition def : selection.getColumns())
             {
@@ -1978,12 +1973,12 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     if (stmt.selectACollection())
                         throw new InvalidRequestException(String.format("Cannot restrict column \"%s\" by IN relation as a collection is selected by the query", cdef.name));
                 }
-                /*
-                else if (restriction.isContains() && !hasQueriableIndex)
+                else if (restriction.isContains())
                 {
-                    throw new InvalidRequestException(String.format("Cannot restrict column \"%s\" by a CONTAINS relation without a secondary index", cdef.name));
+                    if (!hasQueriableIndex)
+                        throw new InvalidRequestException(String.format("Cannot restrict column \"%s\" by a CONTAINS relation without a secondary index", cdef.name));
+                    stmt.usesSecondaryIndexing = true;
                 }
-                */
 
                 previous = cdef;
             }

@@ -49,6 +49,7 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.RepairJobDesc;
+import org.apache.cassandra.repair.RepairParallelism;
 import org.apache.cassandra.repair.RepairSession;
 import org.apache.cassandra.repair.messages.*;
 import org.apache.cassandra.utils.FBUtilities;
@@ -105,7 +106,7 @@ public class ActiveRepairService
     public RepairSession submitRepairSession(UUID parentRepairSession,
                                              Range<Token> range,
                                              String keyspace,
-                                             boolean isSequential,
+                                             RepairParallelism parallelismDegree,
                                              Set<InetAddress> endpoints,
                                              long repairedAt,
                                              ListeningExecutorService executor,
@@ -114,7 +115,7 @@ public class ActiveRepairService
         if (endpoints.isEmpty())
             return null;
 
-        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace, isSequential, endpoints, repairedAt, cfnames);
+        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace, parallelismDegree, endpoints, repairedAt, cfnames);
 
         sessions.put(session.getId(), session);
         // register listeners
@@ -234,6 +235,7 @@ public class ActiveRepairService
         registerParentRepairSession(parentRepairSession, columnFamilyStores, options.getRanges(), options.isIncremental());
         final CountDownLatch prepareLatch = new CountDownLatch(endpoints.size());
         final AtomicBoolean status = new AtomicBoolean(true);
+        final Set<String> failedNodes = Collections.synchronizedSet(new HashSet<String>());
         IAsyncCallbackWithFailure callback = new IAsyncCallbackWithFailure()
         {
             public void response(MessageIn msg)
@@ -249,6 +251,7 @@ public class ActiveRepairService
             public void onFailure(InetAddress from)
             {
                 status.set(false);
+                failedNodes.add(from.getHostAddress());
                 prepareLatch.countDown();
             }
         };
@@ -270,13 +273,13 @@ public class ActiveRepairService
         catch (InterruptedException e)
         {
             parentRepairSessions.remove(parentRepairSession);
-            throw new RuntimeException("Did not get replies from all endpoints.", e);
+            throw new RuntimeException("Did not get replies from all endpoints. List of failed endpoint(s): " + failedNodes.toString(), e);
         }
 
         if (!status.get())
         {
             parentRepairSessions.remove(parentRepairSession);
-            throw new RuntimeException("Did not get positive replies from all endpoints.");
+            throw new RuntimeException("Did not get positive replies from all endpoints. List of failed endpoint(s): " + failedNodes.toString());
         }
 
         return parentRepairSession;

@@ -36,7 +36,10 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.Operator;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
@@ -46,7 +49,6 @@ import org.apache.cassandra.db.index.keys.KeysIndex;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.LocalByPartionerType;
-import org.apache.cassandra.dht.LocalToken;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.service.StorageService;
@@ -298,13 +300,14 @@ public abstract class SecondaryIndex
     }
 
     /**
-     * Returns the decoratedKey for a column value
+     * Returns the decoratedKey for a column value. Assumes an index CFS is present.
      * @param value column value
      * @return decorated key
      */
     //子类AbstractSimplePerColumnSecondaryIndex覆盖了此方法
     public DecoratedKey getIndexKeyFor(ByteBuffer value) //value是索引字段值
     {
+<<<<<<< HEAD
         // FIXME: this imply one column definition per index
 //<<<<<<< HEAD
 //        ByteBuffer name = columnDefs.iterator().next().name.bytes; //索引字段名
@@ -312,6 +315,9 @@ public abstract class SecondaryIndex
 //=======
         ByteBuffer name = columnDefs.iterator().next().name.bytes;
         return new BufferDecoratedKey(new LocalToken(baseCfs.metadata.getColumnDefinition(name).type, value), value);
+=======
+        return getIndexCfs().partitioner.decorateKey(value);
+>>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
     }
 
     /**

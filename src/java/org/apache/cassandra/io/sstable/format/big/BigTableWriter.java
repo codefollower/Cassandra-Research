@@ -57,6 +57,7 @@ import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.FilterFactory;
 import org.apache.cassandra.utils.IFilter;
 import org.apache.cassandra.utils.Pair;
@@ -162,7 +163,18 @@ public class BigTableWriter extends SSTableWriter
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf)
     {
+<<<<<<< HEAD
         //beforeAppend返回的是Data.db文件的当前位置，decoratedKey就从这个位置开始存放
+=======
+        if (decoratedKey.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
+        {
+            logger.error("Key size {} exceeds maximum of {}, skipping row",
+                         decoratedKey.getKey().remaining(),
+                         FBUtilities.MAX_UNSIGNED_SHORT);
+            return;
+        }
+
+>>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
         long startPosition = beforeAppend(decoratedKey);
         try
         {

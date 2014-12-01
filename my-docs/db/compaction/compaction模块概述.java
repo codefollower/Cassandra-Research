@@ -65,3 +65,21 @@ sstable_size_in_mb //默认1MB
 2. 因为LeveledCompactionStrategy在验证选项时会调用SizeTieredCompactionStrategyOptions.validateOptions，
    所以SizeTieredCompactionStrategy上面那4个选项能出现在LeveledCompactionStrategy中，只是被忽略,
    但是min_threshold和max_threshold不可以出现在LeveledCompactionStrategy中。
+
+
+[BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-12-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-11-big-Data.db')]
+
+
+{BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db')=6.5395759004386016E-6, BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db')=3.494794780300651E-6, BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-12-big-Data.db')=0.0, BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-11-big-Data.db')=0.0}
+
+
+[BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-12-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-11-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db')]
+
+
+[BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db')]
+
+[(BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db'),167), (BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db'),157)]
+
+[[BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db'), BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db')]]
+
+{BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-4-big-Data.db')=3.3013458261319614E-6, BigTableReader(path='E:\cassandra\git\my-test-data\cluster\node1\data\mytest\sizetieredcompaction-98690160754111e4bc80a5dca0ceacc3\la-3-big-Data.db')=6.181879282969822E-6}

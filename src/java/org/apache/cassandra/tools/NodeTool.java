@@ -48,6 +48,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
 import org.apache.cassandra.net.MessagingServiceMBean;
 import org.apache.cassandra.repair.messages.RepairOption;
+import org.apache.cassandra.repair.RepairParallelism;
 import org.apache.cassandra.service.CacheServiceMBean;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.SessionInfo;
@@ -350,37 +351,38 @@ public class NodeTool
         {
             boolean gossipInitialized = probe.isInitialized();
 
-            System.out.printf("%-17s: %s%n", "ID", probe.getLocalHostId());
-            System.out.printf("%-17s: %s%n", "Gossip active", gossipInitialized);
-            System.out.printf("%-17s: %s%n", "Thrift active", probe.isThriftServerRunning());
-            System.out.printf("%-17s: %s%n", "Native Transport active", probe.isNativeTransportRunning());
-            System.out.printf("%-17s: %s%n", "Load", probe.getLoadString());
+            System.out.printf("%-23s: %s%n", "ID", probe.getLocalHostId());
+            System.out.printf("%-23s: %s%n", "Gossip active", gossipInitialized);
+            System.out.printf("%-23s: %s%n", "Thrift active", probe.isThriftServerRunning());
+            System.out.printf("%-23s: %s%n", "Native Transport active", probe.isNativeTransportRunning());
+            System.out.printf("%-23s: %s%n", "Load", probe.getLoadString());
             if (gossipInitialized)
-                System.out.printf("%-17s: %s%n", "Generation No", probe.getCurrentGenerationNumber());
+                System.out.printf("%-23s: %s%n", "Generation No", probe.getCurrentGenerationNumber());
             else
-                System.out.printf("%-17s: %s%n", "Generation No", 0);
+                System.out.printf("%-23s: %s%n", "Generation No", 0);
 
             // Uptime
             long secondsUp = probe.getUptime() / 1000;
-            System.out.printf("%-17s: %d%n", "Uptime (seconds)", secondsUp);
+            System.out.printf("%-23s: %d%n", "Uptime (seconds)", secondsUp);
 
             // Memory usage
             MemoryUsage heapUsage = probe.getHeapMemoryUsage();
             double memUsed = (double) heapUsage.getUsed() / (1024 * 1024);
             double memMax = (double) heapUsage.getMax() / (1024 * 1024);
-            System.out.printf("%-17s: %.2f / %.2f%n", "Heap Memory (MB)", memUsed, memMax);
+            System.out.printf("%-23s: %.2f / %.2f%n", "Heap Memory (MB)", memUsed, memMax);
+            System.out.printf("%-23s: %.2f%n", "Off Heap Memory (MB)", getOffHeapMemoryUsed(probe));
 
             // Data Center/Rack
-            System.out.printf("%-17s: %s%n", "Data Center", probe.getDataCenter());
-            System.out.printf("%-17s: %s%n", "Rack", probe.getRack());
+            System.out.printf("%-23s: %s%n", "Data Center", probe.getDataCenter());
+            System.out.printf("%-23s: %s%n", "Rack", probe.getRack());
 
             // Exceptions
-            System.out.printf("%-17s: %s%n", "Exceptions", probe.getStorageMetric("Exceptions"));
+            System.out.printf("%-23s: %s%n", "Exceptions", probe.getStorageMetric("Exceptions"));
 
             CacheServiceMBean cacheService = probe.getCacheServiceMBean();
 
             // Key Cache: Hits, Requests, RecentHitRate, SavePeriodInSeconds
-            System.out.printf("%-17s: entries %d, size %s, capacity %s, %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
+            System.out.printf("%-23s: entries %d, size %s, capacity %s, %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
                     "Key Cache",
                     probe.getCacheMetric("KeyCache", "Entries"),
                     FileUtils.stringifyFileSize((long) probe.getCacheMetric("KeyCache", "Size")),
@@ -391,7 +393,7 @@ public class NodeTool
                     cacheService.getKeyCacheSavePeriodInSeconds());
 
             // Row Cache: Hits, Requests, RecentHitRate, SavePeriodInSeconds
-            System.out.printf("%-17s: entries %d, size %s, capacity %s, %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
+            System.out.printf("%-23s: entries %d, size %s, capacity %s, %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
                     "Row Cache",
                     probe.getCacheMetric("RowCache", "Entries"),
                     FileUtils.stringifyFileSize((long) probe.getCacheMetric("RowCache", "Size")),
@@ -402,7 +404,7 @@ public class NodeTool
                     cacheService.getRowCacheSavePeriodInSeconds());
 
             // Counter Cache: Hits, Requests, RecentHitRate, SavePeriodInSeconds
-            System.out.printf("%-17s: entries %d, size %s, capacity %s, %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
+            System.out.printf("%-23s: entries %d, size %s, capacity %s, %d hits, %d requests, %.3f recent hit rate, %d save period in seconds%n",
                     "Counter Cache",
                     probe.getCacheMetric("CounterCache", "Entries"),
                     FileUtils.stringifyFileSize((long) probe.getCacheMetric("CounterCache", "Size")),
@@ -416,9 +418,34 @@ public class NodeTool
             List<String> tokens = probe.getTokens();
             if (tokens.size() == 1 || this.tokens)
                 for (String token : tokens)
-                    System.out.printf("%-17s: %s%n", "Token", token);
+                    System.out.printf("%-23s: %s%n", "Token", token);
             else
-                System.out.printf("%-17s: (invoke with -T/--tokens to see all %d tokens)%n", "Token", tokens.size());
+                System.out.printf("%-23s: (invoke with -T/--tokens to see all %d tokens)%n", "Token", tokens.size());
+        }
+
+        /**
+         * Returns the total off heap memory used in MB.
+         * @return the total off heap memory used in MB.
+         */
+        private static double getOffHeapMemoryUsed(NodeProbe probe)
+        {
+            long offHeapMemUsedInBytes = 0;
+            // get a list of column family stores
+            Iterator<Map.Entry<String, ColumnFamilyStoreMBean>> cfamilies = probe.getColumnFamilyStoreMBeanProxies();
+
+            while (cfamilies.hasNext())
+            {
+                Entry<String, ColumnFamilyStoreMBean> entry = cfamilies.next();
+                String keyspaceName = entry.getKey();
+                String cfName = entry.getValue().getColumnFamilyName();
+
+                offHeapMemUsedInBytes += (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableOffHeapSize");
+                offHeapMemUsedInBytes += (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "BloomFilterOffHeapMemoryUsed");
+                offHeapMemUsedInBytes += (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "IndexSummaryOffHeapMemoryUsed");
+                offHeapMemUsedInBytes += (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "CompressionMetadataOffHeapMemoryUsed");
+            }
+
+            return offHeapMemUsedInBytes / (1024d * 1024);
         }
     }
 
@@ -760,12 +787,22 @@ public class NodeTool
                                 System.out.println("]");
                         }
                     }
+
+                    Long memtableOffHeapSize = (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableOffHeapSize");
+                    Long bloomFilterOffHeapSize = (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "BloomFilterOffHeapMemoryUsed");
+                    Long indexSummaryOffHeapSize = (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "IndexSummaryOffHeapMemoryUsed");
+                    Long compressionMetadataOffHeapSize = (Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "CompressionMetadataOffHeapMemoryUsed");
+
+                    Long offHeapSize = memtableOffHeapSize + bloomFilterOffHeapSize + indexSummaryOffHeapSize + compressionMetadataOffHeapSize;
+
                     System.out.println("\t\tSpace used (live): " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "LiveDiskSpaceUsed"), humanReadable));
                     System.out.println("\t\tSpace used (total): " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "TotalDiskSpaceUsed"), humanReadable));
                     System.out.println("\t\tSpace used by snapshots (total): " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "SnapshotsSize"), humanReadable));
+                    System.out.println("\t\tOff heap memory used (total): " + format(offHeapSize, humanReadable));
                     System.out.println("\t\tSSTable Compression Ratio: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "CompressionRatio"));
                     System.out.println("\t\tMemtable cell count: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableColumnsCount"));
                     System.out.println("\t\tMemtable data size: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableLiveDataSize"), humanReadable));
+                    System.out.println("\t\tMemtable off heap memory used: " + format(memtableOffHeapSize, humanReadable));
                     System.out.println("\t\tMemtable switch count: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableSwitchCount"));
                     System.out.println("\t\tLocal read count: " + ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getCount());
                     double localReadLatency = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getMean() / 1000;
@@ -779,6 +816,10 @@ public class NodeTool
                     System.out.println("\t\tBloom filter false positives: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "BloomFilterFalsePositives"));
                     System.out.printf("\t\tBloom filter false ratio: %s%n", String.format("%01.5f", probe.getColumnFamilyMetric(keyspaceName, cfName, "RecentBloomFilterFalseRatio")));
                     System.out.println("\t\tBloom filter space used: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "BloomFilterDiskSpaceUsed"), humanReadable));
+                    System.out.println("\t\tBloom filter off heap memory used: " + format(bloomFilterOffHeapSize, humanReadable));
+                    System.out.println("\t\tIndex summary off heap memory used: " + format(indexSummaryOffHeapSize, humanReadable));
+                    System.out.println("\t\tCompression metadata off heap memory used: " + format(compressionMetadataOffHeapSize, humanReadable));
+
                     System.out.println("\t\tCompacted partition minimum bytes: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MinRowSize"), humanReadable));
                     System.out.println("\t\tCompacted partition maximum bytes: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MaxRowSize"), humanReadable));
                     System.out.println("\t\tCompacted partition mean bytes: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MeanRowSize"), humanReadable));
@@ -1684,6 +1725,9 @@ public class NodeTool
         @Option(title = "seqential", name = {"-seq", "--sequential"}, description = "Use -seq to carry out a sequential repair")
         private boolean sequential = false;
 
+        @Option(title = "dc parallel", name = {"-dcpar", "--dc-parallel"}, description = "Use -dcpar to repair data centers in parallel.")
+        private boolean dcParallel = false;
+
         @Option(title = "local_dc", name = {"-local", "--in-local-dc"}, description = "Use -local to only repair against nodes in the same datacenter")
         private boolean localDC = false;
 
@@ -1722,7 +1766,12 @@ public class NodeTool
             for (String keyspace : keyspaces)
             {
                 Map<String, String> options = new HashMap<>();
-                options.put(RepairOption.SEQUENTIAL_KEY, Boolean.toString(sequential));
+                RepairParallelism parallelismDegree = RepairParallelism.PARALLEL;
+                if (sequential)
+                    parallelismDegree = RepairParallelism.SEQUENTIAL;
+                else if (dcParallel)
+                    parallelismDegree = RepairParallelism.DATACENTER_AWARE;
+                options.put(RepairOption.PARALLELISM_KEY, parallelismDegree.getName());
                 options.put(RepairOption.PRIMARY_RANGE_KEY, Boolean.toString(primaryRange));
                 options.put(RepairOption.INCREMENTAL_KEY, Boolean.toString(!fullRepair));
                 options.put(RepairOption.JOB_THREADS_KEY, Integer.toString(numJobThreads));

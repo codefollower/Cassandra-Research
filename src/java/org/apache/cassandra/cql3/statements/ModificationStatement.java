@@ -22,7 +22,6 @@ import java.util.*;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
-import org.github.jamm.MemoryMeter;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
@@ -46,8 +45,12 @@ import org.apache.cassandra.utils.Pair;
 /*
  * Abstract parent class of individual modifications, i.e. INSERT, UPDATE and DELETE.
  */
+<<<<<<< HEAD
 //insert、update、delete三种类型的语句共用
 public abstract class ModificationStatement implements CQLStatement, MeasurableForPreparedCache
+=======
+public abstract class ModificationStatement implements CQLStatement
+>>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
 {
     private static final ColumnIdentifier CAS_RESULT_COLUMN = new ColumnIdentifier("[applied]", false);
 
@@ -109,6 +112,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         return false;
     }
 
+<<<<<<< HEAD
     public long measureForPreparedCache(MemoryMeter meter)
     {
         return meter.measure(this)
@@ -120,6 +124,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     }
 
     //update和insert返回true，delete返回false
+=======
+>>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
     public abstract boolean requireFullClusteringKey();
     public abstract void addUpdateForKey(ColumnFamily updates, ByteBuffer key, Composite prefix, UpdateParameters params) throws InvalidRequestException;
 
@@ -659,14 +665,14 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             }
             for (ColumnDefinition def : columnsWithConditions)
                 defs.add(def);
-            selection = Selection.forColumns(defs);
+            selection = Selection.forColumns(new ArrayList<>(defs));
         }
 
         long now = System.currentTimeMillis();
         Selection.ResultSetBuilder builder = selection.resultSetBuilder(now);
         SelectStatement.forSelection(cfm, selection).processColumnFamily(key, cf, options, now, builder);
 
-        return builder.build();
+        return builder.build(options.getProtocolVersion());
     }
 
     public ResultMessage executeInternal(QueryState queryState, QueryOptions options) throws RequestValidationException, RequestExecutionException

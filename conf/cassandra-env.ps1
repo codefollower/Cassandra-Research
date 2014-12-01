@@ -197,6 +197,42 @@ Function CalculateHeapSizes
 }
 
 #-----------------------------------------------------------------------------
+Function SetJsr223Env
+{
+    $cp = """$env:CLASSPATH"""
+    foreach ($jsrDir in Get-ChildItem -Path "$env:CASSANDRA_HOME\lib\jsr223")
+    {
+        foreach ($file in Get-ChildItem -Path "$env:CASSANDRA_HOME\lib\jsr223\$jsrDir\*.jar")
+        {
+            $file = $file -replace "\\", "/"
+			$cp = $cp + ";" + """$file"""
+        }
+    }
+    $env:CLASSPATH=$cp
+
+	# JSR223/JRuby - set ruby lib directory
+	if (Test-Path "$env:CASSANDRA_HOME\lib\jsr223\jruby\ruby")
+	{
+		$env:CASSANDRA_PARAMS=$env:CASSANDRA_PARAMS + " -Djruby.lib=$env:CASSANDRA_HOME\lib\jsr223\jruby"
+	}
+	# JSR223/JRuby - set ruby JNI libraries root directory
+	if (Test-Path "$env:CASSANDRA_HOME\lib\jsr223\jruby\jni")
+	{
+		$env:CASSANDRA_PARAMS=$env:CASSANDRA_PARAMS + " -Djffi.boot.library.path=$env:CASSANDRA_HOME\lib\jsr223\jruby\jni"
+	}
+	# JSR223/Jython - set python.home system property
+	if (Test-Path "$env:CASSANDRA_HOME\lib\jsr223\jython\jython.jar")
+	{
+		$env:CASSANDRA_PARAMS=$env:CASSANDRA_PARAMS + " -Dpython.home=$env:CASSANDRA_HOME\lib\jsr223\jython"
+	}
+	# JSR223/Scala - necessary system property
+	if (Test-Path "$env:CASSANDRA_HOME\lib\jsr223\scala\scala-compiler.jar")
+	{
+		$env:CASSANDRA_PARAMS=$env:CASSANDRA_PARAMS + " -Dscala.usejavacp=true"
+	}
+}
+
+#-----------------------------------------------------------------------------
 Function ParseJVMInfo
 {
     # grab info about the JVM
@@ -276,6 +312,7 @@ Function SetCassandraEnvironment
 
     SetCassandraMain
     BuildClassPath
+    SetJsr223Env
 
     # Override these to set the amount of memory to allocate to the JVM at
     # start-up. For production use you may wish to adjust this for your
@@ -304,7 +341,7 @@ Function SetCassandraEnvironment
     if (($env:JVM_VENDOR -ne "OpenJDK") -or ($env:JVM_VERSION.CompareTo("1.6.0") -eq 1) -or
         (($env:JVM_VERSION -eq "1.6.0") -and ($env:JVM_PATCH_VERSION.CompareTo("22") -eq 1)))
     {
-        $env:JVM_OPTS = "$env:JVM_OPTS -javaagent:""$env:CASSANDRA_HOME\lib\jamm-0.2.8.jar"""
+        $env:JVM_OPTS = "$env:JVM_OPTS -javaagent:""$env:CASSANDRA_HOME\lib\jamm-0.3.0.jar"""
     }
 
     # enable assertions.  disabling this in production will give a modest
