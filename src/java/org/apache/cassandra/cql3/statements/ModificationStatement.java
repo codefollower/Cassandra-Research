@@ -539,7 +539,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
         //我加上的，用于测试，触发memtable的flush
         if(count>3) {
-        //Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
+        Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
         count =0;
         }
         count++;

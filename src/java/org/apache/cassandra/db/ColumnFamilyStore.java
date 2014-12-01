@@ -164,6 +164,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     void scheduleFlush()
     {
+        //默认是1小时刷新一次，在CFMetaData.newSystemMetadata(String, String, String, CellNameType)里设了默认值
         int period = metadata.getMemtableFlushPeriod();
         if (period > 0)
         {

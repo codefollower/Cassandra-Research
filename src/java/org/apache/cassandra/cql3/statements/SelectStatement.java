@@ -706,7 +706,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     //isColumnRange()返回false只有两种情况:
     //1. SimpleSparseCellNameType
-    //2. CompoundDenseCellNameType且所有的CLUSTERING_COLUMN都出现并且不是Slice查询
+    //2. SimpleDenseCellNameType和CompoundDenseCellNameType且所有的CLUSTERING_COLUMN都在where中出现并且不是Slice查询
     private boolean isColumnRange() //CLUSTERING_COLUMN中的字段
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not dense, composite).
@@ -721,7 +721,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             if (r == null || r.isSlice())
                 return true;
         }
-        return false;
+        return false; //能运行到这里就满足2
     }
 
     //CompoundDenseCellNameType或SimpleSparseCellNameType的情况，并且用在where子句中的范围查询

@@ -232,22 +232,15 @@ public class CommitLog implements CommitLogMBean
             DataOutputByteBuffer dos = new DataOutputByteBuffer(buffer);
 
             // checksummed length
-//<<<<<<< HEAD
-//            dos.writeInt((int) size); //对应ENTRY_OVERHEAD_SIZE注释中提到的length
-//            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的head checksum
-//=======
-            dos.writeInt((int) size);
+            dos.writeInt((int) size); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的length
             checksum.update(buffer, buffer.position() - 4, 4);
-            buffer.putInt(checksum.getCrc());
+            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的head checksum
 
             int start = buffer.position();
             // checksummed mutation
             Mutation.serializer.serialize(mutation, dos, MessagingService.current_version);
-//<<<<<<< HEAD
-//            buffer.putLong(checksum.getValue()); //对应ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
-//=======
             checksum.update(buffer, start, (int) size);
-            buffer.putInt(checksum.getCrc());
+            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
         }
         catch (IOException e)
         {
