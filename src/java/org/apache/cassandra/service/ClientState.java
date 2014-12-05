@@ -143,6 +143,9 @@ public class ClientState
     {
         while (true)
         {
+            //millisecond是毫秒, 1秒  = 1000毫秒 (10的3次方)
+            //microsecond是微秒, 1秒  = 1000毫秒  = 1,000,000微秒 (10的6次方)
+            //nanosecond 是纳秒, 1秒  = 1000毫秒  = 1,000,000微秒  = 1,000,000,000纳秒 (10的9次方)
             long current = System.currentTimeMillis() * 1000;
             long last = lastTimestampMicros.get();
             long tstamp = last >= current ? last + 1 : current;
@@ -326,4 +329,8 @@ public class ClientState
             throw new RuntimeException(e);
         }
     }
+
+    //我加上的，用于测试，触发memtable的flush
+    //见org.apache.cassandra.cql3.statements.ModificationStatement.executeWithoutCondition(QueryState, QueryOptions)
+    public int  count = 0;
 }

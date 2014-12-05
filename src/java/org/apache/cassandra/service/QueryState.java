@@ -54,7 +54,7 @@ public class QueryState
      * This clock guarantees that updates for the same QueryState will be ordered
      * in the sequence seen, even if multiple updates happen in the same millisecond.
      */
-    public long getTimestamp() //纳秒
+    public long getTimestamp() //微秒
     {
         return clientState.getTimestamp();
     }

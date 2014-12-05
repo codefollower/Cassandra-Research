@@ -109,6 +109,7 @@ public abstract class SSTableWriter extends SSTable
         if (metadata.getBloomFilterFpChance() < 1.0)
             components.add(Component.FILTER);
 
+        //压缩是默认开启的，见CreateTableStatement的构造函数，默认用LZ4Compressor
         if (metadata.compressionParameters().sstableCompressor != null)
         {
             components.add(Component.COMPRESSION_INFO);

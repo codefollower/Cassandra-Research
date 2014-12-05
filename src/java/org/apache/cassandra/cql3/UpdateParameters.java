@@ -50,9 +50,9 @@ public class UpdateParameters
         this.metadata = metadata;
 
         this.options = options;
-        this.timestamp = timestamp; //纳秒
-        this.ttl = ttl;
-        this.localDeletionTime = (int)(System.currentTimeMillis() / 1000); //秒
+        this.timestamp = timestamp; //以微秒为单位
+        this.ttl = ttl; //以秒为单位，多少秒后过期
+        this.localDeletionTime = (int)(System.currentTimeMillis() / 1000); //以秒为单位，从哪一秒开始
         this.prefetchedLists = prefetchedLists;
 
         // We use MIN_VALUE internally to mean the absence of of timestamp (in Selection, in sstable stats, ...), so exclude

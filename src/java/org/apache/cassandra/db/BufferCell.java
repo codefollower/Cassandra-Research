@@ -34,7 +34,7 @@ public class BufferCell extends AbstractCell
 
     protected final CellName name;
     protected final ByteBuffer value;
-    protected final long timestamp;
+    protected final long timestamp; //微秒
 
     BufferCell(CellName name)
     {

@@ -31,6 +31,8 @@ import org.apache.cassandra.utils.memory.MemtableAllocator;
 
 public class BufferDeletedCell extends BufferCell implements DeletedCell
 {
+    //localDeletionTime本地服务器上生成的时间，表示在哪一秒删除，
+    //timestamp是微妙，如client传过来或者由本地服务器自动生成(见org.apache.cassandra.service.ClientState.getTimestamp())
     public BufferDeletedCell(CellName name, int localDeletionTime, long timestamp)
     {
         this(name, ByteBufferUtil.bytes(localDeletionTime), timestamp);
