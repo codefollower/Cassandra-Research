@@ -348,6 +348,9 @@ public interface StorageServiceMBean extends NotificationEmitter
     /** get the operational mode (leaving, joining, normal, decommissioned, client) **/
     public String getOperationMode();
 
+    /** Returns whether the storage service is starting or not */
+    public boolean isStarting();
+
     /** get the progress of a drain operation */
     public String getDrainProgress();
 
@@ -382,6 +385,8 @@ public interface StorageServiceMBean extends NotificationEmitter
     public Map<InetAddress, Float> effectiveOwnership(String keyspace) throws IllegalStateException;
 
     public List<String> getKeyspaces();
+
+    public List<String> getNonSystemKeyspaces();
 
     /**
      * Change endpointsnitch class and dynamic-ness (and dynamic attributes) at runtime

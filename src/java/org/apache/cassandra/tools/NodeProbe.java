@@ -623,6 +623,11 @@ public class NodeProbe implements AutoCloseable
         return ssProxy.getOperationMode();
     }
 
+    public boolean isStarting()
+    {
+        return ssProxy.isStarting();
+    }
+
     public void truncate(String keyspaceName, String cfName)
     {
         try
@@ -730,6 +735,11 @@ public class NodeProbe implements AutoCloseable
     public List<String> getKeyspaces()
     {
         return ssProxy.getKeyspaces();
+    }
+
+    public List<String> getNonSystemKeyspaces()
+    {
+        return ssProxy.getNonSystemKeyspaces();
     }
 
     public String getClusterName()

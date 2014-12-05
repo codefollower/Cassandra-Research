@@ -18,6 +18,7 @@
 package org.apache.cassandra.cql3;
 
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.ReversedType;
 
 public class ColumnSpecification //有一个子类: org.apache.cassandra.config.ColumnDefinition
 {
@@ -43,5 +44,10 @@ public class ColumnSpecification //有一个子类: org.apache.cassandra.config.
     public ColumnSpecification withAlias(ColumnIdentifier alias)
     {
         return new ColumnSpecification(ksName, cfName, alias, type);
+    }
+    
+    public boolean isReversedType()
+    {
+        return type instanceof ReversedType;
     }
 }
