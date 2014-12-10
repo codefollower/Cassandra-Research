@@ -35,6 +35,7 @@ import org.apache.cassandra.dht.Token;
  * returns the RF nodes that lie right next to each other
  * on the ring.
  */
+//此类不考虑snitch，但是NetworkTopologyStrategy要考虑
 public class SimpleStrategy extends AbstractReplicationStrategy
 {
     public SimpleStrategy(String keyspaceName, TokenMetadata tokenMetadata, IEndpointSnitch snitch, Map<String, String> configOptions)

@@ -216,12 +216,13 @@ public class QueryProcessor implements QueryHandler
     public static void validateCellName(CellName name, CellNameType type) throws InvalidRequestException
     {
         validateComposite(name, type);
-        if (name.isEmpty())
+        if (name.isEmpty()) //这一步为什么不放到validateComposite里顺便做了？
             throw new InvalidRequestException("Invalid empty value for clustering column of COMPACT TABLE");
     }
 
     public static void validateComposite(Composite name, CType type) throws InvalidRequestException
-    {
+    { 
+        //会触发org.apache.cassandra.db.composites.AbstractComposite.toByteBuffer()，会复制数据，是否可优化？
         long serializedSize = type.serializer().serializedSize(name, TypeSizes.NATIVE);
         if (serializedSize > Cell.MAX_NAME_LENGTH)
             throw new InvalidRequestException(String.format("The sum of all clustering columns is too long (%s > %s)",

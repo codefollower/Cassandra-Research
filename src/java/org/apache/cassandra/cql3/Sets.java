@@ -316,7 +316,8 @@ public abstract class Sets
         }
     }
 
-    //例如: UPDATE users SET emails = emails - {'fb@friendsofmordor.org'}
+    //例如: UPDATE users SET emails = emails - {'fb@friendsofmordor.org', 'your@friendsofmordor.org'}
+    //或者: DELETE emails['fb@friendsofmordor.org'] FROM users
     // Note that this is reused for Map subtraction too (we subtract a set from a map)
     public static class Discarder extends Operation
     {
@@ -336,7 +337,7 @@ public abstract class Sets
             // This can be either a set or a single element
             Set<ByteBuffer> toDiscard = value instanceof Constants.Value
                                       ? Collections.singleton(((Constants.Value)value).bytes)
-                                      : ((Sets.Value)value).elements;
+                                      : ((Sets.Value)value).elements; //就是上面的UPDATE例子，减去多个元素
 
             for (ByteBuffer bb : toDiscard)
             {
