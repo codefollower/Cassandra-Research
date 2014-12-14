@@ -362,7 +362,11 @@ public class BigTableWriter extends SSTableWriter
         sstable.last = getMinimalKey(exclusiveUpperBoundOfReadableIndex);
         DecoratedKey inclusiveUpperBoundOfReadableData = iwriter.getMaxReadableKey(1);
         if (inclusiveUpperBoundOfReadableData == null)
+        {
+            // Prevent leaving tmplink files on disk
+            sstable.releaseReference();
             return null;
+        }
         int offset = 2;
         while (true)
         {
@@ -371,7 +375,10 @@ public class BigTableWriter extends SSTableWriter
                 break;
             inclusiveUpperBoundOfReadableData = iwriter.getMaxReadableKey(offset++);
             if (inclusiveUpperBoundOfReadableData == null)
+            {
+                sstable.releaseReference();
                 return null;
+            }
         }
         sstable.last = getMinimalKey(inclusiveUpperBoundOfReadableData);
         return sstable;

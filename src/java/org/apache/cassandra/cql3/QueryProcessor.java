@@ -552,6 +552,7 @@ public class QueryProcessor implements QueryHandler
         }
         catch (RuntimeException re)
         {
+            logger.error(String.format("The statement: [%s] could not be parsed.", queryStr), re);
             throw new SyntaxException(String.format("Failed parsing statement: [%s] reason: %s %s",
                                                     queryStr,
                                                     re.getClass().getSimpleName(),
@@ -622,11 +623,21 @@ public class QueryProcessor implements QueryHandler
                 removeInvalidPreparedStatementsForFunction(thriftPreparedStatements.values().iterator(), ksName, functionName);
             }
         }
+        public void onCreateAggregate(String ksName, String aggregateName) {
+            if (Functions.getOverloadCount(new FunctionName(ksName, aggregateName)) > 1)
+            {
+                // in case there are other overloads, we have to remove all overloads since argument type
+                // matching may change (due to type casting)
+                removeInvalidPreparedStatementsForFunction(preparedStatements.values().iterator(), ksName, aggregateName);
+                removeInvalidPreparedStatementsForFunction(thriftPreparedStatements.values().iterator(), ksName, aggregateName);
+            }
+        }
 
         public void onUpdateKeyspace(String ksName) { }
         public void onUpdateColumnFamily(String ksName, String cfName) { }
         public void onUpdateUserType(String ksName, String typeName) { }
         public void onUpdateFunction(String ksName, String functionName) { }
+        public void onUpdateAggregate(String ksName, String aggregateName) { }
 
         public void onDropKeyspace(String ksName)
         {
@@ -642,6 +653,11 @@ public class QueryProcessor implements QueryHandler
         public void onDropFunction(String ksName, String functionName) {
             removeInvalidPreparedStatementsForFunction(preparedStatements.values().iterator(), ksName, functionName);
             removeInvalidPreparedStatementsForFunction(thriftPreparedStatements.values().iterator(), ksName, functionName);
+        }
+        public void onDropAggregate(String ksName, String aggregateName)
+        {
+            removeInvalidPreparedStatementsForFunction(preparedStatements.values().iterator(), ksName, aggregateName);
+            removeInvalidPreparedStatementsForFunction(thriftPreparedStatements.values().iterator(), ksName, aggregateName);
         }
 
         private void removeInvalidPreparedStatementsForFunction(Iterator<ParsedStatement.Prepared> iterator,

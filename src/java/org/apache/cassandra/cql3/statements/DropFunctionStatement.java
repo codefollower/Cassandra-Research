@@ -60,7 +60,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
             functionName = new FunctionName(state.getKeyspace(), functionName.name);
 
         if (!functionName.hasKeyspace())
-            throw new InvalidRequestException("You need to be logged in a keyspace or use a fully qualified function name");
+            throw new InvalidRequestException("Functions must be fully qualified with a keyspace name if a keyspace is not set for the session");
 
         ThriftValidation.validateKeyspaceNotSystem(functionName.keyspace);
     }
@@ -73,11 +73,6 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         state.hasKeyspaceAccess(functionName.keyspace, Permission.DROP);
     }
 
-    /**
-     * The <code>CqlParser</code> only goes as far as extracting the keyword arguments
-     * from these statements, so this method is responsible for processing and
-     * validating.
-     */
     @Override
     public void validate(ClientState state)
     {
@@ -109,7 +104,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         if (argsPresent)
         {
             old = Functions.find(functionName, argTypes);
-            if (old == null)
+            if (old == null || !(old instanceof ScalarFunction))
             {
                 if (ifExists)
                     return false;
@@ -127,7 +122,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         }
         else
         {
-            if (olds == null || olds.isEmpty())
+            if (olds == null || olds.isEmpty() || !(olds.get(0) instanceof ScalarFunction))
             {
                 if (ifExists)
                     return false;
@@ -136,7 +131,11 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
             old = olds.get(0);
         }
 
-        MigrationManager.announceFunctionDrop((UDFunction)old, isLocalOnly);
+        List<Function> references = Functions.getReferencesTo(old);
+        if (!references.isEmpty())
+            throw new InvalidRequestException(String.format("Function '%s' still referenced by %s", functionName, references));
+
+        MigrationManager.announceFunctionDrop((UDFunction) old, isLocalOnly);
         return true;
     }
 

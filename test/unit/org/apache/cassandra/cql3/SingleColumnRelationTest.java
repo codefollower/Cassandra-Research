@@ -21,6 +21,9 @@ import java.util.Arrays;
 
 import org.junit.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class SingleColumnRelationTest extends CQLTester
 {
     @Test
@@ -362,5 +365,34 @@ public class SingleColumnRelationTest extends CQLTester
         assertInvalidMessage("Cannot execute this query as it might involve data filtering",
                              "SELECT * FROM %s WHERE setid = 0 AND row < 1;");
         assertRows(execute("SELECT * FROM %s WHERE setid = 0 AND row < 1 ALLOW FILTERING;"), row(0, 0, 0));
+    }
+
+    @Test
+    public void testEmptyIN() throws Throwable
+    {
+        for (String compactOption : new String[] { "", " WITH COMPACT STORAGE" })
+        {
+            createTable("CREATE TABLE %s (k1 int, k2 int, v int, PRIMARY KEY (k1, k2))" + compactOption);
+
+            for (int i = 0; i <= 2; i++)
+                for (int j = 0; j <= 2; j++)
+                    execute("INSERT INTO %s (k1, k2, v) VALUES (?, ?, ?)", i, j, i + j);
+
+            assertEmpty(execute("SELECT v FROM %s WHERE k1 IN ()"));
+            assertEmpty(execute("SELECT v FROM %s WHERE k1 = 0 AND k2 IN ()"));
+        }
+    }
+
+    @Test
+    public void testLargeClusteringINValues() throws Throwable
+    {
+        createTable("CREATE TABLE %s (k int, c int, v int, PRIMARY KEY (k, c))");
+        execute("INSERT INTO %s (k, c, v) VALUES (0, 0, 0)");
+        List<Integer> inValues = new ArrayList<>(10000);
+        for (int i = 0; i < 10000; i++)
+            inValues.add(i);
+        assertRows(execute("SELECT * FROM %s WHERE k=? AND c IN ?", 0, inValues),
+                row(0, 0, 0)
+        );
     }
 }

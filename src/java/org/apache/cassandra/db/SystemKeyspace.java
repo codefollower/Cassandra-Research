@@ -77,6 +77,7 @@ public final class SystemKeyspace
     public static final String SCHEMA_TRIGGERS_TABLE = "schema_triggers";
     public static final String SCHEMA_USER_TYPES_TABLE = "schema_usertypes";
     public static final String SCHEMA_FUNCTIONS_TABLE = "schema_functions";
+    public static final String SCHEMA_AGGREGATES_TABLE = "schema_aggregates";
 
     public static final String BUILT_INDEXES_TABLE = "IndexInfo";
     public static final String HINTS_TABLE = "hints";
@@ -96,7 +97,8 @@ public final class SystemKeyspace
                       SCHEMA_COLUMNS_TABLE,
                       SCHEMA_TRIGGERS_TABLE,
                       SCHEMA_USER_TYPES_TABLE,
-                      SCHEMA_FUNCTIONS_TABLE);
+                      SCHEMA_FUNCTIONS_TABLE,
+                      SCHEMA_AGGREGATES_TABLE);
 
     private static int WEEK = (int) TimeUnit.DAYS.toSeconds(7);
 
@@ -178,7 +180,6 @@ public final class SystemKeyspace
                 + "PRIMARY KEY ((keyspace_name), type_name))")
                 .gcGraceSeconds(WEEK);
 
-
     public static final CFMetaData SchemaFunctionsTable =
         compile(SCHEMA_FUNCTIONS_TABLE, "user defined function definitions",
                 "CREATE TABLE %s ("
@@ -192,6 +193,21 @@ public final class SystemKeyspace
                 + "language text,"
                 + "return_type text,"
                 + "PRIMARY KEY ((keyspace_name), function_name, signature))")
+                .gcGraceSeconds(WEEK);
+
+    public static final CFMetaData SchemaAggregatesTable =
+        compile(SCHEMA_AGGREGATES_TABLE, "user defined aggregate definitions",
+                "CREATE TABLE %s ("
+                + "keyspace_name text,"
+                + "aggregate_name text,"
+                + "signature blob,"
+                + "argument_types list<text>,"
+                + "return_type text,"
+                + "state_func text,"
+                + "state_type text,"
+                + "final_func text,"
+                + "initcond blob,"
+                + "PRIMARY KEY ((keyspace_name), aggregate_name, signature))")
                 .gcGraceSeconds(WEEK);
 
     public static final CFMetaData BuiltIndexesTable =
@@ -332,6 +348,7 @@ public final class SystemKeyspace
                           SchemaTriggersTable,
                           SchemaUserTypesTable,
                           SchemaFunctionsTable,
+                          SchemaAggregatesTable,
                           BuiltIndexesTable,
                           HintsTable,
                           BatchlogTable,

@@ -419,6 +419,10 @@ public class Server implements CassandraDaemon.Server
         {
         }
 
+        public void onCreateAggregate(String ksName, String aggregateName)
+        {
+        }
+
         public void onUpdateKeyspace(String ksName)
         {
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, ksName));
@@ -438,6 +442,10 @@ public class Server implements CassandraDaemon.Server
         {
         }
 
+        public void onUpdateAggregate(String ksName, String aggregateName)
+        {
+        }
+
         public void onDropKeyspace(String ksName)
         {
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.DROPPED, ksName));
@@ -454,6 +462,10 @@ public class Server implements CassandraDaemon.Server
         }
 
         public void onDropFunction(String ksName, String functionName)
+        {
+        }
+
+        public void onDropAggregate(String ksName, String aggregateName)
         {
         }
     }

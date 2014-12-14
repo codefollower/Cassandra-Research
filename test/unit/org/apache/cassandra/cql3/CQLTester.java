@@ -46,6 +46,7 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.SystemKeyspace;
@@ -241,6 +242,19 @@ public abstract class CQLTester
     public boolean usePrepared()
     {
         return USE_PREPARED_VALUES;
+    }
+
+    public static FunctionName parseFunctionName(String qualifiedName)
+    {
+        int i = qualifiedName.indexOf('.');
+        return i == -1
+               ? FunctionName.nativeFunction(qualifiedName)
+               : new FunctionName(qualifiedName.substring(0, i).trim(), qualifiedName.substring(i+1).trim());
+    }
+
+    public static String shortFunctionName(String f)
+    {
+        return parseFunctionName(f).name;
     }
 
     private static void removeAllSSTables(String ks, String table)
@@ -618,13 +632,17 @@ public abstract class CQLTester
         {
             if (errorMessage != null)
             {
-                Assert.assertTrue("Expected error message to contain '" + errorMessage + "', but got '" + e.getMessage() + "'",
-                        e.getMessage().contains(errorMessage));
+                assertMessageContains(errorMessage, e);
             }
         }
     }
 
     protected void assertInvalidSyntax(String query, Object... values) throws Throwable
+    {
+        assertInvalidSyntaxMessage(null, query, values);
+    }
+
+    protected void assertInvalidSyntaxMessage(String errorMessage, String query, Object... values) throws Throwable
     {
         try
         {
@@ -636,8 +654,23 @@ public abstract class CQLTester
         }
         catch (SyntaxException e)
         {
-            // This is what we expect
+            if (errorMessage != null)
+            {
+                assertMessageContains(errorMessage, e);
+            }
         }
+    }
+
+    /**
+     * Asserts that the message of the specified exception contains the specified text.
+     *
+     * @param text the text that the exception message must contains
+     * @param e the exception to check
+     */
+    private static void assertMessageContains(String text, Exception e)
+    {
+        Assert.assertTrue("Expected error message to contain '" + text + "', but got '" + e.getMessage() + "'",
+                e.getMessage().contains(text));
     }
 
     private static String replaceValues(String query, Object[] values)
