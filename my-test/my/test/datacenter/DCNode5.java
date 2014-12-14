@@ -15,25 +15,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package my.test.client;
+package my.test.datacenter;
 
-import org.apache.cassandra.transport.Client;
+import org.apache.cassandra.locator.SnitchProperties;
 
-public class ClientTest {
-    //提示>>后，
-    //先输入: startup lz4
-    //authenticate username=cassandra password=cassandra
-    //register status_change
-    //query SELECT schema_version FROM system.local WHERE key='local'
-    //或
-    //query SELECT schema_version FROM system.local WHERE key='local' !10 
-    //对于其中的" !10 "，感叹号是分隔符，后面是pageSize，感叹号跟数字之间没有空格
+import my.test.start.CassandraDaemonStart;
+
+public class DCNode5 extends CassandraDaemonStart {
     public static void main(String[] args) {
-        try {
-            Client.main(new String[] { "localhost", "9042" });
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc2.properties");
+        setConfigLoader(DCNode5.class);
+        run(args);
     }
 
+    public DCNode5() {
+        this.listen_address = "127.0.0.5";
+        this.dir = "dc/node5";
+    }
 }

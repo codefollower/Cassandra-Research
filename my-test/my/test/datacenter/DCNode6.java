@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,15 +21,15 @@ import org.apache.cassandra.locator.SnitchProperties;
 
 import my.test.start.CassandraDaemonStart;
 
-public class Node4 extends CassandraDaemonStart {
+public class DCNode6 extends CassandraDaemonStart {
     public static void main(String[] args) {
         System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc2.properties");
-        setConfigLoader(Node4.class);
+        setConfigLoader(DCNode6.class);
         run(args);
     }
 
-    public Node4() {
-        this.listen_address = "127.0.0.4";
-        this.dir = "dc/node4";
+    public DCNode6() {
+        this.listen_address = "127.0.0.6";
+        this.dir = "dc/node6";
     }
 }

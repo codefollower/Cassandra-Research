@@ -69,3 +69,4 @@ num_tokens: 2
 #memtable_total_space_in_mb: 1
 
 
+#broadcast_address: 127.0.0.2

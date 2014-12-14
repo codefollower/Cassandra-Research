@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -80,7 +78,14 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
 
         System.setProperty("cassandra-pidfile", "pidfile.txt");
 
-        System.setProperty("cassandra.load_ring_state", "false"); // 不从system.peers表加载ring状态信息
+        //System.setProperty("cassandra.load_ring_state", "false"); // 不从system.peers表加载ring状态信息
+
+        //见org.apache.cassandra.service.StorageService.getRingDelay()
+        //默认30秒，等太久了
+        System.setProperty("cassandra.ring_delay_ms", "5000");
+
+        //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
+        System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
 
         CassandraDaemon.main(args);
     }

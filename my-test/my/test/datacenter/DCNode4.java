@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,21 +21,15 @@ import org.apache.cassandra.locator.SnitchProperties;
 
 import my.test.start.CassandraDaemonStart;
 
-//加vm参数-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
-//-agentpath:E:\jcdl\git\build\Release\jcdl.dll=trace=method,include=org/apache/cassandra/*
-//-agentpath:E:\jcdl\git\build\Release\jcdl.dll=trace=method,include=org/apache/cassandra/service/CassandraDaemon
-//加-Dcom.sun.management.jmxremote可以启用jmx
-public class Node1 extends CassandraDaemonStart {
+public class DCNode4 extends CassandraDaemonStart {
     public static void main(String[] args) {
-        //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
-        System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
-        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1.properties");
-        setConfigLoader(Node1.class);
+        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc2.properties");
+        setConfigLoader(DCNode4.class);
         run(args);
     }
 
-    public Node1() {
-        this.listen_address = "127.0.0.1";
-        this.dir = "dc/node1";
+    public DCNode4() {
+        this.listen_address = "127.0.0.4";
+        this.dir = "dc/node4";
     }
 }

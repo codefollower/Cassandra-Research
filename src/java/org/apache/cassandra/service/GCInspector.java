@@ -155,7 +155,7 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
     public State getTotalSinceLastCheck()
     {
         return state.getAndSet(new State());
-    }
+    } 
 
     public double[] getAndResetStats()
     {

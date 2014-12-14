@@ -644,7 +644,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 appStates.put(ApplicationState.TOKENS, valueFactory.tokens(bootstrapTokens));
                 appStates.put(ApplicationState.STATUS, valueFactory.hibernate(true));
             }
-            else if (shouldBootstrap())
+            else if (shouldBootstrap()) //非种子节点才需要
             {
                 checkForEndpointCollision();
             }
@@ -697,7 +697,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                      DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()));
         if (DatabaseDescriptor.isAutoBootstrap() && !SystemKeyspace.bootstrapComplete() && DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()))
             logger.info("This node will not auto bootstrap because it is configured to be a seed node.");
-        if (shouldBootstrap())
+        if (shouldBootstrap()) //非seed节点进入这个代码分枝
         {
             if (SystemKeyspace.bootstrapInProgress())
                 logger.warn("Detected previous bootstrap failure; retrying");
@@ -799,7 +799,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             bootstrap(bootstrapTokens);
             assert !isBootstrapMode; // bootstrap will block until finished
         }
-        else
+        else  //seed节点进入这个代码分枝，非seed节点引导完了也进入这个分枝
         {
             bootstrapTokens = SystemKeyspace.getSavedTokens();
             if (bootstrapTokens.isEmpty())
@@ -981,7 +981,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             states.add(Pair.create(ApplicationState.STATUS, valueFactory.bootstrapping(tokens)));
             Gossiper.instance.addLocalApplicationStates(states);
             setMode(Mode.JOINING, "sleeping " + RING_DELAY + " ms for pending range setup", true);
-            Uninterruptibles.sleepUninterruptibly(RING_DELAY, TimeUnit.MILLISECONDS);
+            Uninterruptibles.sleepUninterruptibly(RING_DELAY, TimeUnit.MILLISECONDS); //PendingRangeTask里在更新，是个异步线程
         }
         else
         {
@@ -3180,7 +3180,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         startLeaving();
         long timeout = Math.max(RING_DELAY, BatchlogManager.instance.getBatchlogTimeout());
         setMode(Mode.LEAVING, "sleeping " + timeout + " ms for batch processing and pending range setup", true);
-        Thread.sleep(timeout);
+        Thread.sleep(timeout/100000);
 
         Runnable finishLeaving = new Runnable()
         {

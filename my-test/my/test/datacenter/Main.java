@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +17,7 @@
  */
 package my.test.datacenter;
 
+//不能这样使用
 public class Main {
 
     static class NodeThread extends Thread {
@@ -31,25 +30,26 @@ public class Main {
             this.args = args;
         }
 
+        @Override
         public void run() {
             switch (i) {
             case 1:
-                Node1.main(args);
+                DCNode1.main(args);
                 break;
             case 2:
-                Node2.main(args);
+                DCNode2.main(args);
                 break;
             case 3:
-                Node3.main(args);
+                DCNode3.main(args);
                 break;
             case 4:
-                Node4.main(args);
+                DCNode4.main(args);
                 break;
             case 5:
-                Node5.main(args);
+                DCNode5.main(args);
                 break;
             case 6:
-                Node6.main(args);
+                DCNode6.main(args);
                 break;
             default:
                 throw new Error("i=" + i);

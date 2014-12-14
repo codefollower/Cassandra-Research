@@ -206,16 +206,6 @@ public class StorageProxy implements StorageProxyMBean
                                    ClientState state)
     throws UnavailableException, IsBootstrappingException, ReadTimeoutException, WriteTimeoutException, InvalidRequestException
     {
-//<<<<<<< HEAD
-//        consistencyForPaxos.validateForCas();
-//        consistencyForCommit.validateForCasCommit(keyspaceName);
-//
-//        CFMetaData metadata = Schema.instance.getCFMetaData(keyspaceName, cfName);
-//
-//        long start = System.nanoTime();
-//        long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getCasContentionTimeout()); //默认是1秒
-//        while (System.nanoTime() - start < timeout)
-//=======
         final long start = System.nanoTime();
         int contentions = 0;
         try
@@ -225,7 +215,7 @@ public class StorageProxy implements StorageProxyMBean
 
             CFMetaData metadata = Schema.instance.getCFMetaData(keyspaceName, cfName);
 
-            long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getCasContentionTimeout());
+            long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getCasContentionTimeout()); //默认是1秒
             while (System.nanoTime() - start < timeout)
             {
                 // for simplicity, we'll do a single liveness check at the start of each attempt

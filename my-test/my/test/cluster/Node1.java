@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,8 +25,10 @@ import my.test.start.CassandraDaemonStart;
 //加-Dcom.sun.management.jmxremote可以启用jmx
 public class Node1 extends CassandraDaemonStart {
     public static void main(String[] args) {
-        //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
-        System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
+        //System.setProperty("cassandra.join_ring", "false");
+        
+        System.setProperty("mx4jaddress", "127.0.0.1");
+        System.setProperty("mx4jport", "8081");
         setConfigLoader(Node1.class);
         run(args, "my-cassandra.yaml");
     }

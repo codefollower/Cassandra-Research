@@ -926,7 +926,8 @@ public final class MessagingService implements MessagingServiceMBean
                     }
 
                     socket.setKeepAlive(true);
-                    socket.setSoTimeout(2 * OutboundTcpConnection.WAIT_FOR_VERSION_MAX_TIME);
+                    //socket.setSoTimeout(2 * OutboundTcpConnection.WAIT_FOR_VERSION_MAX_TIME);
+                    socket.setSoTimeout(2 * 1000000); //我加上的，不让超时，方便调试
                     // determine the connection type to decide whether to buffer
                     DataInputStream in = new DataInputStream(socket.getInputStream());
                     //写入的格式见:OutboundTcpConnection.connect()

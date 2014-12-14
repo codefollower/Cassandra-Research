@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -17,21 +15,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package my.test.datacenter;
-
-import org.apache.cassandra.locator.SnitchProperties;
+package my.test.standalone;
 
 import my.test.start.CassandraDaemonStart;
 
-public class Node3 extends CassandraDaemonStart {
+//加vm参数-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
+//加-Dcom.sun.management.jmxremote可以启用jmx
+public class CassandraStandalone extends CassandraDaemonStart {
     public static void main(String[] args) {
-        System.setProperty(SnitchProperties.RACKDC_PROPERTY_FILENAME, "cassandra-rackdc1.properties");
-        setConfigLoader(Node3.class);
-        run(args);
+        //org.apache.cassandra.db.Memtable里的默认值是10万
+        System.setProperty("cassandra.memtable_row_overhead_computation_step", "1000");
+        System.setProperty("cassandra.join_ring", "false"); //不加入ring，因为是单独运行
+        System.setProperty("cassandra.load_ring_state", "true"); //从system.peers表加载ring状态信息
+        setConfigLoader(CassandraStandalone.class);
+        run(args, "my-cassandra.yaml");
     }
 
-    public Node3() {
-        this.listen_address = "127.0.0.3";
-        this.dir = "dc/node3";
+    public CassandraStandalone() {
+        this.listen_address = "127.0.0.1";
+        this.dir = "standalone";
     }
 }

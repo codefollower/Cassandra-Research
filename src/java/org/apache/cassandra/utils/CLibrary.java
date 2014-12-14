@@ -25,13 +25,26 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.sun.jna.LastErrorException;
+import com.sun.jna.Library;
 import com.sun.jna.Native;
+import com.sun.jna.Platform;
 
 //JNA是Java Native Access的缩写
 //参考:http://www.datastax.com/docs/1.1/install/install_jre
 //https://github.com/twall/jna
 public final class CLibrary
 {
+    //我加上的，windows上面还不能
+    private static C c; 
+    public static interface C extends Library {
+        int mlockall(int flags) throws LastErrorException;
+        int munlockall() throws LastErrorException;
+        int fcntl(int fd, int command, long flags) throws LastErrorException;
+        int posix_fadvise(int fd, long offset, int len, int flag) throws LastErrorException;
+        int fopen(String path, int flags) throws LastErrorException;
+        int fflush(int fd) throws LastErrorException;
+        int fclose(int fd) throws LastErrorException;
+    }
     private static final Logger logger = LoggerFactory.getLogger(CLibrary.class);
 
     private static final int MCL_CURRENT = 1;
@@ -61,6 +74,10 @@ public final class CLibrary
         {
             //会出错，不支持Windows，见: http://stackoverflow.com/questions/16263912/jna-failure-in-cassandra
             Native.register("c");
+            //这样也不行
+            //Native.register((com.sun.jna.Platform.isWindows() ? "msvcrt" : "c"));
+
+            //c = (C) Native.loadLibrary((Platform.isWindows() ? "msvcrt" : "c"), C.class);
         }
         catch (NoClassDefFoundError e)
         {
@@ -118,12 +135,19 @@ public final class CLibrary
         try
         {
             mlockall(MCL_CURRENT);
+            
+//            if(Platform.isWindows())
+//                jnaLockable = false;
+//            else
+//                jnaLockable = true;
+            
             jnaLockable = true;
             logger.info("JNA mlockall successful");
         }
         catch (UnsatisfiedLinkError e)
         {
             // this will have already been logged by CLibrary, no need to repeat it
+            //e.printStackTrace();
         }
         catch (RuntimeException e)
         {
@@ -220,6 +244,7 @@ public final class CLibrary
         try
         {
             return open(path, O_RDONLY);
+            //return c.fopen(path, O_RDONLY);
         }
         catch (UnsatisfiedLinkError e)
         {
@@ -244,6 +269,7 @@ public final class CLibrary
         try
         {
             fsync(fd);
+            //c.fflush(fd);
         }
         catch (UnsatisfiedLinkError e)
         {
@@ -266,6 +292,7 @@ public final class CLibrary
         try
         {
             close(fd);
+            //c.fclose(fd);
         }
         catch (UnsatisfiedLinkError e)
         {

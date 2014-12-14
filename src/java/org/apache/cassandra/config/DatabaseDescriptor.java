@@ -141,6 +141,8 @@ public class DatabaseDescriptor
     @VisibleForTesting
     public static Config loadConfig() throws ConfigurationException
     {
+        if (conf != null) //我加上的，避免解析两次配置
+            return conf;
         //可以通过系统属性"cassandra.config.loader"来自定义配置装载器
         //只要实现org.apache.cassandra.config.ConfigurationLoader接口
         String loaderClass = System.getProperty("cassandra.config.loader");

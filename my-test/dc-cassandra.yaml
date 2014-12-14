@@ -64,7 +64,7 @@ cas_contention_timeout_in_ms: 100000000
 truncate_request_timeout_in_ms: 100000000
 
 #auto_bootstrap: false
-num_tokens: 2
+num_tokens: 3
 
 #memtable_total_space_in_mb: 1
 

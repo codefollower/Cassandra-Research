@@ -125,7 +125,7 @@ public class BootStrapper
         Set<Token> tokens = new HashSet<Token>(numTokens);
         while (tokens.size() < numTokens)
         {
-            Token token = StorageService.getPartitioner().getRandomToken();
+            Token token = StorageService.getPartitioner().getRandomToken(); //如果生成的随机值跟前面的相同，因为tokens是一个Set，所以被认为是同一个，不算在内
             if (metadata.getEndpoint(token) == null)
                 tokens.add(token);
         }

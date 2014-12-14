@@ -243,12 +243,6 @@ public class MigrationManager
             listener.onDropColumnFamily(cfm.ksName, cfm.cfName);
     }
 
-//<<<<<<< HEAD
-//    //通告有新的Keyspace了，会更新本地和其它节点
-//    public static void announceNewKeyspace(KSMetaData ksm) throws ConfigurationException
-//    {
-//        announceNewKeyspace(ksm, FBUtilities.timestampMicros()); //获得当前时间，按微妙算
-//=======
     public void notifyDropUserType(UserType ut)
     {
         for (IMigrationListener listener : listeners)
@@ -260,9 +254,10 @@ public class MigrationManager
         announceNewKeyspace(ksm, false);
     }
 
+    //通告有新的Keyspace了，会更新本地和其它节点
     public static void announceNewKeyspace(KSMetaData ksm, boolean announceLocally) throws ConfigurationException
     {
-        announceNewKeyspace(ksm, FBUtilities.timestampMicros(), announceLocally);
+        announceNewKeyspace(ksm, FBUtilities.timestampMicros(), announceLocally); //获得当前时间，按微妙算
     }
 
     public static void announceNewKeyspace(KSMetaData ksm, long timestamp, boolean announceLocally) throws ConfigurationException

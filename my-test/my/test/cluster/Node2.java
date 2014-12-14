@@ -1,6 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,6 +22,8 @@ import my.test.start.CassandraDaemonStart;
 public class Node2 extends CassandraDaemonStart {
     public static void main(String[] args) {
         setConfigLoader(Node2.class);
+        System.setProperty("mx4jaddress", "127.0.0.2");
+        System.setProperty("mx4jport", "8082");
         run(args, "my-cassandra.yaml");
     }
 

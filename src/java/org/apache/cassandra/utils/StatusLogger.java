@@ -63,13 +63,13 @@ public class StatusLogger
         {
             String poolName = objectName.getKeyProperty("type");
             JMXEnabledThreadPoolExecutorMBean threadPoolProxy = JMX.newMBeanProxy(server, objectName, JMXEnabledThreadPoolExecutorMBean.class);
-            logger.info(String.format("%-25s%10s%10s%15s%10s%18s",
-                                      poolName,
-                                      threadPoolProxy.getActiveCount(),
-                                      threadPoolProxy.getPendingTasks(),
-                                      threadPoolProxy.getCompletedTasks(),
-                                      threadPoolProxy.getCurrentlyBlockedTasks(),
-                                      threadPoolProxy.getTotalBlockedTasks()));
+//            logger.info(String.format("%-25s%10s%10s%15s%10s%18s",
+//                                      poolName,
+//                                      threadPoolProxy.getActiveCount(),
+//                                      threadPoolProxy.getPendingTasks(),
+//                                      threadPoolProxy.getCompletedTasks(),
+//                                      threadPoolProxy.getCurrentlyBlockedTasks(),
+//                                      threadPoolProxy.getTotalBlockedTasks()));
         }
         // one offs
         logger.info(String.format("%-25s%10s%10s",
@@ -109,12 +109,12 @@ public class StatusLogger
                                   rowCacheKeysToSave == Integer.MAX_VALUE ? "all" : rowCacheKeysToSave));
 
         // per-CF stats
-        logger.info(String.format("%-25s%20s", "Table", "Memtable ops,data"));
-        for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
-        {
-            logger.info(String.format("%-25s%20s",
-                                      cfs.keyspace.getName() + "." + cfs.name,
-                                      cfs.getMemtableColumnsCount() + "," + cfs.getMemtableDataSize()));
-        }
+//        logger.info(String.format("%-25s%20s", "Table", "Memtable ops,data"));
+//        for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
+//        {
+//            logger.info(String.format("%-25s%20s",
+//                                      cfs.keyspace.getName() + "." + cfs.name,
+//                                      cfs.getMemtableColumnsCount() + "," + cfs.getMemtableDataSize()));
+//        }
     }
 }

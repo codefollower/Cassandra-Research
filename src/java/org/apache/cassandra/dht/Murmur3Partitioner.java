@@ -160,6 +160,7 @@ public class Murmur3Partitioner implements IPartitioner
     public LongToken getRandomToken()
     {
         return new LongToken(normalize(ThreadLocalRandom.current().nextLong()));
+        //return new LongToken(normalize(80));
     }
 
     private long normalize(long v)

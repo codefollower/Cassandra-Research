@@ -81,7 +81,8 @@ public class CassandraDaemon
      * Date roughly taken from http://perspectives.mvdirona.com/2008/07/12/FacebookReleasesCassandraAsOpenSource.aspx
      * We use this to ensure the system clock is at least somewhat correct at startup.
      */
-    private static final long EARLIEST_LAUNCH_DATE = 1215820800000L; //是Sat Jul 12 08:00:00 CST 2008
+    //Cassandra第一个版本发布的时间，是Sat Jul 12 08:00:00 CST 2008
+    private static final long EARLIEST_LAUNCH_DATE = 1215820800000L;
 
     public Server thriftServer; //用于thrift客户端
     public Server nativeServer; //用于CQL3客户端
@@ -120,7 +121,6 @@ public class CassandraDaemon
             throw new IllegalStateException(msg);
         }
 
-        //前面这一段代码说明Cassandra推荐用64位的Oracle HotSpot JVM，不推荐OpenJDK
         //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
         // log warnings for different kinds of sub-optimal JVMs.  tldr use 64-bit Oracle >= 1.6u32
         if (!DatabaseDescriptor.hasLargeAddressSpace())
@@ -128,6 +128,8 @@ public class CassandraDaemon
         String javaVersion = System.getProperty("java.version");
         String javaVmName = System.getProperty("java.vm.name");
         logger.info("JVM vendor/version: {}/{}", javaVmName, javaVersion);
+        
+        //这一段代码说明Cassandra推荐用64位的Oracle HotSpot JVM，不推荐OpenJDK
         if (javaVmName.contains("OpenJDK"))
         {
             // There is essentially no QA done on OpenJDK builds, and
@@ -355,6 +357,8 @@ public class CassandraDaemon
         };
         ScheduledExecutors.optionalTasks.schedule(runnable, 5 * 60, TimeUnit.SECONDS);
         SystemKeyspace.finishStartup();
+        
+        //从这里开始才启动集群相关的东西
         // start server internals
         StorageService.instance.registerDaemon(this);
         try
@@ -385,6 +389,7 @@ public class CassandraDaemon
             }
         }
 
+        //在本机上测试时，如果节点广播地址不是127.0.0.1就会等待一段时间
         if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
             waitForGossipToSettle();
 
