@@ -121,11 +121,8 @@ public enum ConsistencyLevel
             case ALL:
                 return keyspace.getReplicationStrategy().getReplicationFactor();
             case LOCAL_QUORUM:
-//<<<<<<< HEAD
-//                return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter()); //按本地数据中心的(复制因子/2+1)算
-//=======
             case LOCAL_SERIAL:
-                return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter());
+                return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter()); //按本地数据中心的(复制因子/2+1)算
             case EACH_QUORUM:
                 if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
                 {

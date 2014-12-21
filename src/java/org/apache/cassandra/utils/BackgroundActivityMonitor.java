@@ -166,6 +166,10 @@ public class BackgroundActivityMonitor
             report += manual_severity.get(); // add manual severity setting.
             VersionedValue updated = StorageService.instance.valueFactory.severity(report);
             Gossiper.instance.addLocalApplicationState(ApplicationState.SEVERITY, updated);
+            
+            //我加上的，在Windows下面没用，在Eclipse下面测试时浪费资源
+            if (!FBUtilities.isUnix())
+                reportThread.shutdown();
         }
     }
 }

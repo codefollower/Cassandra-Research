@@ -603,7 +603,7 @@ public class DatabaseDescriptor
         // hardcoded system keyspace
         //指system中的列族，不包含system_auth和system_traces
         //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
-        Schema.instance.load(SystemKeyspace.definition());
+        Schema.instance.load(SystemKeyspace.definition()); //这行执行完后只是把元数据放到内存中，还没有保存到硬盘
 
         // load the seeds for node contact points
         if (conf.seed_provider == null)
@@ -640,15 +640,11 @@ public class DatabaseDescriptor
     /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
     public static void loadSchemas()
     {
-
-//        //读取system.schema_usertypes表中的所有记录，加载到内存后每条记录对应一个UserType实例，
-//        //所有这些UserType实例都放在Schema类的UTMetaData userTypes字段中
-//        Schema.instance.loadUserTypes();
-//        //读取schema_keyspaces表
+        //读取schema_keyspaces表
         ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_TABLE);
 
         // if keyspace with definitions is empty try loading the old way
-        if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录
+        if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录，第一次启动时就是这种情况
         {
             logger.info("Couldn't detect any schema definitions in local storage.");
             // peek around the data directories to see if anything is there.

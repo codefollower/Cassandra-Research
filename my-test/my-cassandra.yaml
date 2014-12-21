@@ -51,6 +51,7 @@ row_cache_keys_to_save: 100
 
 concurrent_reads: 2
 concurrent_writes: 2
+concurrent_counter_writes: 2
 
 #deprecated
 #concurrent_replicates: 2

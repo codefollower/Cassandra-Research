@@ -38,7 +38,6 @@ import org.apache.cassandra.utils.WrappedRunnable;
  */
 //对应system_traces.events表
 //表里的记录有效期只有一天
-@SuppressWarnings("deprecation")
 public class TraceState
 {
     public final UUID sessionId;

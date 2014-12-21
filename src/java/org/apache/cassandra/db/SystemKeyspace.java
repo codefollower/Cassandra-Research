@@ -64,13 +64,13 @@ import org.apache.cassandra.utils.*;
 import static org.apache.cassandra.cql3.QueryProcessor.executeInternal;
 import static org.apache.cassandra.cql3.QueryProcessor.executeOnceInternal;
 
-//SystemKeyspace这个类主要就是用来操作system这个keyspace中的表，这些表全是元数据表
+//SystemKeyspace这个类主要就是用来操作system这个keyspace中的18个表，这些表全是元数据表
 public final class SystemKeyspace
 {
     private static final Logger logger = LoggerFactory.getLogger(SystemKeyspace.class);
 
     public static final String NAME = "system";
-    //对应system中的17个表
+    //7个schema表
     public static final String SCHEMA_KEYSPACES_TABLE = "schema_keyspaces";
     public static final String SCHEMA_COLUMNFAMILIES_TABLE = "schema_columnfamilies";
     public static final String SCHEMA_COLUMNS_TABLE = "schema_columns";
@@ -100,7 +100,7 @@ public final class SystemKeyspace
                       SCHEMA_FUNCTIONS_TABLE,
                       SCHEMA_AGGREGATES_TABLE);
 
-    private static int WEEK = (int) TimeUnit.DAYS.toSeconds(7);
+    private static int WEEK = (int) TimeUnit.DAYS.toSeconds(7); //一周，就是604800秒
 
     public static final CFMetaData SchemaKeyspacesTable =
         compile(SCHEMA_KEYSPACES_TABLE, "keyspace definitions",
@@ -339,7 +339,7 @@ public final class SystemKeyspace
         return CFMetaData.compile(String.format(cql, table), NAME).comment(comment);
     }
 
-    public static KSMetaData definition() //17个表
+    public static KSMetaData definition() //18个表
     {
         List<CFMetaData> tables =
             Arrays.asList(SchemaKeyspacesTable,
@@ -943,12 +943,7 @@ public final class SystemKeyspace
         return Keyspace.open(NAME).getColumnFamilyStore(cfName);
     }
 
-    //加载这5个表中的所有记录:
-    //schema_keyspaces
-    //schema_columnfamilies
-    //schema_columns
-    //schema_triggers
-    //schema_usertypes
+    //加载7个schema表中的所有记录:
     public static List<Row> serializedSchema()
     {
         List<Row> schema = new ArrayList<>();

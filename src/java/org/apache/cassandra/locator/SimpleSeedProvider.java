@@ -37,12 +37,6 @@ public class SimpleSeedProvider implements SeedProvider
 
     public List<InetAddress> getSeeds()
     {
-//<<<<<<< HEAD
-//        //见org.apache.cassandra.config.SeedProviderDef的注释
-//        //如seeds: "127.0.0.1, 127.0.0.2"
-//        String[] hosts = args.get("seeds").split(",", -1);
-//        seeds = new ArrayList<InetAddress>(hosts.length);
-//=======
         Config conf;
         try
         {
@@ -52,6 +46,8 @@ public class SimpleSeedProvider implements SeedProvider
         {
             throw new AssertionError(e);
         }
+        //见org.apache.cassandra.config.SeedProviderDef的注释
+        //如seeds: "127.0.0.1, 127.0.0.2"
         String[] hosts = conf.seed_provider.parameters.get("seeds").split(",", -1);
         List<InetAddress> seeds = new ArrayList<InetAddress>(hosts.length);
         for (String host : hosts)

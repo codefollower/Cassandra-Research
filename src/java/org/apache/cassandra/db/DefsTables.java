@@ -69,7 +69,7 @@ public class DefsTables //都是static方法
 
         for (Row row : serializedSchema)
         {
-            //忽略掉system和system_traces这两个keyspace
+            //忽略掉system这个keyspace
             if (Schema.invalidSchemaRow(row) || Schema.ignoredSchemaRow(row))
                 continue;
 

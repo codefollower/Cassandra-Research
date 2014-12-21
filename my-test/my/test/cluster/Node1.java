@@ -26,6 +26,7 @@ import my.test.start.CassandraDaemonStart;
 public class Node1 extends CassandraDaemonStart {
     public static void main(String[] args) {
         //System.setProperty("cassandra.join_ring", "false");
+        System.setProperty("cassandra.unsafesystem", "true"); //不要每次更新元数据就刷新到硬盘，产生大量文件，只在测试时用
         
         System.setProperty("mx4jaddress", "127.0.0.1");
         System.setProperty("mx4jport", "8081");

@@ -4,27 +4,17 @@ system_traces
 system_auth
 
 
-内部有22个表(或称列族):
-属于system有17个:
+内部有23个表(或称列族):
+属于system有18个:
 ====================================================================
-	CREATE TABLE "IndexInfo" (
-		table_name text,
-		index_name text,
-		PRIMARY KEY (table_name, index_name)
-	) WITH COMPACT STORAGE AND COMMENT='indexes that have been completed'
-
-	CREATE TABLE "NodeIdInfo" (
-		key text,
-		id timeuuid,
-		PRIMARY KEY (key, id)
-	) WITH COMPACT STORAGE AND COMMENT='counter node IDs'
-
+//有７个schema表，并且它们的gc_grace_seconds都是一周，分区key都是keyspace_name
 	CREATE TABLE schema_keyspaces (
-		keyspace_name text PRIMARY KEY,
+		keyspace_name text,
 		durable_writes boolean,
 		strategy_class text,
-		strategy_options text
-	) WITH COMPACT STORAGE AND COMMENT='keyspace definitions' AND gc_grace_seconds=8640
+		strategy_options text,
+		PRIMARY KEY (keyspace_name)
+	) WITH COMPACT STORAGE
 
 	CREATE TABLE schema_columnfamilies (
 		keyspace_name text,
@@ -56,7 +46,7 @@ system_auth
 		index_interval int,
 		dropped_columns map<text, bigint>,
 		PRIMARY KEY (keyspace_name, columnfamily_name)
-	) WITH COMMENT='ColumnFamily definitions' AND gc_grace_seconds=8640
+	) WITH COMMENT='ColumnFamily definitions'
 
 	CREATE TABLE schema_columns (
 		keyspace_name text,
@@ -69,7 +59,7 @@ system_auth
 		component_index int,
 		type text,
 		PRIMARY KEY(keyspace_name, columnfamily_name, column_name)
-	) WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640
+	) WITH COMMENT='ColumnFamily column attributes'
 
 	CREATE TABLE schema_triggers (
 		keyspace_name text,
@@ -85,7 +75,7 @@ system_auth
 		column_names list<text>,
 		column_types list<text>,
 		PRIMARY KEY (keyspace_name, type_name)
-	) WITH COMMENT='Defined user types' AND gc_grace_seconds=8640
+	) WITH COMMENT='Defined user types'
 
     CREATE TABLE schema_functions (
 		namespace text,
@@ -100,6 +90,34 @@ system_auth
 		primary key ((namespace, name), signature)
 	) WITH COMMENT='user defined functions' AND gc_grace_seconds=604800
 
+
+    public static final CFMetaData SchemaAggregatesTable =
+        compile(SCHEMA_AGGREGATES_TABLE, "user defined aggregate definitions",
+                "CREATE TABLE %s ("
+                + "keyspace_name text,"
+                + "aggregate_name text,"
+                + "signature blob,"
+                + "argument_types list<text>,"
+                + "return_type text,"
+                + "state_func text,"
+                + "state_type text,"
+                + "final_func text,"
+                + "initcond blob,"
+                + "PRIMARY KEY ((keyspace_name), aggregate_name, signature))")
+                .gcGraceSeconds(WEEK);
+
+	CREATE TABLE "IndexInfo" (
+		table_name text,
+		index_name text,
+		PRIMARY KEY (table_name, index_name)
+	) WITH COMPACT STORAGE AND COMMENT='indexes that have been completed'
+
+	CREATE TABLE "NodeIdInfo" (
+		key text,
+		id timeuuid,
+		PRIMARY KEY (key, id)
+	) WITH COMPACT STORAGE AND COMMENT='counter node IDs'
+
 	CREATE TABLE hints (
 		target_id uuid,
 		hint_id timeuuid,
@@ -113,15 +131,15 @@ system_auth
 
 	CREATE TABLE peers (
 		peer inet PRIMARY KEY,
+		data_center text,
 		host_id uuid,
-		tokens set<varchar>,
-		schema_version uuid,
+		preferred_ip inet,
+		rack text,
 		release_version text,
 		rpc_address inet,
-		preferred_ip inet,
-		data_center text,
-		rack text
-	) WITH COMMENT='known peers in the cluster'
+		schema_version uuid,
+		tokens set<varchar>
+	)
 
 	CREATE TABLE peer_events (
 		peer inet PRIMARY KEY,

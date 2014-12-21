@@ -63,10 +63,7 @@ public class RowDataResolver extends AbstractRowResolver
         long start = System.nanoTime();
 
         ColumnFamily resolved;
-//<<<<<<< HEAD
-//        //计算每个节点返回的记录
-//        if (replies.size() > 1)
-//=======
+        //计算每个节点返回的记录
         if (replyCount > 1)
         {
             List<ColumnFamily> versions = new ArrayList<>(replyCount);

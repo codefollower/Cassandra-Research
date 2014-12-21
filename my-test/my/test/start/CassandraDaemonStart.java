@@ -87,6 +87,8 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
         //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
         System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
 
+        System.setProperty("cassandra.unsafesystem", "true"); //不要每次更新元数据就刷新到硬盘，产生大量文件，只在测试时用
+        
         CassandraDaemon.main(args);
     }
 

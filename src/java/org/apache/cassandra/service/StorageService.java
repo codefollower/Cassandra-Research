@@ -596,7 +596,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
         else
         {
-            Collection<Token> tokens = SystemKeyspace.getSavedTokens();
+            Collection<Token> tokens = SystemKeyspace.getSavedTokens(); //读local表，对应本节点的tokens
             if (!tokens.isEmpty())
             {
                 tokenMetadata.updateNormalTokens(tokens, FBUtilities.getBroadcastAddress());
@@ -823,7 +823,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
             else
             {
-                //切割成getNumTokens个range
                 if (bootstrapTokens.size() != DatabaseDescriptor.getNumTokens())
                     throw new ConfigurationException("Cannot change the number of tokens from " + bootstrapTokens.size() + " to " + DatabaseDescriptor.getNumTokens());
                 else

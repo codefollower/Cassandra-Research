@@ -202,11 +202,6 @@ public class Config
 
     public String memory_allocator = NativeAllocator.class.getSimpleName();
 
-//<<<<<<< HEAD
-//    private static boolean isClientMode = false; //不能通过cassandra.yaml指定，私有的
-//
-//=======
-//>>>>>>> 9274197b4bdb343731b964f2fcd8f70814f42a41
     public Integer file_cache_size_in_mb;
 
     public boolean inter_dc_tcp_nodelay = true;

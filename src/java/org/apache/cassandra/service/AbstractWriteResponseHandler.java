@@ -68,6 +68,7 @@ public abstract class AbstractWriteResponseHandler implements IAsyncCallback
                             ? DatabaseDescriptor.getCounterWriteRpcTimeout()
                             : DatabaseDescriptor.getWriteRpcTimeout();
 
+        //超时时间把调用构造函数开始直到调用get前的这段时间也算在内
         long timeout = TimeUnit.MILLISECONDS.toNanos(requestTimeout) - (System.nanoTime() - start);
 
         boolean success;

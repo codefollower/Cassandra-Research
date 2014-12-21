@@ -307,10 +307,10 @@ public final class CFMetaData
 
     public static CFMetaData compile(String cql, String keyspace)
     {
-        //System.out.println(cql); //这里打印"system"这个Keyspace中有哪些表(或称为列族)，总共有17个
+        //System.out.println(cql); //这里打印"system"这个Keyspace中有哪些表(或称为列族)，总共有18个
         try
         {
-            //仅仅是是进行到prepare而已，并未checkAccess、announceMigration，所以也不需要IF NOT EXISTS
+            //仅仅是进行到prepare而已，并未checkAccess、announceMigration，所以也不需要IF NOT EXISTS
             CFStatement parsed = (CFStatement)QueryProcessor.parseStatement(cql);
             parsed.prepareKeyspace(keyspace);
             CreateTableStatement statement = (CreateTableStatement) parsed.prepare().statement;

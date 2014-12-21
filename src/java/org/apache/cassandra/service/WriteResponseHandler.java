@@ -38,7 +38,7 @@ public class WriteResponseHandler extends AbstractWriteResponseHandler
 {
     protected static final Logger logger = LoggerFactory.getLogger(WriteResponseHandler.class);
 
-    protected volatile int responses;
+    protected volatile int responses; //注意，这里记录的是还有多少个节点没有响应
     private static final AtomicIntegerFieldUpdater<WriteResponseHandler> responsesUpdater
             = AtomicIntegerFieldUpdater.newUpdater(WriteResponseHandler.class, "responses");
 

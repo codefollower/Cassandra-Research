@@ -33,6 +33,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * In practice, because user types are global, we have only one instance of
  * this class that retrieve through the Schema class.
  */
+//读取system.schema_usertypes表中的所有记录，加载到内存后每条记录对应一个UserType实例，
+//所有这些UserType实例都放在userTypes字段中
 public final class UTMetaData
 {
     private final Map<ByteBuffer, UserType> userTypes;

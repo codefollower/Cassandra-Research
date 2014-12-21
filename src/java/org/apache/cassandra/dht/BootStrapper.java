@@ -125,13 +125,15 @@ public class BootStrapper
         Set<Token> tokens = new HashSet<Token>(numTokens);
         while (tokens.size() < numTokens)
         {
-            Token token = StorageService.getPartitioner().getRandomToken(); //如果生成的随机值跟前面的相同，因为tokens是一个Set，所以被认为是同一个，不算在内
+            //如果生成的随机值跟前面的相同，因为tokens是一个Set，所以被认为是同一个，不算在内
+            Token token = StorageService.getPartitioner().getRandomToken();
             if (metadata.getEndpoint(token) == null)
                 tokens.add(token);
         }
         return tokens;
     }
 
+    //对应已经被Deprecated的org.apache.cassandra.net.MessagingService.Verb.BOOTSTRAP_TOKEN
     public static class StringSerializer implements IVersionedSerializer<String>
     {
         public static final StringSerializer instance = new StringSerializer();
