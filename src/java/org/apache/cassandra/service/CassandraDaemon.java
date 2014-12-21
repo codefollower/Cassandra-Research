@@ -34,7 +34,6 @@ import javax.management.StandardMBean;
 
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Uninterruptibles;
-import org.hyperic.sigar.SigarException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +45,6 @@ import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
@@ -260,10 +258,9 @@ public class CassandraDaemon
             exitOrFail(100, "Fatal exception during initialization", e);
         }
 
+        // load schema from disk
+        Schema.instance.loadFromDisk();
 
-        // load keyspace && function descriptions.
-        DatabaseDescriptor.loadSchemas();
-        Functions.loadUDFFromSchema();
         // clean up compaction leftovers
         Map<Pair<String, String>, Map<Integer, UUID>> unfinishedCompactions = SystemKeyspace.getUnfinishedCompactions();
         for (Pair<String, String> kscf : unfinishedCompactions.keySet())
@@ -456,7 +453,7 @@ public class CassandraDaemon
 
         // On windows, we need to stop the entire system as prunsrv doesn't have the jsvc hooks
         // We rely on the shutdown hook to drain the node
-        if (!FBUtilities.isUnix())
+        if (FBUtilities.isWindows())
             System.exit(0);
     }
 

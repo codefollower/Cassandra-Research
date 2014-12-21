@@ -71,7 +71,7 @@ public class BackgroundActivityMonitor
         }
         catch (IOException ex)
         {
-            if (FBUtilities.isUnix())
+            if (FBUtilities.hasProcFS())
                 logger.warn("Couldn't open /proc/stats");
             statsFile = null;
         }
@@ -155,7 +155,7 @@ public class BackgroundActivityMonitor
             catch (IOException e)
             {
                 // ignore;
-                if (FBUtilities.isUnix())
+                if (FBUtilities.hasProcFS())
                     logger.warn("Couldn't read /proc/stats");
             }
             if (report == -1d)
@@ -168,7 +168,7 @@ public class BackgroundActivityMonitor
             Gossiper.instance.addLocalApplicationState(ApplicationState.SEVERITY, updated);
             
             //我加上的，在Windows下面没用，在Eclipse下面测试时浪费资源
-            if (!FBUtilities.isUnix())
+            if (FBUtilities.isWindows())
                 reportThread.shutdown();
         }
     }

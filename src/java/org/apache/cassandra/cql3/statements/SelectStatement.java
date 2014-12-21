@@ -229,7 +229,7 @@ public class SelectStatement implements CQLStatement
         
         //查询具体的某一行
         List<ReadCommand> commands = getSliceCommands(options, limitForQuery, now);
-        return commands == null ? null : new Pageable.ReadCommands(commands);
+        return commands == null ? null : new Pageable.ReadCommands(commands, limitForQuery);
     }
 
     public Pageable getPageableCommand(QueryOptions options) throws RequestValidationException

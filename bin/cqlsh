@@ -987,8 +987,12 @@ class Shell(cmd.Cmd):
                 self.printerr(traceback.format_exc())
                 return False
 
-        if statement.query_string[:6].lower() == 'select' or statement.query_string.lower().startswith("list"):
+        if statement.query_string[:6].lower() == 'select':
             self.print_result(rows, self.parse_for_table_meta(statement.query_string))
+        elif statement.query_string.lower().startswith("list users"):
+            self.print_result(rows, self.get_table_meta('system_auth','users'))
+        elif statement.query_string.lower().startswith("list"):
+            self.print_result(rows, self.get_table_meta('system_auth','permissions'))
         elif rows:
             # CAS INSERT/UPDATE
             self.writeresult("")
@@ -1716,7 +1720,7 @@ class Shell(cmd.Cmd):
         """
         level = parsed.get_binding('level')
         if level is None:
-            print 'Current consistency level is %s.' % (self.consistency_level)
+            print 'Current consistency level is %s.' % (cassandra.ConsistencyLevel.value_to_name[self.consistency_level])
             return
 
         self.consistency_level = cassandra.ConsistencyLevel.name_to_value[level.upper()]

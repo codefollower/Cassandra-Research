@@ -18,6 +18,7 @@
 package org.apache.cassandra.io.util;
 
 import java.io.File;
+import org.apache.cassandra.io.sstable.format.SSTableWriter;
 
 //与BufferedSegmentedFile类似，只不过有缓存
 public class BufferedPoolingSegmentedFile extends PoolingSegmentedFile
@@ -34,15 +35,10 @@ public class BufferedPoolingSegmentedFile extends PoolingSegmentedFile
             // only one segment in a standard-io file
         }
 
-        public SegmentedFile complete(String path)
+        public SegmentedFile complete(String path, SSTableWriter.FinishType finishType)
         {
             long length = new File(path).length();
             return new BufferedPoolingSegmentedFile(path, length);
-        }
-
-        public SegmentedFile openEarly(String path)
-        {
-            return complete(path);
         }
     }
 

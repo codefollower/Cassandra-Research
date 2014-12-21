@@ -18,6 +18,7 @@
 package org.apache.cassandra.io.util;
 
 import java.io.File;
+import org.apache.cassandra.io.sstable.format.SSTableWriter;
 
 //在SSTableReader.openForBatch中使用
 //每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
@@ -35,15 +36,10 @@ public class BufferedSegmentedFile extends SegmentedFile
             // only one segment in a standard-io file
         }
 
-        public SegmentedFile complete(String path)
+        public SegmentedFile complete(String path, SSTableWriter.FinishType finishType)
         {
             long length = new File(path).length();
             return new BufferedSegmentedFile(path, length);
-        }
-
-        public SegmentedFile openEarly(String path)
-        {
-            return complete(path);
         }
     }
 

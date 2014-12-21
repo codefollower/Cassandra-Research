@@ -55,7 +55,6 @@ public class Tracing
 {
     public static final String TRACE_HEADER = "TraceSession";
     public static final String TRACE_TYPE = "TraceType";
-    public static final String TRACE_TTL = "TraceTTL";
 
     public enum TraceType
     {
@@ -177,7 +176,7 @@ public class Tracing
             {
                 public void run()
                 {
-                    mutateWithCatch(TraceKeyspace.toStopSessionMutation(sessionId, elapsed, ttl));
+                    mutateWithCatch(TraceKeyspace.makeStopSessionMutation(sessionId, elapsed, ttl));
                 }
             });
 
@@ -226,7 +225,7 @@ public class Tracing
         {
             public void run()
             {
-                mutateWithCatch(TraceKeyspace.toStartSessionMutation(sessionId, parameters, request, startedAt, command, ttl));
+                mutateWithCatch(TraceKeyspace.makeStartSessionMutation(sessionId, parameters, request, startedAt, command, ttl));
             }
         });
 

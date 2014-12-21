@@ -187,7 +187,7 @@ public class TraceState
         {
             public void runMayThrow()
             {
-                Tracing.mutateWithCatch(TraceKeyspace.toEventMutation(sessionId, message, elapsed, threadName, ttl));
+                Tracing.mutateWithCatch(TraceKeyspace.makeEventMutation(sessionId, message, elapsed, threadName, ttl));
             }
         });
     }

@@ -48,7 +48,7 @@ class MultiPartitionPager implements QueryPager
     private int remaining;
     private int current;
 
-    MultiPartitionPager(List<ReadCommand> commands, ConsistencyLevel consistencyLevel, ClientState cState, boolean localQuery, PagingState state)
+    MultiPartitionPager(List<ReadCommand> commands, ConsistencyLevel consistencyLevel, ClientState cState, boolean localQuery, PagingState state, int limitForQuery)
     {
         int i = 0;
         // If it's not the beginning (state != null), we need to find where we were and skip previous commands
@@ -78,7 +78,8 @@ class MultiPartitionPager implements QueryPager
                 throw new IllegalArgumentException("All commands must have the same timestamp or weird results may happen.");
             pagers[j - i] = makePager(command, consistencyLevel, cState, localQuery, null);
         }
-        remaining = state == null ? computeRemaining(pagers) : state.remaining;
+
+        remaining = state == null ? limitForQuery : state.remaining;
     }
 
     private static SinglePartitionPager makePager(ReadCommand command, ConsistencyLevel consistencyLevel, ClientState cState, boolean localQuery, PagingState state)
@@ -86,14 +87,6 @@ class MultiPartitionPager implements QueryPager
         return command instanceof SliceFromReadCommand
              ? new SliceQueryPager((SliceFromReadCommand)command, consistencyLevel, cState, localQuery, state)
              : new NamesQueryPager((SliceByNamesReadCommand)command, consistencyLevel, cState, localQuery);
-    }
-
-    private static int computeRemaining(SinglePartitionPager[] pagers)
-    {
-        long remaining = 0;
-        for (SinglePartitionPager pager : pagers)
-            remaining += pager.maxRemaining();
-        return remaining > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int)remaining;
     }
 
     public PagingState state()
@@ -125,7 +118,7 @@ class MultiPartitionPager implements QueryPager
     {
         List<Row> result = new ArrayList<Row>();
 
-        int remainingThisQuery = pageSize;
+        int remainingThisQuery = Math.min(remaining, pageSize);
         while (remainingThisQuery > 0 && !isExhausted())
         {
             // isExhausted has set us on the first non-exhausted pager

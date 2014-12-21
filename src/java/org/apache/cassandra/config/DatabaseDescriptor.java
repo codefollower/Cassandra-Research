@@ -18,49 +18,29 @@
 package org.apache.cassandra.config;
 
 import java.io.File;
-import java.io.FileFilter;
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.net.*;
+import java.util.*;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Longs;
-import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.cassandra.auth.AllowAllAuthenticator;
-import org.apache.cassandra.auth.AllowAllAuthorizer;
-import org.apache.cassandra.auth.AllowAllInternodeAuthenticator;
-import org.apache.cassandra.auth.IAuthenticator;
-import org.apache.cassandra.auth.IAuthorizer;
-import org.apache.cassandra.auth.IInternodeAuthenticator;
+
+import org.apache.cassandra.auth.*;
 import org.apache.cassandra.config.Config.RequestSchedulerId;
 import org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.DefsTables;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.IAllocator;
-import org.apache.cassandra.locator.DynamicEndpointSnitch;
-import org.apache.cassandra.locator.EndpointSnitchInfo;
-import org.apache.cassandra.locator.IEndpointSnitch;
-import org.apache.cassandra.locator.SeedProvider;
+import org.apache.cassandra.locator.*;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.scheduler.IRequestScheduler;
 import org.apache.cassandra.scheduler.NoScheduler;
@@ -69,10 +49,7 @@ import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
-import org.apache.cassandra.utils.memory.HeapPool;
-import org.apache.cassandra.utils.memory.NativePool;
-import org.apache.cassandra.utils.memory.MemtablePool;
-import org.apache.cassandra.utils.memory.SlabPool;
+import org.apache.cassandra.utils.memory.*;
 
 //重点关注applyConfig、loadSchemas两个方法
 public class DatabaseDescriptor
@@ -190,7 +167,15 @@ public class DatabaseDescriptor
         if (conf.commitlog_total_space_in_mb == null)
             conf.commitlog_total_space_in_mb = hasLargeAddressSpace() ? 8192 : 32;
 
-        if (FBUtilities.isUnix())
+        // Always force standard mode access on Windows - CASSANDRA-6993. Windows won't allow deletion of hard-links to files that
+        // are memory-mapped which causes trouble with snapshots.
+        if (FBUtilities.isWindows())
+        {
+            conf.disk_access_mode = Config.DiskAccessMode.standard;
+            indexAccessMode = conf.disk_access_mode;
+            logger.info("Windows environment detected.  DiskAccessMode set to {}, indexAccessMode {}", conf.disk_access_mode, indexAccessMode);
+        }
+        else
         {
             /* evaluate the DiskAccessMode Config directive, which also affects indexAccessMode selection */
             if (conf.disk_access_mode == Config.DiskAccessMode.auto) //自动侦测，64位系统使用mmap
@@ -210,14 +195,6 @@ public class DatabaseDescriptor
                 indexAccessMode = conf.disk_access_mode;
                 logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
             }
-        }
-        // Always force standard mode access on Windows - CASSANDRA-6993. Windows won't allow deletion of hard-links to files that
-        // are memory-mapped which causes trouble with snapshots.
-        else
-        {
-            conf.disk_access_mode = Config.DiskAccessMode.standard;
-            indexAccessMode = conf.disk_access_mode;
-            logger.info("Non-unix environment detected.  DiskAccessMode set to {}, indexAccessMode {}", conf.disk_access_mode, indexAccessMode);
         }
 
         /* Authentication and authorization backend, implementing IAuthenticator and IAuthorizer */
@@ -600,11 +577,14 @@ public class DatabaseDescriptor
             conf.server_encryption_options = conf.encryption_options;
         }
 
-        // hardcoded system keyspace
-        //指system中的列族，不包含system_auth和system_traces
-        //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
-        Schema.instance.load(SystemKeyspace.definition()); //这行执行完后只是把元数据放到内存中，还没有保存到硬盘
-
+//<<<<<<< HEAD
+//        // hardcoded system keyspace
+//        //指system中的列族，不包含system_auth和system_traces
+//        //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
+//        Schema.instance.load(SystemKeyspace.definition()); //这行执行完后只是把元数据放到内存中，还没有保存到硬盘
+//
+//=======
+//>>>>>>> bf599fb5b062cbcc652da78b7d699e7a01b949ad
         // load the seeds for node contact points
         if (conf.seed_provider == null)
         {
@@ -637,55 +617,58 @@ public class DatabaseDescriptor
         return conf.dynamic_snitch ? new DynamicEndpointSnitch(snitch) : snitch;
     }
 
-    /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
-    public static void loadSchemas()
-    {
-        //读取schema_keyspaces表
-        ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_TABLE);
-
-        // if keyspace with definitions is empty try loading the old way
-        if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录，第一次启动时就是这种情况
-        {
-            logger.info("Couldn't detect any schema definitions in local storage.");
-            // peek around the data directories to see if anything is there.
-            if (hasExistingNoSystemTables())
-                logger.info("Found keyspace data in data directories. Consider using cqlsh to define your schema.");
-            else
-                logger.info("To create keyspaces and column families, see 'help create' in cqlsh.");
-        }
-        else
-        {
-            Schema.instance.load(DefsTables.loadFromKeyspace());
-        }
-
-        Schema.instance.updateVersion();
-    }
-
-    private static boolean hasExistingNoSystemTables()
-    {
-        for (String dataDir : getAllDataFileLocations())
-        {
-            File dataPath = new File(dataDir);
-            if (dataPath.exists() && dataPath.isDirectory())
-            {
-                // see if there are other directories present.
-                int dirCount = dataPath.listFiles(new FileFilter()
-                {
-                    //除"system"之外的目录名
-                    public boolean accept(File pathname)
-                    {
-                        return pathname.isDirectory() && !pathname.getName().equals(SystemKeyspace.NAME);
-                    }
-                }).length;
-
-                if (dirCount > 0)
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
+//<<<<<<< HEAD
+//    /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
+//    public static void loadSchemas()
+//    {
+//        //读取schema_keyspaces表
+//        ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_TABLE);
+//
+//        // if keyspace with definitions is empty try loading the old way
+//        if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录，第一次启动时就是这种情况
+//        {
+//            logger.info("Couldn't detect any schema definitions in local storage.");
+//            // peek around the data directories to see if anything is there.
+//            if (hasExistingNoSystemTables())
+//                logger.info("Found keyspace data in data directories. Consider using cqlsh to define your schema.");
+//            else
+//                logger.info("To create keyspaces and column families, see 'help create' in cqlsh.");
+//        }
+//        else
+//        {
+//            Schema.instance.load(DefsTables.loadFromKeyspace());
+//        }
+//
+//        Schema.instance.updateVersion();
+//    }
+//
+//    private static boolean hasExistingNoSystemTables()
+//    {
+//        for (String dataDir : getAllDataFileLocations())
+//        {
+//            File dataPath = new File(dataDir);
+//            if (dataPath.exists() && dataPath.isDirectory())
+//            {
+//                // see if there are other directories present.
+//                int dirCount = dataPath.listFiles(new FileFilter()
+//                {
+//                    //除"system"之外的目录名
+//                    public boolean accept(File pathname)
+//                    {
+//                        return pathname.isDirectory() && !pathname.getName().equals(SystemKeyspace.NAME);
+//                    }
+//                }).length;
+//
+//                if (dirCount > 0)
+//                    return true;
+//            }
+//        }
+//
+//        return false;
+//    }
+//
+//=======
+//>>>>>>> bf599fb5b062cbcc652da78b7d699e7a01b949ad
     public static IAuthenticator getAuthenticator()
     {
         return authenticator;

@@ -214,36 +214,60 @@ public class CreateTableStatement extends SchemaAlteringStatement
             .addAllColumnDefinitions(getColumns(cfmd))
             .isDense(isDense);
 
-        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
-        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
-        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
-        cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
-        cfmd.addColumnMetadataFromAliases(columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
-        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
+//<<<<<<< HEAD
+//        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
+//        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
+//        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
+//        cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
+//        cfmd.addColumnMetadataFromAliases(columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
+//        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
+//=======
+        addColumnMetadataFromAliases(cfmd, keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
+        addColumnMetadataFromAliases(cfmd, columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
         if (valueAlias != null)
-            cfmd.addColumnMetadataFromAliases(Collections.<ByteBuffer>singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
+            addColumnMetadataFromAliases(cfmd, Collections.singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
 
         properties.applyToCFMetadata(cfmd);
     }
-    /*
-          对于这样的CQL:
-    CREATE TABLE test (
-       table_name text,
-       index_name text,
-       index_name2 text,
-       PRIMARY KEY (table_name, index_name)
-    )WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) 
-     AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+//<<<<<<< HEAD
+//    /*
+//          对于这样的CQL:
+//    CREATE TABLE test (
+//       table_name text,
+//       index_name text,
+//       index_name2 text,
+//       PRIMARY KEY (table_name, index_name)
+//    )WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) 
+//     AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+//
+//    keyAliases是table_name
+//    columnAliases是index_name
+//    definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
+//    useCompactStorage是true
+//    properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
+//    
+//          如果PRIMARY KEY是PRIMARY KEY ((table_name,index_name2), index_name)
+//          则keyAliases是(table_name,index_name2)
+//    */
+//=======
 
-    keyAliases是table_name
-    columnAliases是index_name
-    definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
-    useCompactStorage是true
-    properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
-    
-          如果PRIMARY KEY是PRIMARY KEY ((table_name,index_name2), index_name)
-          则keyAliases是(table_name,index_name2)
-    */
+    private void addColumnMetadataFromAliases(CFMetaData cfm, List<ByteBuffer> aliases, AbstractType<?> comparator, ColumnDefinition.Kind kind)
+    {
+        if (comparator instanceof CompositeType)
+        {
+            CompositeType ct = (CompositeType)comparator;
+            for (int i = 0; i < aliases.size(); ++i)
+                if (aliases.get(i) != null)
+                    cfm.addOrReplaceColumnDefinition(new ColumnDefinition(cfm, aliases.get(i), ct.types.get(i), i, kind));
+        }
+        else
+        {
+            assert aliases.size() <= 1;
+            if (!aliases.isEmpty() && aliases.get(0) != null)
+                cfm.addOrReplaceColumnDefinition(new ColumnDefinition(cfm, aliases.get(0), comparator, null, kind));
+        }
+    }
+
     public static class RawStatement extends CFStatement
     {
         //在org.apache.cassandra.cql3.CqlParser.cfamProperty(RawStatement)中把属性解析后放到properties字段中

@@ -1592,6 +1592,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
         }
 
+        boolean isMoving = tokenMetadata.isMoving(endpoint); // capture because updateNormalTokens clears moving status
         tokenMetadata.updateNormalTokens(tokensToUpdateInMetadata, endpoint);
         for (InetAddress ep : endpointsToRemove)
         {
@@ -1604,7 +1605,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (!localTokensToRemove.isEmpty())
             SystemKeyspace.updateLocalTokens(Collections.<Token>emptyList(), localTokensToRemove);
 
-        if (tokenMetadata.isMoving(endpoint)) // if endpoint was moving to a new token
+        if (isMoving)
         {
             tokenMetadata.removeFromMoving(endpoint);
             for (IEndpointLifecycleSubscriber subscriber : lifecycleSubscribers)
@@ -2478,7 +2479,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                 boolean fullRepair,
                                 String... columnFamilies)
     {
-        if (!FBUtilities.isUnix() && parallelismDegree != RepairParallelism.PARALLEL)
+        if (FBUtilities.isWindows() && parallelismDegree != RepairParallelism.PARALLEL)
         {
             logger.warn("Snapshot-based repair is not yet supported on Windows.  Reverting to parallel repair.");
             parallelismDegree = RepairParallelism.PARALLEL;
@@ -2539,7 +2540,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                      boolean fullRepair,
                                      String... columnFamilies)
     {
-        if (!FBUtilities.isUnix() && parallelismDegree != RepairParallelism.PARALLEL)
+        if (FBUtilities.isWindows() && parallelismDegree != RepairParallelism.PARALLEL)
         {
             logger.warn("Snapshot-based repair is not yet supported on Windows.  Reverting to parallel repair.");
             parallelismDegree = RepairParallelism.PARALLEL;
@@ -2643,7 +2644,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     throw new Exception("no tracestate");
 
                 String format = "select event_id, source, activity from %s.%s where session_id = ? and event_id > ? and event_id < ?;";
-                String query = String.format(format, TraceKeyspace.NAME, TraceKeyspace.EVENTS_TABLE);
+                String query = String.format(format, TraceKeyspace.NAME, TraceKeyspace.EVENTS);
                 SelectStatement statement = (SelectStatement) QueryProcessor.parseStatement(query).prepare().statement;
 
                 ByteBuffer sessionIdBytes = ByteBufferUtil.bytes(sessionId);
@@ -3262,7 +3263,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private Future<StreamState> streamHints()
     {
         // StreamPlan will not fail if there are zero files to transfer, so flush anyway (need to get any in-memory hints, as well)
-        ColumnFamilyStore hintsCF = Keyspace.open(SystemKeyspace.NAME).getColumnFamilyStore(SystemKeyspace.HINTS_TABLE);
+        ColumnFamilyStore hintsCF = Keyspace.open(SystemKeyspace.NAME).getColumnFamilyStore(SystemKeyspace.HINTS);
         FBUtilities.waitOnFuture(hintsCF.forceFlush());
 
         // gather all live nodes in the cluster that aren't also leaving
@@ -3295,7 +3296,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                           preferred,
                                                           SystemKeyspace.NAME,
                                                           ranges,
-                                                          SystemKeyspace.HINTS_TABLE)
+                                                          SystemKeyspace.HINTS)
                                           .execute();
         }
     }
