@@ -22,37 +22,37 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 
-import io.netty.channel.epoll.Epoll;
-import io.netty.channel.epoll.EpollEventLoopGroup;
-import io.netty.channel.epoll.EpollServerSocketChannel;
-import io.netty.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.*;
+import io.netty.channel.epoll.Epoll;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
+import io.netty.channel.group.ChannelGroup;
+import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.util.Version;
 import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.Slf4JLoggerFactory;
-import org.apache.cassandra.auth.IAuthenticator;
-import org.apache.cassandra.auth.ISaslAwareAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.metrics.ClientMetrics;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.transport.messages.EventMessage;
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.*;
-import io.netty.channel.group.ChannelGroup;
-import io.netty.channel.group.DefaultChannelGroup;
-import io.netty.handler.ssl.SslHandler;
 
 public class Server implements CassandraDaemon.Server
 {
@@ -66,6 +66,7 @@ public class Server implements CassandraDaemon.Server
 
     public static final int VERSION_2 = 2;
     public static final int VERSION_3 = 3;
+    public static final int VERSION_4 = 4;
     public static final int CURRENT_VERSION = VERSION_3;
 
     private final ConnectionTracker connectionTracker = new ConnectionTracker();
@@ -129,16 +130,6 @@ public class Server implements CassandraDaemon.Server
 
     private void run()
     {
-        // Check that a SaslAuthenticator can be provided by the configured
-        // IAuthenticator. If not, don't start the server.
-        IAuthenticator authenticator = DatabaseDescriptor.getAuthenticator();
-        if (authenticator.requireAuthentication() && !(authenticator instanceof ISaslAwareAuthenticator))
-        {
-            logger.error("Not starting native transport as the configured IAuthenticator is not capable of SASL authentication");
-            isRunning.compareAndSet(true, false);
-            return;
-        }
-
         // Configure the server.
         eventExecutorGroup = new RequestThreadPoolExecutor();
 
@@ -335,7 +326,7 @@ public class Server implements CassandraDaemon.Server
         }
     }
 
-    private static class EventNotifier implements IEndpointLifecycleSubscriber, IMigrationListener
+    private static class EventNotifier extends MigrationListener implements IEndpointLifecycleSubscriber
     {
         private final Server server;
         private static final InetAddress bindAll;
@@ -415,12 +406,16 @@ public class Server implements CassandraDaemon.Server
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.CREATED, Event.SchemaChange.Target.TYPE, ksName, typeName));
         }
 
-        public void onCreateFunction(String ksName, String functionName)
+        public void onCreateFunction(String ksName, String functionName, List<AbstractType<?>> argTypes)
         {
+            server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.CREATED, Event.SchemaChange.Target.FUNCTION,
+                                                                 ksName, functionName, AbstractType.asCQLTypeStringList(argTypes)));
         }
 
-        public void onCreateAggregate(String ksName, String aggregateName)
+        public void onCreateAggregate(String ksName, String aggregateName, List<AbstractType<?>> argTypes)
         {
+            server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.CREATED, Event.SchemaChange.Target.AGGREGATE,
+                                                                 ksName, aggregateName, AbstractType.asCQLTypeStringList(argTypes)));
         }
 
         public void onUpdateKeyspace(String ksName)
@@ -428,7 +423,7 @@ public class Server implements CassandraDaemon.Server
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, ksName));
         }
 
-        public void onUpdateColumnFamily(String ksName, String cfName)
+        public void onUpdateColumnFamily(String ksName, String cfName, boolean columnsDidChange)
         {
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TABLE, ksName, cfName));
         }
@@ -438,12 +433,16 @@ public class Server implements CassandraDaemon.Server
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TYPE, ksName, typeName));
         }
 
-        public void onUpdateFunction(String ksName, String functionName)
+        public void onUpdateFunction(String ksName, String functionName, List<AbstractType<?>> argTypes)
         {
+            server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.FUNCTION,
+                                                                 ksName, functionName, AbstractType.asCQLTypeStringList(argTypes)));
         }
 
-        public void onUpdateAggregate(String ksName, String aggregateName)
+        public void onUpdateAggregate(String ksName, String aggregateName, List<AbstractType<?>> argTypes)
         {
+            server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.AGGREGATE,
+                                                                 ksName, aggregateName, AbstractType.asCQLTypeStringList(argTypes)));
         }
 
         public void onDropKeyspace(String ksName)
@@ -461,12 +460,16 @@ public class Server implements CassandraDaemon.Server
             server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.DROPPED, Event.SchemaChange.Target.TYPE, ksName, typeName));
         }
 
-        public void onDropFunction(String ksName, String functionName)
+        public void onDropFunction(String ksName, String functionName, List<AbstractType<?>> argTypes)
         {
+            server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.DROPPED, Event.SchemaChange.Target.FUNCTION,
+                                                                 ksName, functionName, AbstractType.asCQLTypeStringList(argTypes)));
         }
 
-        public void onDropAggregate(String ksName, String aggregateName)
+        public void onDropAggregate(String ksName, String aggregateName, List<AbstractType<?>> argTypes)
         {
+            server.connectionTracker.send(new Event.SchemaChange(Event.SchemaChange.Change.DROPPED, Event.SchemaChange.Target.AGGREGATE,
+                                                                 ksName, aggregateName, AbstractType.asCQLTypeStringList(argTypes)));
         }
     }
 }

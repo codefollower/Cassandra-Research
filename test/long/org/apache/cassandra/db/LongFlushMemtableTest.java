@@ -51,7 +51,7 @@ public class LongFlushMemtableTest
     }
 
     @Test
-    public void testFlushMemtables() throws IOException, ConfigurationException
+    public void testFlushMemtables() throws ConfigurationException
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         for (int i = 0; i < 100; i++)
@@ -78,7 +78,7 @@ public class LongFlushMemtableTest
         for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
         {
             if (cfs.name.startsWith("_CF"))
-                flushes += cfs.getMemtableSwitchCount();
+                flushes += cfs.metric.memtableSwitchCount.getCount();
         }
         assert flushes > 0;
     }

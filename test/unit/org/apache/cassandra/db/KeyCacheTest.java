@@ -18,6 +18,7 @@
 package org.apache.cassandra.db;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -42,6 +43,7 @@ import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+import org.apache.cassandra.utils.concurrent.Refs;
 import static org.junit.Assert.assertEquals;
 
 public class KeyCacheTest
@@ -88,8 +90,10 @@ public class KeyCacheTest
 
         // really? our caches don't implement the map interface? (hence no .addAll)
         Map<KeyCacheKey, RowIndexEntry> savedMap = new HashMap<KeyCacheKey, RowIndexEntry>();
-        for (KeyCacheKey k : CacheService.instance.keyCache.getKeySet())
+        for (Iterator<KeyCacheKey> iter = CacheService.instance.keyCache.keyIterator();
+             iter.hasNext();)
         {
+            KeyCacheKey k = iter.next();
             if (k.desc.ksname.equals(KEYSPACE1) && k.desc.cfname.equals(COLUMN_FAMILY2))
                 savedMap.put(k, CacheService.instance.keyCache.get(k));
         }
@@ -166,8 +170,9 @@ public class KeyCacheTest
         assertKeyCacheSize(2, KEYSPACE1, COLUMN_FAMILY1);
 
         Set<SSTableReader> readers = cfs.getDataTracker().getSSTables();
-        for (SSTableReader reader : readers)
-            reader.acquireReference();
+        Refs<SSTableReader> refs = Refs.tryRef(readers);
+        if (refs == null)
+            throw new IllegalStateException();
 
         Util.compactAll(cfs, Integer.MAX_VALUE).get();
         // after compaction cache should have entries for new SSTables,
@@ -175,8 +180,7 @@ public class KeyCacheTest
         // if we had 2 keys in cache previously it should become 4
         assertKeyCacheSize(4, KEYSPACE1, COLUMN_FAMILY1);
 
-        for (SSTableReader reader : readers)
-            reader.releaseReference();
+        refs.release();
 
         Uninterruptibles.sleepUninterruptibly(10, TimeUnit.MILLISECONDS);;
         while (ScheduledExecutors.nonPeriodicTasks.getActiveCount() + ScheduledExecutors.nonPeriodicTasks.getQueue().size() > 0);
@@ -207,8 +211,10 @@ public class KeyCacheTest
     private void assertKeyCacheSize(int expected, String keyspace, String columnFamily)
     {
         int size = 0;
-        for (KeyCacheKey k : CacheService.instance.keyCache.getKeySet())
+        for (Iterator<KeyCacheKey> iter = CacheService.instance.keyCache.keyIterator();
+             iter.hasNext();)
         {
+            KeyCacheKey k = iter.next();
             if (k.desc.ksname.equals(keyspace) && k.desc.cfname.equals(columnFamily))
                 size++;
         }

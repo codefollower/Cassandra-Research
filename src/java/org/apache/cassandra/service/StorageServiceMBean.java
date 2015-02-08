@@ -17,8 +17,6 @@
  */
 package org.apache.cassandra.service;
 
-import org.apache.cassandra.repair.RepairParallelism;
-
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -31,8 +29,6 @@ import java.util.concurrent.TimeoutException;
 
 import javax.management.NotificationEmitter;
 import javax.management.openmbean.TabularData;
-
-import org.apache.cassandra.db.compaction.CompactionManager;
 
 public interface StorageServiceMBean extends NotificationEmitter
 {
@@ -165,13 +161,6 @@ public interface StorageServiceMBean extends NotificationEmitter
     /** Retrieve the mapping of endpoint to host ID */
     public Map<String, String> getHostIdMap();
 
-    /**
-     * Numeric load value.
-     * @see org.apache.cassandra.metrics.StorageMetrics#load
-     */
-    @Deprecated
-    public double getLoad();
-
     /** Human-readable load value */
     public String getLoadString();
 
@@ -281,14 +270,29 @@ public interface StorageServiceMBean extends NotificationEmitter
     @Deprecated
     public int forceRepairAsync(String keyspace, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts,  boolean primaryRange, boolean repairedAt, String... columnFamilies) throws IOException;
 
+    /**
+     * Invoke repair asynchronously.
+     * You can track repair progress by subscribing JMX notification sent from this StorageServiceMBean.
+     * Notification format is:
+     *   type: "repair"
+     *   userObject: int array of length 2, [0]=command number, [1]=ordinal of AntiEntropyService.Status
+     *
+     * @param parallelismDegree 0: sequential, 1: parallel, 2: DC parallel
+     * @return Repair command number, or 0 if nothing to repair
+     */
     @Deprecated
-    public int forceRepairAsync(String keyspace, RepairParallelism parallelismDegree, Collection<String> dataCenters, Collection<String> hosts, boolean primaryRange, boolean fullRepair, String... columnFamilies);
+    public int forceRepairAsync(String keyspace, int parallelismDegree, Collection<String> dataCenters, Collection<String> hosts, boolean primaryRange, boolean fullRepair, String... columnFamilies);
 
     @Deprecated
     public int forceRepairRangeAsync(String beginToken, String endToken, String keyspaceName, boolean isSequential, Collection<String> dataCenters, Collection<String> hosts, boolean repairedAt, String... columnFamilies) throws IOException;
 
+    /**
+     * Same as forceRepairAsync, but handles a specified range
+     *
+     * @param parallelismDegree 0: sequential, 1: parallel, 2: DC parallel
+     */
     @Deprecated
-    public int forceRepairRangeAsync(String beginToken, String endToken, String keyspaceName, RepairParallelism parallelismDegree, Collection<String> dataCenters, Collection<String> hosts, boolean fullRepair, String... columnFamilies);
+    public int forceRepairRangeAsync(String beginToken, String endToken, String keyspaceName, int parallelismDegree, Collection<String> dataCenters, Collection<String> hosts, boolean fullRepair, String... columnFamilies);
 
     @Deprecated
     public int forceRepairAsync(String keyspace, boolean isSequential, boolean isLocal, boolean primaryRange, boolean fullRepair, String... columnFamilies);
@@ -429,9 +433,6 @@ public interface StorageServiceMBean extends NotificationEmitter
     // allows a node that have been started without joining the ring to join it
     public void joinRing() throws IOException;
     public boolean isJoined();
-
-    @Deprecated
-    public int getExceptionCount();
 
     public void setStreamThroughputMbPerSec(int value);
     public int getStreamThroughputMbPerSec();

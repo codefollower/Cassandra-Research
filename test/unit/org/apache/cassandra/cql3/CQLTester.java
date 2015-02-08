@@ -18,7 +18,6 @@
 package org.apache.cassandra.cql3;
 
 import java.io.File;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.InetAddress;
@@ -42,21 +41,25 @@ import org.slf4j.LoggerFactory;
 
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.functions.FunctionName;
-import org.apache.cassandra.db.Directories;
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.cql3.statements.ParsedStatement;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.db.marshal.TupleType;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.serializers.TypeSerializer;
+import org.apache.cassandra.service.ClientState;
+import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.transport.Server;
+import org.apache.cassandra.transport.messages.ResultMessage;
 
 /**
  * Base class for CQL tests.
@@ -85,14 +88,19 @@ public abstract class CQLTester
 
         try
         {
-            ServerSocket serverSocket = new ServerSocket(0);
-            nativePort = serverSocket.getLocalPort();
+            try (ServerSocket serverSocket = new ServerSocket(0))
+            {
+                nativePort = serverSocket.getLocalPort();
+            }
+            Thread.sleep(250);
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             throw new RuntimeException(e);
         }
     }
+
+    public static ResultMessage lastSchemaChangeResult;
 
     private List<String> tables = new ArrayList<>();
     private List<String> types = new ArrayList<>();
@@ -327,7 +335,7 @@ public abstract class CQLTester
         String fullQuery = String.format(query, functionName);
         functions.add(functionName + '(' + argTypes + ')');
         logger.info(fullQuery);
-        execute(fullQuery);
+        schemaChange(fullQuery);
     }
 
     protected String createAggregate(String keyspace, String argTypes, String query) throws Throwable
@@ -342,7 +350,7 @@ public abstract class CQLTester
         String fullQuery = String.format(query, aggregateName);
         aggregates.add(aggregateName + '(' + argTypes + ')');
         logger.info(fullQuery);
-        execute(fullQuery);
+        schemaChange(fullQuery);
     }
 
     protected void createTable(String query)
@@ -360,14 +368,7 @@ public abstract class CQLTester
         tables.add(currentTable);
         String fullQuery = formatQuery(query);
         logger.info(fullQuery);
-        try
-        {
-            QueryProcessor.executeOnceInternal(fullQuery);
-        }
-        catch (RuntimeException ex)
-        {
-            throw ex.getCause();
-        }
+        QueryProcessor.executeOnceInternal(fullQuery);
     }
 
     protected void alterTable(String query)
@@ -381,14 +382,7 @@ public abstract class CQLTester
     {
         String fullQuery = formatQuery(query);
         logger.info(fullQuery);
-        try
-        {
-            QueryProcessor.executeOnceInternal(fullQuery);
-        }
-        catch (RuntimeException ex)
-        {
-            throw ex.getCause();
-        }
+        QueryProcessor.executeOnceInternal(fullQuery);
     }
 
     protected void dropTable(String query)
@@ -409,14 +403,7 @@ public abstract class CQLTester
     {
         String fullQuery = formatQuery(query);
         logger.info(fullQuery);
-        try
-        {
-            QueryProcessor.executeOnceInternal(fullQuery);
-        }
-        catch (RuntimeException ex)
-        {
-            throw ex.getCause();
-        }
+        QueryProcessor.executeOnceInternal(fullQuery);
     }
 
     protected void dropIndex(String query) throws Throwable
@@ -426,12 +413,33 @@ public abstract class CQLTester
         schemaChange(fullQuery);
     }
 
-    private static void schemaChange(String query)
+    protected void assertLastSchemaChange(Event.SchemaChange.Change change, Event.SchemaChange.Target target,
+                                          String keyspace, String name,
+                                          String... argTypes)
+    {
+        Assert.assertTrue(lastSchemaChangeResult instanceof ResultMessage.SchemaChange);
+        ResultMessage.SchemaChange schemaChange = (ResultMessage.SchemaChange) lastSchemaChangeResult;
+        Assert.assertSame(change, schemaChange.change.change);
+        Assert.assertSame(target, schemaChange.change.target);
+        Assert.assertEquals(keyspace, schemaChange.change.keyspace);
+        Assert.assertEquals(name, schemaChange.change.name);
+        Assert.assertEquals(argTypes != null ? Arrays.asList(argTypes) : null, schemaChange.change.argTypes);
+    }
+
+    protected static void schemaChange(String query)
     {
         try
         {
-            // executeOnceInternal don't work for schema changes
-            QueryProcessor.executeOnceInternal(query);
+            ClientState state = ClientState.forInternalCalls();
+            state.setKeyspace(SystemKeyspace.NAME);
+            QueryState queryState = new QueryState(state);
+
+            ParsedStatement.Prepared prepared = QueryProcessor.parseStatement(query, queryState);
+            prepared.statement.validate(state);
+
+            QueryOptions options = QueryOptions.forInternalCalls(Collections.<ByteBuffer>emptyList());
+
+            lastSchemaChangeResult = prepared.statement.executeInternal(queryState, options);
         }
         catch (Exception e)
         {
@@ -459,32 +467,23 @@ public abstract class CQLTester
 
     protected UntypedResultSet execute(String query, Object... values) throws Throwable
     {
-        try
-        {
-            query = formatQuery(query);
+        query = formatQuery(query);
 
-            UntypedResultSet rs;
-            if (usePrepared)
-            {
-                logger.info("Executing: {} with values {}", query, formatAllValues(values));
-                rs = QueryProcessor.executeOnceInternal(query, transformValues(values));
-            }
-            else
-            {
-                query = replaceValues(query, values);
-                logger.info("Executing: {}", query);
-                rs = QueryProcessor.executeOnceInternal(query);
-            }
-            if (rs != null)
-                logger.info("Got {} rows", rs.size());
-            return rs;
-        }
-        catch (RuntimeException e)
+        UntypedResultSet rs;
+        if (usePrepared)
         {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            logger.info("Got error: {}", cause.getMessage() == null ? cause.toString() : cause.getMessage());
-            throw cause;
+            logger.info("Executing: {} with values {}", query, formatAllValues(values));
+            rs = QueryProcessor.executeOnceInternal(query, transformValues(values));
         }
+        else
+        {
+            query = replaceValues(query, values);
+            logger.info("Executing: {}", query);
+            rs = QueryProcessor.executeOnceInternal(query);
+        }
+        if (rs != null)
+            logger.info("Got {} rows", rs.size());
+        return rs;
     }
 
     protected void assertRowsNet(int protocolVersion, ResultSet result, Object[]... rows)
@@ -633,16 +632,7 @@ public abstract class CQLTester
     {
         try
         {
-            try
-            {
-                execute(query, values);
-            }
-            catch (RuntimeException e)
-            {
-                Throwable cause = e.getCause();
-                if (cause instanceof InvalidRequestException)
-                    throw cause;
-            }
+            execute(query, values);
             String q = USE_PREPARED_VALUES
                      ? query + " (values: " + formatAllValues(values) + ")"
                      : replaceValues(query, values);

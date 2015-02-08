@@ -121,21 +121,29 @@ public class CreateTableStatement extends SchemaAlteringStatement
         this.ifNotExists = ifNotExists;
         this.staticColumns = staticColumns;
 
-        try
-        {
-            //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
-            if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
-                //注意compression属性对应的是一个Map不是一个字符串
-                this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
-                                            new HashMap<String, String>()
-                                            {{
-                                                put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
-                                            }});
-        }
-        catch (SyntaxException e)
-        {
-            throw new AssertionError(e);
-        }
+//<<<<<<< HEAD
+//        try
+//        {
+//            //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
+//            if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
+//                //注意compression属性对应的是一个Map不是一个字符串
+//                this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
+//                                            new HashMap<String, String>()
+//                                            {{
+//                                                put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
+//                                            }});
+//        }
+//        catch (SyntaxException e)
+//        {
+//            throw new AssertionError(e);
+//        }
+//=======
+        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
+            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
+                                        new HashMap<String, String>()
+                                        {{
+                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
+                                        }});
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -331,6 +339,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
             //以下代码用于确定stmt.columns的值
             ///////////////////////////////////////////////////////////////////////////
+            boolean hasCounters = false;
             Map<ByteBuffer, CollectionType> definedMultiCellCollections = null;
             for (Map.Entry<ColumnIdentifier, CQL3Type.Raw> entry : definitions.entrySet())
             {
@@ -342,6 +351,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
                         definedMultiCellCollections = new HashMap<>();
                     definedMultiCellCollections.put(id.bytes, (CollectionType) pt.getType());
                 }
+                else if (entry.getValue().isCounter())
+                    hasCounters = true;
+
                 stmt.columns.put(id, pt.getType()); // we'll remove what is not a column below
             }
 
@@ -354,6 +366,8 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException("No PRIMARY KEY specifed (exactly one required)");
             else if (keyAliases.size() > 1)
                 throw new InvalidRequestException("Multiple PRIMARY KEYs specifed (exactly one required)");
+            else if (hasCounters && properties.getDefaultTimeToLive() > 0)
+                throw new InvalidRequestException("Cannot set default_time_to_live on a table with counters");
 
             List<ColumnIdentifier> kAliases = keyAliases.get(0);
 

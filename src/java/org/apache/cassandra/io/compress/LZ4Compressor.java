@@ -18,6 +18,7 @@
 package org.apache.cassandra.io.compress;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
@@ -28,7 +29,6 @@ import net.jpountz.lz4.LZ4Factory;
 
 public class LZ4Compressor implements ICompressor
 {
-
     //前4字节用于存放未压缩时的数据长度
     private static final int INTEGER_BYTES = 4;
     private static final LZ4Compressor instance = new LZ4Compressor();
@@ -40,13 +40,13 @@ public class LZ4Compressor implements ICompressor
     }
 
     private final net.jpountz.lz4.LZ4Compressor compressor;
-    private final net.jpountz.lz4.LZ4Decompressor decompressor;
+    private final net.jpountz.lz4.LZ4FastDecompressor decompressor;
 
     private LZ4Compressor()
     {
         final LZ4Factory lz4Factory = LZ4Factory.fastestInstance();
         compressor = lz4Factory.fastCompressor();
-        decompressor = lz4Factory.decompressor();
+        decompressor = lz4Factory.fastDecompressor();
     }
 
     public int initialCompressedBufferLength(int chunkLength)
@@ -99,8 +99,42 @@ public class LZ4Compressor implements ICompressor
         return decompressedLength;
     }
 
+    public int uncompress(ByteBuffer input, ByteBuffer output) throws IOException
+    {
+        int pos = input.position();
+        final int decompressedLength = (input.get(pos) & 0xFF)
+                | ((input.get(pos + 1) & 0xFF) << 8)
+                | ((input.get(pos + 2) & 0xFF) << 16)
+                | ((input.get(pos + 3) & 0xFF) << 24);
+
+        int inputLength = input.remaining() - INTEGER_BYTES;
+
+        final int compressedLength;
+        try
+        {
+            compressedLength = decompressor.decompress(input, input.position() + INTEGER_BYTES, output, output.position(), decompressedLength);
+        }
+        catch (LZ4Exception e)
+        {
+            throw new IOException(e);
+        }
+
+        if (compressedLength != inputLength)
+        {
+            throw new IOException("Compressed lengths mismatch: "+compressedLength+" vs "+inputLength);
+        }
+
+        return decompressedLength;
+    }
+
+    @Override
+    public boolean useDirectOutputByteBuffers()
+    {
+        return false;
+    }
+
     public Set<String> supportedOptions()
     {
-        return new HashSet<String>(Arrays.asList(CompressionParameters.CRC_CHECK_CHANCE));
+        return new HashSet<>(Arrays.asList(CompressionParameters.CRC_CHECK_CHANCE));
     }
 }

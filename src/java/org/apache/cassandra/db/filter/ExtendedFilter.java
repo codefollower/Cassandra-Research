@@ -133,6 +133,12 @@ public abstract class ExtendedFilter
      */
     public abstract ColumnFamily prune(DecoratedKey key, ColumnFamily data);
 
+    /** Returns true if tombstoned partitions should not be included in results or count towards the limit, false otherwise. */
+    public boolean ignoreTombstonedPartitions()
+    {
+        return dataRange.ignoredTombstonedPartitions();
+    }
+
     /**
      * @return true if the provided data satisfies all the expressions from
      * the clause of this filter.
@@ -208,7 +214,7 @@ public abstract class ExtendedFilter
             {
                 // if we have a high chance of getting all the columns in a single index slice (and it's not too costly), do that.
                 // otherwise, the extraFilter (lazily created) will fetch by name the columns referenced by the additional expressions.
-                if (cfs.getMaxRowSize() < DatabaseDescriptor.getColumnIndexSize())
+                if (cfs.metric.maxRowSize.getValue() < DatabaseDescriptor.getColumnIndexSize())
                 {
                     logger.trace("Expanding slice filter to entire row to cover additional expressions");
                     return new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, ((SliceQueryFilter)filter).reversed, Integer.MAX_VALUE);
@@ -298,7 +304,15 @@ public abstract class ExtendedFilter
             ColumnFamily pruned = data.cloneMeShallow();
             IDiskAtomFilter filter = dataRange.columnFilter(rowKey.getKey());
             Iterator<Cell> iter = filter.getColumnIterator(data);
-            filter.collectReducedColumns(pruned, QueryFilter.gatherTombstones(pruned, iter), cfs.gcBefore(timestamp), timestamp);
+            try
+            {
+                filter.collectReducedColumns(pruned, QueryFilter.gatherTombstones(pruned, iter), cfs.gcBefore(timestamp), timestamp);
+            }
+            catch (TombstoneOverwhelmingException e)
+            {
+                e.setKey(rowKey);
+                throw e;
+            }
             return pruned;
         }
 

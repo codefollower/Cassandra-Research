@@ -35,6 +35,7 @@ import com.google.common.base.Function;
 import com.google.common.collect.Lists;
 
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +46,9 @@ import org.apache.cassandra.concurrent.TracingAwareExecutorService;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.BootStrapper;
+import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.EchoMessage;
 import org.apache.cassandra.gms.GossipDigestAck;
@@ -884,7 +887,7 @@ public final class MessagingService implements MessagingServiceMBean
         boolean logTpstats = false;
         for (Map.Entry<Verb, DroppedMessageMetrics> entry : droppedMessages.entrySet())
         {
-            int dropped = (int) entry.getValue().dropped.count();
+            int dropped = (int) entry.getValue().dropped.getCount();
             Verb verb = entry.getKey();
             int recent = dropped - lastDroppedInternal.get(verb);
             if (recent > 0)
@@ -1025,26 +1028,14 @@ public final class MessagingService implements MessagingServiceMBean
     {
         Map<String, Integer> map = new HashMap<String, Integer>(droppedMessages.size());
         for (Map.Entry<Verb, DroppedMessageMetrics> entry : droppedMessages.entrySet())
-            map.put(entry.getKey().toString(), (int) entry.getValue().dropped.count());
+            map.put(entry.getKey().toString(), (int) entry.getValue().dropped.getCount());
         return map;
     }
 
-    public Map<String, Integer> getRecentlyDroppedMessages()
-    {
-        Map<String, Integer> map = new HashMap<String, Integer>(droppedMessages.size());
-        for (Map.Entry<Verb, DroppedMessageMetrics> entry : droppedMessages.entrySet())
-            map.put(entry.getKey().toString(), entry.getValue().getRecentlyDropped());
-        return map;
-    }
 
     public long getTotalTimeouts()
     {
-        return ConnectionMetrics.totalTimeouts.count();
-    }
-
-    public long getRecentTotalTimouts()
-    {
-        return ConnectionMetrics.getRecentTotalTimeout();
+        return ConnectionMetrics.totalTimeouts.getCount();
     }
 
     public Map<String, Long> getTimeoutsPerHost()
@@ -1059,15 +1050,14 @@ public final class MessagingService implements MessagingServiceMBean
         return result;
     }
 
-    public Map<String, Long> getRecentTimeoutsPerHost()
+    public static IPartitioner globalPartitioner()
     {
-        Map<String, Long> result = new HashMap<String, Long>(connectionManagers.size());
-        for (Map.Entry<InetAddress, OutboundTcpConnectionPool> entry: connectionManagers.entrySet())
-        {
-            String ip = entry.getKey().getHostAddress();
-            long recent = entry.getValue().getRecentTimeouts();
-            result.put(ip, recent);
-        }
-        return result;
+        return DatabaseDescriptor.getPartitioner();
+    }
+
+    public static void validatePartitioner(AbstractBounds<?> bounds)
+    {
+        if (globalPartitioner() != bounds.left.getPartitioner())
+            throw new AssertionError();
     }
 }

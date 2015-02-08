@@ -33,6 +33,7 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import com.google.common.util.concurrent.Futures;
+
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,10 +133,22 @@ public class CacheService implements CacheServiceMBean
     {
         logger.info("Initializing row cache with capacity of {} MBs", DatabaseDescriptor.getRowCacheSizeInMB());
 
-        long rowCacheInMemoryCapacity = DatabaseDescriptor.getRowCacheSizeInMB() * 1024 * 1024;
+        CacheProvider<RowCacheKey, IRowCacheEntry> cacheProvider;
+        String cacheProviderClassName = DatabaseDescriptor.getRowCacheSizeInMB() > 0
+                                        ? DatabaseDescriptor.getRowCacheClassName() : "org.apache.cassandra.cache.NopCacheProvider";
+        try
+        {
+            Class<CacheProvider<RowCacheKey, IRowCacheEntry>> cacheProviderClass =
+                (Class<CacheProvider<RowCacheKey, IRowCacheEntry>>) Class.forName(cacheProviderClassName);
+            cacheProvider = cacheProviderClass.newInstance();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException("Cannot find configured row cache provider class " + DatabaseDescriptor.getRowCacheClassName());
+        }
 
         // cache object
-        ICache<RowCacheKey, IRowCacheEntry> rc = new SerializingCacheProvider().create(rowCacheInMemoryCapacity);
+        ICache<RowCacheKey, IRowCacheEntry> rc = cacheProvider.create();
         AutoSavingCache<RowCacheKey, IRowCacheEntry> rowCache = new AutoSavingCache<>(rc, CacheType.ROW_CACHE, new RowCacheSerializer());
 
         int rowCacheKeysToSave = DatabaseDescriptor.getRowCacheKeysToSave();
@@ -167,35 +180,6 @@ public class CacheService implements CacheServiceMBean
         return cache;
     }
 
-    public long getKeyCacheHits()
-    {
-        return keyCache.getMetrics().hits.count();
-    }
-
-    public long getRowCacheHits()
-    {
-        return rowCache.getMetrics().hits.count();
-    }
-
-    public long getKeyCacheRequests()
-    {
-        return keyCache.getMetrics().requests.count();
-    }
-
-    public long getRowCacheRequests()
-    {
-        return rowCache.getMetrics().requests.count();
-    }
-
-    public double getKeyCacheRecentHitRate()
-    {
-        return keyCache.getMetrics().getRecentHitRate();
-    }
-
-    public double getRowCacheRecentHitRate()
-    {
-        return rowCache.getMetrics().getRecentHitRate();
-    }
 
     public int getRowCacheSavePeriodInSeconds()
     {
@@ -285,7 +269,7 @@ public class CacheService implements CacheServiceMBean
 
     public void invalidateKeyCacheForCf(UUID cfId)
     {
-        Iterator<KeyCacheKey> keyCacheIterator = keyCache.getKeySet().iterator();
+        Iterator<KeyCacheKey> keyCacheIterator = keyCache.keyIterator();
         while (keyCacheIterator.hasNext())
         {
             KeyCacheKey key = keyCacheIterator.next();
@@ -301,7 +285,7 @@ public class CacheService implements CacheServiceMBean
 
     public void invalidateRowCacheForCf(UUID cfId)
     {
-        Iterator<RowCacheKey> rowCacheIterator = rowCache.getKeySet().iterator();
+        Iterator<RowCacheKey> rowCacheIterator = rowCache.keyIterator();
         while (rowCacheIterator.hasNext())
         {
             RowCacheKey rowCacheKey = rowCacheIterator.next();
@@ -312,7 +296,7 @@ public class CacheService implements CacheServiceMBean
 
     public void invalidateCounterCacheForCf(UUID cfId)
     {
-        Iterator<CounterCacheKey> counterCacheIterator = counterCache.getKeySet().iterator();
+        Iterator<CounterCacheKey> counterCacheIterator = counterCache.keyIterator();
         while (counterCacheIterator.hasNext())
         {
             CounterCacheKey counterCacheKey = counterCacheIterator.next();
@@ -326,15 +310,8 @@ public class CacheService implements CacheServiceMBean
         counterCache.clear();
     }
 
-    public long getRowCacheCapacityInBytes()
-    {
-        return rowCache.getMetrics().capacity.value();
-    }
 
-    public long getRowCacheCapacityInMB()
-    {
-        return getRowCacheCapacityInBytes() / 1024 / 1024;
-    }
+
 
     public void setRowCacheCapacityInMB(long capacity)
     {
@@ -344,15 +321,6 @@ public class CacheService implements CacheServiceMBean
         rowCache.setCapacity(capacity * 1024 * 1024);
     }
 
-    public long getKeyCacheCapacityInBytes()
-    {
-        return keyCache.getMetrics().capacity.value();
-    }
-
-    public long getKeyCacheCapacityInMB()
-    {
-        return getKeyCacheCapacityInBytes() / 1024 / 1024;
-    }
 
     public void setKeyCacheCapacityInMB(long capacity)
     {
@@ -368,26 +336,6 @@ public class CacheService implements CacheServiceMBean
             throw new RuntimeException("capacity should not be negative.");
 
         counterCache.setCapacity(capacity * 1024 * 1024);
-    }
-
-    public long getRowCacheSize()
-    {
-        return rowCache.getMetrics().size.value();
-    }
-
-    public long getRowCacheEntries()
-    {
-        return rowCache.size();
-    }
-
-    public long getKeyCacheSize()
-    {
-        return keyCache.getMetrics().size.value();
-    }
-
-    public long getKeyCacheEntries()
-    {
-        return keyCache.size();
     }
 
     public void saveCaches() throws ExecutionException, InterruptedException

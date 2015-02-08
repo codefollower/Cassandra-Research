@@ -459,7 +459,6 @@ public class SSTableImport
      * using an optional command line argument, or supplied on standard in.
      *
      * @param args command line arguments
-     * @throws IOException on failure to open/read/write files or output streams
      * @throws ParseException on failure to parse JSON input
      * @throws ConfigurationException on configuration error.
      */
@@ -502,7 +501,7 @@ public class SSTableImport
             isSorted = true;
         }
 
-        Schema.instance.loadFromDisk();
+        Schema.instance.loadFromDisk(false);
         if (Schema.instance.getNonSystemKeyspaces().size() < 1)
         {
             String msg = "no non-system keyspaces are defined";

@@ -48,7 +48,6 @@ import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.sstable.*;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
@@ -346,6 +345,24 @@ public class Directories
 
         // sort directories by perc
         Collections.sort(candidates);
+    }
+
+    public boolean hasAvailableDiskSpace(long estimatedSSTables, long expectedTotalWriteSize)
+    {
+        long writeSize = expectedTotalWriteSize / estimatedSSTables;
+        long totalAvailable = 0L;
+
+        for (DataDirectory dataDir : dataDirectories)
+        {
+            if (BlacklistedDirectories.isUnwritable(getLocationForDisk(dataDir)))
+                  continue;
+            DataDirectoryCandidate candidate = new DataDirectoryCandidate(dataDir);
+            // exclude directory if its total writeSize does not fit to data directory
+            if (candidate.availableSpace < writeSize)
+                continue;
+            totalAvailable += candidate.availableSpace;
+        }
+        return totalAvailable > expectedTotalWriteSize;
     }
 
     public static File getSnapshotDirectory(Descriptor desc, String snapshotName)

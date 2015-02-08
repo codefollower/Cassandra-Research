@@ -43,11 +43,6 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.checkTrue;
 final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestrictions
 {
     /**
-     * The composite type.
-     */
-    private final CType ctype;
-
-    /**
      * The restrictions.
      */
     private final SingleColumnRestrictions restrictions;
@@ -74,7 +69,7 @@ final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestric
 
     public SingleColumnPrimaryKeyRestrictions(CType ctype)
     {
-        this.ctype = ctype;
+        super(ctype);
         this.restrictions = new SingleColumnRestrictions();
         this.eq = true;
     }
@@ -82,8 +77,8 @@ final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestric
     private SingleColumnPrimaryKeyRestrictions(SingleColumnPrimaryKeyRestrictions primaryKeyRestrictions,
                                                SingleColumnRestriction restriction) throws InvalidRequestException
     {
+        super(primaryKeyRestrictions.ctype);
         this.restrictions = primaryKeyRestrictions.restrictions.addRestriction(restriction);
-        this.ctype = primaryKeyRestrictions.ctype;
 
         if (!primaryKeyRestrictions.isEmpty())
         {
@@ -166,9 +161,10 @@ final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestric
 
         if (restriction.isOnToken())
         {
-            checkTrue(isEmpty(), "Columns \"%s\" cannot be restricted by both a normal relation and a token relation",
-                      ((TokenRestriction) restriction).getColumnNamesAsString());
-            return (PrimaryKeyRestrictions) restriction;
+            if (isEmpty())
+                return (PrimaryKeyRestrictions) restriction;
+
+            return new TokenFilter(this, (TokenRestriction) restriction);
         }
 
         return new SingleColumnPrimaryKeyRestrictions(this, (SingleColumnRestriction) restriction);
@@ -215,10 +211,8 @@ final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestric
             Bound b = !def.isReversedType() ? bound : bound.reverse();
             Restriction r = restrictions.getRestriction(def);
             if (keyPosition != def.position() || r.isContains())
-            {
-                EOC eoc = !compositeBuilder.isEmpty() && bound.isEnd() ? EOC.END : EOC.NONE;
-                return compositeBuilder.buildWithEOC(eoc);
-            }
+                return compositeBuilder.buildWithEOC(bound.isEnd() ? EOC.END : EOC.START);
+
             if (r.isSlice())
             {
                 if (!r.hasBound(b))
@@ -226,8 +220,7 @@ final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestric
                     // There wasn't any non EQ relation on that key, we select all records having the preceding component as prefix.
                     // For composites, if there was preceding component and we're computing the end, we must change the last component
                     // End-Of-Component, otherwise we would be selecting only one record.
-                    EOC eoc = !compositeBuilder.isEmpty() && bound.isEnd() ? EOC.END : EOC.NONE;
-                    return compositeBuilder.buildWithEOC(eoc);
+                    return compositeBuilder.buildWithEOC(bound.isEnd() ? EOC.END : EOC.START);
                 }
 
                 ByteBuffer value = checkNotNull(r.bounds(b, options).get(0), "Invalid null clustering key part %s", r);
@@ -252,7 +245,7 @@ final class SingleColumnPrimaryKeyRestrictions extends AbstractPrimaryKeyRestric
         // with 2ndary index is done, and with the the partition provided with an EQ, we'll end up here, and in that
         // case using the eoc would be bad, since for the random partitioner we have no guarantee that
         // prefix.end() will sort after prefix (see #5240).
-        EOC eoc = bound.isEnd() && compositeBuilder.hasRemaining() ? EOC.END : EOC.NONE;
+        EOC eoc = !compositeBuilder.hasRemaining() ? EOC.NONE : (bound.isEnd() ? EOC.END : EOC.START);
         return compositeBuilder.buildWithEOC(eoc);
     }
 

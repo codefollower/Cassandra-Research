@@ -71,7 +71,6 @@ import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
-
 import static org.apache.cassandra.Util.cellname;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -108,7 +107,7 @@ public class SSTableReaderTest
     }
 
     @Test
-    public void testGetPositionsForRanges() throws ExecutionException, InterruptedException
+    public void testGetPositionsForRanges()
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");
@@ -147,7 +146,7 @@ public class SSTableReaderTest
     }
 
     @Test
-    public void testSpannedIndexPositions() throws IOException, ExecutionException, InterruptedException
+    public void testSpannedIndexPositions() throws IOException
     {
         MmappedSegmentedFile.MAX_SEGMENT_SIZE = 40; // each index entry is ~11 bytes, so this will generate lots of segments
 
@@ -201,7 +200,7 @@ public class SSTableReaderTest
         store.forceBlockingFlush();
 
         clearAndLoad(store);
-        assert store.getMaxRowSize() != 0;
+        assert store.metric.maxRowSize.getValue() != 0;
     }
 
     private void clearAndLoad(ColumnFamilyStore cfs)
@@ -239,7 +238,7 @@ public class SSTableReaderTest
     }
 
     @Test
-    public void testGetPositionsForRangesWithKeyCache() throws ExecutionException, InterruptedException
+    public void testGetPositionsForRangesWithKeyCache()
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");
@@ -287,6 +286,37 @@ public class SSTableReaderTest
         // check if opening and querying works
         assertIndexQueryWorks(store);
     }
+    public void testGetPositionsKeyCacheStats()
+    {
+        Keyspace keyspace = Keyspace.open(KEYSPACE1);
+        ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");
+        CacheService.instance.keyCache.setCapacity(1000);
+
+        // insert data and compact to a single sstable
+        CompactionManager.instance.disableAutoCompaction();
+        for (int j = 0; j < 10; j++)
+        {
+            ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
+            Mutation rm = new Mutation("Keyspace1", key);
+            rm.add("Standard2", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.apply();
+        }
+        store.forceBlockingFlush();
+        CompactionManager.instance.performMaximal(store);
+
+        SSTableReader sstable = store.getSSTables().iterator().next();
+        sstable.getPosition(k(2), SSTableReader.Operator.EQ);
+        assertEquals(0, sstable.getKeyCacheHit());
+        assertEquals(1, sstable.getBloomFilterTruePositiveCount());
+        sstable.getPosition(k(2), SSTableReader.Operator.EQ);
+        assertEquals(1, sstable.getKeyCacheHit());
+        assertEquals(2, sstable.getBloomFilterTruePositiveCount());
+        sstable.getPosition(k(15), SSTableReader.Operator.EQ);
+        assertEquals(1, sstable.getKeyCacheHit());
+        assertEquals(2, sstable.getBloomFilterTruePositiveCount());
+
+    }
+
 
     @Test
     public void testOpeningSSTable() throws Exception
@@ -377,7 +407,7 @@ public class SSTableReaderTest
     }
 
     @Test
-    public void testGetPositionsForRangesFromTableOpenedForBulkLoading() throws IOException, ExecutionException, InterruptedException
+    public void testGetPositionsForRangesFromTableOpenedForBulkLoading() throws IOException
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");

@@ -81,6 +81,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.metrics.ClearableHistogram;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.SlicePredicate;
@@ -131,7 +132,7 @@ public class ColumnFamilyStoreTest
     }
 
     @BeforeClass
-    public static void defineSchema() throws ConfigurationException, IOException, TException
+    public static void defineSchema() throws ConfigurationException
     {
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE1,
@@ -178,9 +179,9 @@ public class ColumnFamilyStoreTest
         rm.applyUnsafe();
         cfs.forceBlockingFlush();
 
-        cfs.getRecentSSTablesPerReadHistogram(); // resets counts
+        ((ClearableHistogram)cfs.metric.sstablesPerReadHistogram.cf).clear(); // resets counts
         cfs.getColumnFamily(Util.namesQueryFilter(cfs, Util.dk("key1"), "Column1"));
-        assertEquals(1, cfs.getRecentSSTablesPerReadHistogram()[0]);
+        assertEquals(1, cfs.metric.sstablesPerReadHistogram.cf.getCount());
     }
 
     @Test
@@ -1778,7 +1779,7 @@ public class ColumnFamilyStoreTest
             {
                 MetadataCollector collector = new MetadataCollector(cfmeta.comparator);
                 collector.addAncestor(sstable1.descriptor.generation); // add ancestor from previously written sstable
-                return SSTableWriter.create(Descriptor.fromFilename(makeFilename(directory, metadata.ksName, metadata.cfName, DatabaseDescriptor.getSSTableFormat())),
+                return SSTableWriter.create(createDescriptor(directory, metadata.ksName, metadata.cfName, DatabaseDescriptor.getSSTableFormat()),
                         0L,
                         ActiveRepairService.UNREPAIRED_SSTABLE,
                         metadata,

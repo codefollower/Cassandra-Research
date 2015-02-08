@@ -30,7 +30,6 @@ import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
-import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.OutputHandler;
 
 public class Upgrader
@@ -93,8 +92,7 @@ public class Upgrader
                 writer.append(row);
             }
 
-            List<SSTableReader> sstables = writer.finish();
-            cfs.getDataTracker().markCompactedSSTablesReplaced(toUpgrade, sstables, OperationType.UPGRADE_SSTABLES);
+            writer.finish();
             outputHandler.output("Upgrade of " + sstable + " complete.");
 
         }

@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.io.sstable.format.big;
 
-import java.io.Closeable;
 import java.io.DataInput;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -34,7 +33,6 @@ import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.format.Version;
-import org.apache.cassandra.io.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,8 +52,6 @@ import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.io.util.SequentialWriter;
-import org.apache.cassandra.service.ActiveRepairService;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.FilterFactory;
@@ -295,16 +291,12 @@ public class BigTableWriter extends SSTableWriter
         assert descriptor.type.isTemporary;
         if (iwriter == null && dataFile == null)
             return;
+
         if (iwriter != null)
-        {
-            FileUtils.closeQuietly(iwriter.indexFile);
-            if (closeBf)
-            {
-                iwriter.bf.close();
-            }
-        }
+            iwriter.abort(closeBf);
+
         if (dataFile!= null)
-            FileUtils.closeQuietly(dataFile);
+            dataFile.abort();
 
         Set<Component> components = SSTable.componentsFor(descriptor);
         try
@@ -369,7 +361,7 @@ public class BigTableWriter extends SSTableWriter
         if (inclusiveUpperBoundOfReadableData == null)
         {
             // Prevent leaving tmplink files on disk
-            sstable.releaseReference();
+            sstable.sharedRef().release();
             return null;
         }
         int offset = 2;
@@ -381,7 +373,7 @@ public class BigTableWriter extends SSTableWriter
             inclusiveUpperBoundOfReadableData = iwriter.getMaxReadableKey(offset++);
             if (inclusiveUpperBoundOfReadableData == null)
             {
-                sstable.releaseReference();
+                sstable.sharedRef().release();
                 return null;
             }
         }
@@ -403,7 +395,7 @@ public class BigTableWriter extends SSTableWriter
     {
         Pair<Descriptor, StatsMetadata> p;
 
-        p = close(finishType, repairedAt);
+        p = close(finishType, repairedAt < 0 ? this.repairedAt : repairedAt);
         Descriptor desc = p.left;
         StatsMetadata metadata = p.right;
 
@@ -530,7 +522,7 @@ public class BigTableWriter extends SSTableWriter
     /**
      * Encapsulates writing the index and filter for an SSTable. The state of this object is not valid until it has been closed.
      */
-    class IndexWriter implements Closeable
+    class IndexWriter
     {
         private final SequentialWriter indexFile;
         public final SegmentedFile.Builder builder;
@@ -572,6 +564,13 @@ public class BigTableWriter extends SSTableWriter
 
             summary.maybeAddEntry(key, indexPosition);
             builder.addPotentialBoundary(indexPosition);
+        }
+
+        public void abort(boolean closeBf)
+        {
+            indexFile.abort();
+            if (closeBf)
+                bf.close();
         }
 
         /**

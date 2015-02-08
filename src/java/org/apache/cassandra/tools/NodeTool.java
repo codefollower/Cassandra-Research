@@ -27,25 +27,26 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 
-import javax.management.openmbean.TabularData;
+import javax.management.openmbean.*;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.LinkedHashMultimap;
-import com.google.common.collect.Maps;
-import com.yammer.metrics.reporting.JmxReporter;
+import com.google.common.collect.*;
 
 import io.airlift.command.*;
+
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutorMBean;
+import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.db.ColumnFamilyStoreMBean;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.CompactionManagerMBean;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
+import org.apache.cassandra.metrics.CassandraMetricsRegistry;
+import org.apache.cassandra.metrics.ColumnFamilyMetrics;
 import org.apache.cassandra.net.MessagingServiceMBean;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.repair.RepairParallelism;
@@ -57,6 +58,7 @@ import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
+import static org.apache.cassandra.metrics.ColumnFamilyMetrics.Sampler;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Throwables.getStackTraceAsString;
@@ -146,6 +148,7 @@ public class NodeTool
                 Drain.class,
                 TruncateHints.class,
                 TpStats.class,
+                TopPartitions.class,
                 SetLoggingLevel.class,
                 GetLoggingLevels.class
         );
@@ -734,8 +737,8 @@ public class NodeTool
                 for (ColumnFamilyStoreMBean cfstore : columnFamilies)
                 {
                     String cfName = cfstore.getColumnFamilyName();
-                    long writeCount = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getCount();
-                    long readCount = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getCount();
+                    long writeCount = ((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getCount();
+                    long readCount = ((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getCount();
 
                     if (readCount > 0)
                     {
@@ -816,12 +819,12 @@ public class NodeTool
                     System.out.println("\t\tMemtable data size: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableLiveDataSize"), humanReadable));
                     System.out.println("\t\tMemtable off heap memory used: " + format(memtableOffHeapSize, humanReadable));
                     System.out.println("\t\tMemtable switch count: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "MemtableSwitchCount"));
-                    System.out.println("\t\tLocal read count: " + ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getCount());
-                    double localReadLatency = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getMean() / 1000;
+                    System.out.println("\t\tLocal read count: " + ((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getCount());
+                    double localReadLatency = ((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "ReadLatency")).getMean() / 1000;
                     double localRLatency = localReadLatency > 0 ? localReadLatency : Double.NaN;
                     System.out.printf("\t\tLocal read latency: %01.3f ms%n", localRLatency);
-                    System.out.println("\t\tLocal write count: " + ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getCount());
-                    double localWriteLatency = ((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getMean() / 1000;
+                    System.out.println("\t\tLocal write count: " + ((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getCount());
+                    double localWriteLatency = ((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "WriteLatency")).getMean() / 1000;
                     double localWLatency = localWriteLatency > 0 ? localWriteLatency : Double.NaN;
                     System.out.printf("\t\tLocal write latency: %01.3f ms%n", localWLatency);
                     System.out.println("\t\tPending flushes: " + probe.getColumnFamilyMetric(keyspaceName, cfName, "PendingFlushes"));
@@ -835,10 +838,10 @@ public class NodeTool
                     System.out.println("\t\tCompacted partition minimum bytes: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MinRowSize"), humanReadable));
                     System.out.println("\t\tCompacted partition maximum bytes: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MaxRowSize"), humanReadable));
                     System.out.println("\t\tCompacted partition mean bytes: " + format((Long) probe.getColumnFamilyMetric(keyspaceName, cfName, "MeanRowSize"), humanReadable));
-                    JmxReporter.HistogramMBean histogram = (JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "LiveScannedHistogram");
+                    CassandraMetricsRegistry.JmxHistogramMBean histogram = (CassandraMetricsRegistry.JmxHistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "LiveScannedHistogram");
                     System.out.println("\t\tAverage live cells per slice (last five minutes): " + histogram.getMean());
                     System.out.println("\t\tMaximum live cells per slice (last five minutes): " + histogram.getMax());
-                    histogram = (JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "TombstoneScannedHistogram");
+                    histogram = (CassandraMetricsRegistry.JmxHistogramMBean) probe.getColumnFamilyMetric(keyspaceName, cfName, "TombstoneScannedHistogram");
                     System.out.println("\t\tAverage tombstones per slice (last five minutes): " + histogram.getMean());
                     System.out.println("\t\tMaximum tombstones per slice (last five minutes): " + histogram.getMax());
 
@@ -930,7 +933,82 @@ public class NodeTool
         }
     }
 
-    @Command(name = "cfhistograms", description = "Print statistic histograms for a given table")
+    @Command(name = "toppartitions", description = "Sample and print the most active partitions for a given column family")
+    public static class TopPartitions extends NodeToolCmd
+    {
+        @Arguments(usage = "<keyspace> <cfname> <duration>", description = "The keyspace, column family name, and duration in milliseconds")
+        private List<String> args = new ArrayList<>();
+        @Option(name = "-s", description = "Capacity of stream summary, closer to the actual cardinality of partitions will yield more accurate results (Default: 256)")
+        private int size = 256;
+        @Option(name = "-k", description = "Number of the top partitions to list (Default: 10)")
+        private int topCount = 10;
+        @Option(name = "-a", description = "Comma separated list of samplers to use (Default: all)")
+        private String samplers = join(ColumnFamilyMetrics.Sampler.values(), ',');
+        @Override
+        public void execute(NodeProbe probe)
+        {
+            checkArgument(args.size() == 3, "toppartitions requires keyspace, column family name, and duration");
+            checkArgument(topCount < size, "TopK count (-k) option must be smaller then the summary capacity (-s)");
+            String keyspace = args.get(0);
+            String cfname = args.get(1);
+            Integer duration = Integer.parseInt(args.get(2));
+            // generate the list of samplers
+            List<Sampler> targets = Lists.newArrayList();
+            for (String s : samplers.split(","))
+            {
+                try
+                {
+                    targets.add(Sampler.valueOf(s.toUpperCase()));
+                } catch (Exception e)
+                {
+                    throw new IllegalArgumentException(s + " is not a valid sampler, choose one of: " + join(Sampler.values(), ", "));
+                }
+            }
+
+            Map<Sampler, CompositeData> results;
+            try
+            {
+                results = probe.getPartitionSample(keyspace, cfname, size, duration, topCount, targets);
+            } catch (OpenDataException e)
+            {
+                throw new RuntimeException(e);
+            }
+            boolean first = true;
+            for(Entry<Sampler, CompositeData> result : results.entrySet())
+            {
+                CompositeData sampling = result.getValue();
+                // weird casting for http://bugs.sun.com/view_bug.do?bug_id=6548436
+                List<CompositeData> topk = (List<CompositeData>) (Object) Lists.newArrayList(((TabularDataSupport) sampling.get("partitions")).values());
+                Collections.sort(topk, new Ordering<CompositeData>()
+                {
+                    public int compare(CompositeData left, CompositeData right)
+                    {
+                        return Long.compare((long) right.get("count"), (long) left.get("count"));
+                    }
+                });
+                if(!first)
+                    System.out.println();
+                System.out.println(result.getKey().toString()+ " Sampler:");
+                System.out.printf("  Cardinality: ~%d (%d capacity)%n", (long) sampling.get("cardinality"), size);
+                System.out.printf("  Top %d partitions:%n", topCount);
+                if (topk.size() == 0)
+                {
+                    System.out.println("\tNothing recorded during sampling period...");
+                } else
+                {
+                    int offset = 0;
+                    for (CompositeData entry : topk)
+                        offset = Math.max(offset, entry.get("string").toString().length());
+                    System.out.printf("\t%-" + offset + "s%10s%10s%n", "Partition", "Count", "+/-");
+                    for (CompositeData entry : topk)
+                        System.out.printf("\t%-" + offset + "s%10d%10d%n", entry.get("string").toString(), entry.get("count"), entry.get("error"));
+                }
+                first = false;
+            }
+        }
+    }
+
+    @Command(name = "cfhistograms", description = "Print statistic histograms for a given column family")
     public static class CfHistograms extends NodeToolCmd
     {
         @Arguments(usage = "<keyspace> <table>", description = "The keyspace and table name")
@@ -948,51 +1026,64 @@ public class NodeTool
             long[] estimatedRowSize = (long[]) probe.getColumnFamilyMetric(keyspace, cfname, "EstimatedRowSizeHistogram");
             long[] estimatedColumnCount = (long[]) probe.getColumnFamilyMetric(keyspace, cfname, "EstimatedColumnCountHistogram");
 
-            long[] rowSizeBucketOffsets = new EstimatedHistogram(estimatedRowSize.length).getBucketOffsets();
-            long[] columnCountBucketOffsets = new EstimatedHistogram(estimatedColumnCount.length).getBucketOffsets();
-            EstimatedHistogram rowSizeHist = new EstimatedHistogram(rowSizeBucketOffsets, estimatedRowSize);
-            EstimatedHistogram columnCountHist = new EstimatedHistogram(columnCountBucketOffsets, estimatedColumnCount);
-
             // build arrays to store percentile values
             double[] estimatedRowSizePercentiles = new double[7];
             double[] estimatedColumnCountPercentiles = new double[7];
             double[] offsetPercentiles = new double[]{0.5, 0.75, 0.95, 0.98, 0.99};
 
-            if (rowSizeHist.isOverflowed())
+            if (ArrayUtils.isEmpty(estimatedRowSize) || ArrayUtils.isEmpty(estimatedColumnCount))
             {
-                System.err.println(String.format("Row sizes are larger than %s, unable to calculate percentiles", rowSizeBucketOffsets[rowSizeBucketOffsets.length - 1]));
-                for (int i = 0; i < offsetPercentiles.length; i++)
-                        estimatedRowSizePercentiles[i] = Double.NaN;
-            }
-            else
-            {
-                for (int i = 0; i < offsetPercentiles.length; i++)
-                    estimatedRowSizePercentiles[i] = rowSizeHist.percentile(offsetPercentiles[i]);
-            }
+                System.err.println("No SSTables exists, unable to calculate 'Partition Size' and 'Cell Count' percentiles");
 
-            if (columnCountHist.isOverflowed())
-            {
-                System.err.println(String.format("Column counts are larger than %s, unable to calculate percentiles", columnCountBucketOffsets[columnCountBucketOffsets.length - 1]));
-                for (int i = 0; i < estimatedColumnCountPercentiles.length; i++)
+                for (int i = 0; i < 7; i++)
+                {
+                    estimatedRowSizePercentiles[i] = Double.NaN;
                     estimatedColumnCountPercentiles[i] = Double.NaN;
+                }
             }
             else
             {
-                for (int i = 0; i < offsetPercentiles.length; i++)
-                    estimatedColumnCountPercentiles[i] = columnCountHist.percentile(offsetPercentiles[i]);
-            }
+                long[] rowSizeBucketOffsets = new EstimatedHistogram(estimatedRowSize.length).getBucketOffsets();
+                long[] columnCountBucketOffsets = new EstimatedHistogram(estimatedColumnCount.length).getBucketOffsets();
+                EstimatedHistogram rowSizeHist = new EstimatedHistogram(rowSizeBucketOffsets, estimatedRowSize);
+                EstimatedHistogram columnCountHist = new EstimatedHistogram(columnCountBucketOffsets, estimatedColumnCount);
 
-            // min value
-            estimatedRowSizePercentiles[5] = rowSizeHist.min();
-            estimatedColumnCountPercentiles[5] = columnCountHist.min();
-            // max value
-            estimatedRowSizePercentiles[6] = rowSizeHist.max();
-            estimatedColumnCountPercentiles[6] = columnCountHist.max();
+                if (rowSizeHist.isOverflowed())
+                {
+                    System.err.println(String.format("Row sizes are larger than %s, unable to calculate percentiles", rowSizeBucketOffsets[rowSizeBucketOffsets.length - 1]));
+                    for (int i = 0; i < offsetPercentiles.length; i++)
+                            estimatedRowSizePercentiles[i] = Double.NaN;
+                }
+                else
+                {
+                    for (int i = 0; i < offsetPercentiles.length; i++)
+                        estimatedRowSizePercentiles[i] = rowSizeHist.percentile(offsetPercentiles[i]);
+                }
+
+                if (columnCountHist.isOverflowed())
+                {
+                    System.err.println(String.format("Column counts are larger than %s, unable to calculate percentiles", columnCountBucketOffsets[columnCountBucketOffsets.length - 1]));
+                    for (int i = 0; i < estimatedColumnCountPercentiles.length; i++)
+                        estimatedColumnCountPercentiles[i] = Double.NaN;
+                }
+                else
+                {
+                    for (int i = 0; i < offsetPercentiles.length; i++)
+                        estimatedColumnCountPercentiles[i] = columnCountHist.percentile(offsetPercentiles[i]);
+                }
+
+                // min value
+                estimatedRowSizePercentiles[5] = rowSizeHist.min();
+                estimatedColumnCountPercentiles[5] = columnCountHist.min();
+                // max value
+                estimatedRowSizePercentiles[6] = rowSizeHist.max();
+                estimatedColumnCountPercentiles[6] = columnCountHist.max();
+            }
 
             String[] percentiles = new String[]{"50%", "75%", "95%", "98%", "99%", "Min", "Max"};
-            double[] readLatency = probe.metricPercentilesAsArray((JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspace, cfname, "ReadLatency"));
-            double[] writeLatency = probe.metricPercentilesAsArray((JmxReporter.TimerMBean) probe.getColumnFamilyMetric(keyspace, cfname, "WriteLatency"));
-            double[] sstablesPerRead = probe.metricPercentilesAsArray((JmxReporter.HistogramMBean) probe.getColumnFamilyMetric(keyspace, cfname, "SSTablesPerReadHistogram"));
+            double[] readLatency = probe.metricPercentilesAsArray((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspace, cfname, "ReadLatency"));
+            double[] writeLatency = probe.metricPercentilesAsArray((CassandraMetricsRegistry.JmxTimerMBean) probe.getColumnFamilyMetric(keyspace, cfname, "WriteLatency"));
+            double[] sstablesPerRead = probe.metricPercentilesAsArray((CassandraMetricsRegistry.JmxHistogramMBean) probe.getColumnFamilyMetric(keyspace, cfname, "SSTablesPerReadHistogram"));
 
             System.out.println(format("%s/%s histograms", keyspace, cfname));
             System.out.println(format("%-10s%10s%18s%18s%18s%18s",
@@ -2472,19 +2563,15 @@ public class NodeTool
         {
             System.out.printf("%-25s%10s%10s%15s%10s%18s%n", "Pool Name", "Active", "Pending", "Completed", "Blocked", "All time blocked");
 
-            Iterator<Map.Entry<String, JMXEnabledThreadPoolExecutorMBean>> threads = probe.getThreadPoolMBeanProxies();
-            while (threads.hasNext())
+            for (Stage stage : Stage.jmxEnabledStages())
             {
-                Map.Entry<String, JMXEnabledThreadPoolExecutorMBean> thread = threads.next();
-                String poolName = thread.getKey();
-                JMXEnabledThreadPoolExecutorMBean threadPoolProxy = thread.getValue();
                 System.out.printf("%-25s%10s%10s%15s%10s%18s%n",
-                        poolName,
-                        threadPoolProxy.getActiveCount(),
-                        threadPoolProxy.getPendingTasks(),
-                        threadPoolProxy.getCompletedTasks(),
-                        threadPoolProxy.getCurrentlyBlockedTasks(),
-                        threadPoolProxy.getTotalBlockedTasks());
+                                  stage.getJmxName(),
+                                  probe.getThreadPoolMetric(stage, "ActiveTasks"),
+                                  probe.getThreadPoolMetric(stage, "PendingTasks"),
+                                  probe.getThreadPoolMetric(stage, "CompletedTasks"),
+                                  probe.getThreadPoolMetric(stage, "CurrentlyBlockedTasks"),
+                                  probe.getThreadPoolMetric(stage, "TotalBlockedTasks"));
             }
 
             System.out.printf("%n%-20s%10s%n", "Message type", "Dropped");

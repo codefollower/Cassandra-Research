@@ -304,21 +304,29 @@ public final class CFMetaData
 
     public static CFMetaData compile(String cql, String keyspace)
     {
-        //System.out.println(cql); //这里打印"system"这个Keyspace中有哪些表(或称为列族)，总共有18个
-        try
-        {
-            //仅仅是进行到prepare而已，并未checkAccess、announceMigration，所以也不需要IF NOT EXISTS
-            CFStatement parsed = (CFStatement)QueryProcessor.parseStatement(cql);
-            parsed.prepareKeyspace(keyspace);
-            CreateTableStatement statement = (CreateTableStatement) parsed.prepare().statement;
-            CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator);
-            statement.applyPropertiesTo(cfm);
-            return cfm.rebuild();
-        }
-        catch (RequestValidationException e)
-        {
-            throw new RuntimeException(e);
-        }
+//<<<<<<< HEAD
+//        //System.out.println(cql); //这里打印"system"这个Keyspace中有哪些表(或称为列族)，总共有18个
+//        try
+//        {
+//            //仅仅是进行到prepare而已，并未checkAccess、announceMigration，所以也不需要IF NOT EXISTS
+//            CFStatement parsed = (CFStatement)QueryProcessor.parseStatement(cql);
+//            parsed.prepareKeyspace(keyspace);
+//            CreateTableStatement statement = (CreateTableStatement) parsed.prepare().statement;
+//            CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator);
+//            statement.applyPropertiesTo(cfm);
+//            return cfm.rebuild();
+//        }
+//        catch (RequestValidationException e)
+//        {
+//            throw new RuntimeException(e);
+//        }
+//=======
+        CFStatement parsed = (CFStatement)QueryProcessor.parseStatement(cql);
+        parsed.prepareKeyspace(keyspace);
+        CreateTableStatement statement = (CreateTableStatement) parsed.prepare().statement;
+        CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator);
+        statement.applyPropertiesTo(cfm);
+        return cfm.rebuild();
     }
 
     /**
@@ -739,25 +747,23 @@ public final class CFMetaData
         return def == null ? defaultValidator : def.type;
     }
 
-    public void reload()
+    /**
+     * Updates this object in place to match the definition in the system schema tables.
+     * @return true if any columns were added, removed, or altered; otherwise, false is returned
+     */
+    public boolean reload()
     {
-        try
-        {
-            apply(LegacySchemaTables.createTableFromName(ksName, cfName));
-        }
-        catch (ConfigurationException e)
-        {
-            throw new RuntimeException(e);
-        }
+        return apply(LegacySchemaTables.createTableFromName(ksName, cfName));
     }
 
     /**
      * Updates CFMetaData in-place to match cfm
      *
+     * @return true if any columns were added, removed, or altered; otherwise, false is returned
      * @throws ConfigurationException if ks/cf names or cf ids didn't match
      */
     @VisibleForTesting
-    public void apply(CFMetaData cfm) throws ConfigurationException
+    public boolean apply(CFMetaData cfm) throws ConfigurationException
     {
         logger.debug("applying {} to {}", cfm, this);
 
@@ -817,6 +823,10 @@ public final class CFMetaData
 
         rebuild();
         logger.debug("application result is {}", this);
+
+        return !columnDiff.entriesOnlyOnLeft().isEmpty() ||
+               !columnDiff.entriesOnlyOnRight().isEmpty() ||
+               !columnDiff.entriesDiffering().isEmpty();
     }
 
     public void validateCompatility(CFMetaData cfm) throws ConfigurationException

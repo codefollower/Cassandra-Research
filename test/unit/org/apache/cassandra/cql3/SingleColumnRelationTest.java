@@ -175,18 +175,43 @@ public class SingleColumnRelationTest extends CQLTester
         execute("insert into %s (a, b, c, d) values (?, ?, ?, ?)", "first", 1, 1, 1);
         execute("insert into %s (a, b, c, d) values (?, ?, ?, ?)", "first", 2, 2, 2);
         execute("insert into %s (a, b, c, d) values (?, ?, ?, ?)", "first", 3, 3, 3);
+        execute("insert into %s (a, b, c, d) values (?, ?, ?, ?)", "first", 4, 4, 4);
+        execute("insert into %s (a, b, c, d) values (?, ?, ?, ?)", "second", 1, 1, 1);
         execute("insert into %s (a, b, c, d) values (?, ?, ?, ?)", "second", 4, 4, 4);
 
-        assertInvalidMessage("Partition KEY part a cannot be restricted by IN relation (only the last part of the partition key can)",
+        assertRows(execute("select * from %s where a = ? and b = ?", "first", 2),
+                   row("first", 2, 2, 2));
+
+        assertRows(execute("select * from %s where a in (?, ?) and b in (?, ?)", "first", "second", 2, 3),
+                   row("first", 2, 2, 2),
+                   row("first", 3, 3, 3));
+
+        assertRows(execute("select * from %s where a in (?, ?) and b = ?", "first", "second", 4),
+                   row("first", 4, 4, 4),
+                   row("second", 4, 4, 4));
+
+        assertRows(execute("select * from %s where a = ? and b in (?, ?)", "first", 3, 4),
+                   row("first", 3, 3, 3),
+                   row("first", 4, 4, 4));
+
+        assertRows(execute("select * from %s where a in (?, ?) and b in (?, ?)", "first", "second", 1, 4),
+                   row("first", 1, 1, 1),
+                   row("first", 4, 4, 4),
+                   row("second", 1, 1, 1),
+                   row("second", 4, 4, 4));
+
+        assertInvalidMessage("Partition key parts: b must be restricted as other parts are",
                              "select * from %s where a in (?, ?)", "first", "second");
-        assertInvalidMessage("Partition KEY part a cannot be restricted by IN relation (only the last part of the partition key can)",
-                             "select * from %s where a in (?, ?) and b in (?, ?)", "first", "second", 2, 3);
         assertInvalidMessage("Partition key parts: b must be restricted as other parts are",
                              "select * from %s where a = ?", "first");
         assertInvalidMessage("b cannot be restricted by more than one relation if it includes a IN",
                              "select * from %s where a = ? AND b IN (?, ?) AND b = ?", "first", 2, 2, 3);
         assertInvalidMessage("b cannot be restricted by more than one relation if it includes an Equal",
                              "select * from %s where a = ? AND b = ? AND b IN (?, ?)", "first", 2, 2, 3);
+        assertInvalidMessage("a cannot be restricted by more than one relation if it includes a IN",
+                             "select * from %s where a IN (?, ?) AND a = ? AND b = ?", "first", "second", "first", 3);
+        assertInvalidMessage("a cannot be restricted by more than one relation if it includes an Equal",
+                             "select * from %s where a = ? AND a IN (?, ?) AND b IN (?, ?)", "first", "second", "first", 2, 3);
     }
 
     @Test
@@ -384,6 +409,25 @@ public class SingleColumnRelationTest extends CQLTester
     }
 
     @Test
+    public void testINWithDuplicateValue() throws Throwable
+    {
+        for (String compactOption : new String[] { "", " WITH COMPACT STORAGE" })
+        {
+            createTable("CREATE TABLE %s (k1 int, k2 int, v int, PRIMARY KEY (k1, k2))" + compactOption);
+            execute("INSERT INTO %s (k1,  k2, v) VALUES (?, ?, ?)", 1, 1, 1);
+
+            assertRows(execute("SELECT * FROM %s WHERE k1 IN (?, ?)", 1, 1),
+                       row(1, 1, 1));
+
+            assertRows(execute("SELECT * FROM %s WHERE k1 IN (?, ?) AND k2 IN (?, ?)", 1, 1, 1, 1),
+                       row(1, 1, 1));
+
+            assertRows(execute("SELECT * FROM %s WHERE k1 = ? AND k2 IN (?, ?)", 1, 1, 1),
+                       row(1, 1, 1));
+        }
+    }
+
+    @Test
     public void testLargeClusteringINValues() throws Throwable
     {
         createTable("CREATE TABLE %s (k int, c int, v int, PRIMARY KEY (k, c))");
@@ -392,7 +436,6 @@ public class SingleColumnRelationTest extends CQLTester
         for (int i = 0; i < 10000; i++)
             inValues.add(i);
         assertRows(execute("SELECT * FROM %s WHERE k=? AND c IN ?", 0, inValues),
-                row(0, 0, 0)
-        );
+                row(0, 0, 0));
     }
 }

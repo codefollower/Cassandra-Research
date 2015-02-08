@@ -323,10 +323,13 @@ public final class WrappingCompactionStrategy extends AbstractCompactionStrategy
         super.startup();
         for (SSTableReader sstable : cfs.getSSTables())
         {
-            if (sstable.isRepaired())
-                repaired.addSSTable(sstable);
-            else
-                unrepaired.addSSTable(sstable);
+            if (sstable.openReason != SSTableReader.OpenReason.EARLY)
+            {
+                if (sstable.isRepaired())
+                    repaired.addSSTable(sstable);
+                else
+                    unrepaired.addSSTable(sstable);
+            }
         }
         repaired.startup();
         unrepaired.startup();
@@ -356,6 +359,11 @@ public final class WrappingCompactionStrategy extends AbstractCompactionStrategy
         scanners.addAll(repairedScanners.scanners);
         scanners.addAll(unrepairedScanners.scanners);
         return new ScannerList(scanners);
+    }
+
+    public Collection<Collection<SSTableReader>> groupSSTablesForAntiCompaction(Collection<SSTableReader> sstablesToGroup)
+    {
+        return unrepaired.groupSSTablesForAntiCompaction(sstablesToGroup);
     }
 
     public List<AbstractCompactionStrategy> getWrappedStrategies()

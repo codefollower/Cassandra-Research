@@ -669,18 +669,25 @@ Table of Contents
       the rest of the message will be <change_type><target><options> where:
         - <change_type> is a [string] representing the type of changed involved.
           It will be one of "CREATED", "UPDATED" or "DROPPED".
-        - <target> is a [string] that can be one of "KEYSPACE", "TABLE" or "TYPE"
-          and describes what has been modified ("TYPE" stands for modifications
-          related to user types).
-        - <options> depends on the preceding <target>. If <target> is
-          "KEYSPACE", then <options> will be a single [string] representing the
-          keyspace changed. Otherwise, if <target> is "TABLE" or "TYPE", then
-          <options> will be 2 [string]: the first one will be the keyspace
-          containing the affected object, and the second one will be the name
-          of said affected object (so either the table name or the user type
-          name).
+        - <target> is a [string] that can be one of "KEYSPACE", "TABLE", "TYPE",
+          "FUNCTION" or "AGGREGATE" and describes what has been modified
+          ("TYPE" stands for modifications related to user types, "FUNCTION"
+          for modifications related to user defined functions, "AGGREGATE"
+          for modifications related to user defined aggregates).
+        - <options> depends on the preceding <target>:
+          - If <target> is "KEYSPACE", then <options> will be a single [string]
+            representing the keyspace changed.
+          - If <target> is "TABLE" or "TYPE", then
+            <options> will be 2 [string]: the first one will be the keyspace
+            containing the affected object, and the second one will be the name
+            of said affected object (either the table, user type, function, or
+            aggregate name).
+          - If <target> is "FUNCTION" or "AGGREGATE", multiple arguments follow:
+            - [string] keyspace containing the user defined function / aggregate
+            - [string] the function/aggregate name
+            - [string list] one string for each argument type (as CQL type)
 
-  All EVENT message have a streamId of -1 (Section 2.3).
+  All EVENT messages have a streamId of -1 (Section 2.3).
 
   Please note that "NEW_NODE" and "UP" events are sent based on internal Gossip
   communication and as such may be sent a short delay before the binary
@@ -873,7 +880,21 @@ Table of Contents
                 <data_present> is a single byte. If its value is 0, it means
                                the replica that was asked for data has not
                                responded. Otherwise, the value is != 0.
-
+    0x1300    Read_failure: A non-timeout exception during a read request. The rest
+              of the ERROR message body will be
+                <cl><received><blockfor><numfailures><data_present>
+              where:
+                <cl> is the [consistency] level of the query having triggered
+                     the exception.
+                <received> is an [int] representing the number of nodes having
+                           answered the request.
+                <blockfor> is the number of replicas whose response is
+                           required to achieve <cl>.
+                <numfailures> is an [int] representing the number of nodes that
+                              experience a failure while executing the request.
+                <data_present> is a single byte. If its value is 0, it means
+                               the replica that was asked for data had not
+                               responded. Otherwise, the value is != 0.
     0x2000    Syntax_error: The submitted query has a syntax error.
     0x2100    Unauthorized: The logged user doesn't have the right to perform
               the query.
@@ -896,4 +917,7 @@ Table of Contents
 
 10. Changes from v3
 
+  * The format of "SCHEMA_CHANGE" events (Section 4.2.6) (and implicitly "Schema_change" results (Section 4.2.5.5))
+    has been modified, and now includes changes related to user defined functions and user defined aggregates.
+  * Read_failure error code was added.
 

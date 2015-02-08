@@ -21,6 +21,7 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.slf4j.Logger;
@@ -57,6 +58,15 @@ public class SchemaLoader
         // Migrations aren't happy if gossiper is not started.  Even if we don't use migrations though,
         // some tests now expect us to start gossip for them.
         startGossiper();
+    }
+
+    @After
+    public void leakDetect() throws InterruptedException
+    {
+        System.gc();
+        System.gc();
+        System.gc();
+        Thread.sleep(10);
     }
 
     public static void prepareServer()
@@ -419,10 +429,11 @@ public class SchemaLoader
 
     public static void cleanupAndLeaveDirs()
     {
+        CommitLog.instance.allocator.stopUnsafe(); // unmap CLS before attempting to delete or Windows complains
         mkdirs();
         cleanup();
         mkdirs();
-        CommitLog.instance.resetUnsafe(); // cleanup screws w/ CommitLog, this brings it back to safe state
+        CommitLog.instance.allocator.startUnsafe(); // cleanup screws w/ CommitLog, this brings it back to safe state
     }
 
     public static void cleanup()
@@ -434,7 +445,11 @@ public class SchemaLoader
             File dir = new File(dirName);
             if (!dir.exists())
                 throw new RuntimeException("No such directory: " + dir.getAbsolutePath());
-            FileUtils.deleteRecursive(dir);
+
+            // Leave the folder around as Windows will complain about directory deletion w/handles open to children files
+            String[] children = dir.list();
+            for (String child : children)
+                FileUtils.deleteRecursive(new File(dir, child));
         }
 
         cleanupSavedCaches();
@@ -445,7 +460,9 @@ public class SchemaLoader
             File dir = new File(dirName);
             if (!dir.exists())
                 throw new RuntimeException("No such directory: " + dir.getAbsolutePath());
-            FileUtils.deleteRecursive(dir);
+            String[] children = dir.list();
+            for (String child : children)
+                FileUtils.deleteRecursive(new File(dir, child));
         }
     }
 

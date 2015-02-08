@@ -95,11 +95,25 @@ public class Schema
         load(SystemKeyspace.definition());
     }
 
-    /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
+    /**
+     * load keyspace (keyspace) definitions, but do not initialize the keyspace instances.
+     * Schema version may be updated as the result.
+     */
     public Schema loadFromDisk()
     {
+        return loadFromDisk(true);
+    }
+
+    /**
+     * Load schema definitions from disk.
+     *
+     * @param updateVersion true if schema version needs to be updated
+     */
+    public Schema loadFromDisk(boolean updateVersion)
+    {
         load(LegacySchemaTables.readSchemaFromSystemTables());
-        updateVersion();
+        if (updateVersion)
+            updateVersion();
         return this;
     }
 
@@ -478,11 +492,11 @@ public class Schema
     {
         CFMetaData cfm = getCFMetaData(ksName, tableName);
         assert cfm != null;
-        cfm.reload();
+        boolean columnsDidChange = cfm.reload();
 
         Keyspace keyspace = Keyspace.open(cfm.ksName);
         keyspace.getColumnFamilyStore(cfm.cfName).reload();
-        MigrationManager.instance.notifyUpdateColumnFamily(cfm);
+        MigrationManager.instance.notifyUpdateColumnFamily(cfm, columnsDidChange);
     }
 
     public void dropTable(String ksName, String tableName)

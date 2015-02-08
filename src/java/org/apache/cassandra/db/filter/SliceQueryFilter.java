@@ -46,6 +46,12 @@ public class SliceQueryFilter implements IDiskAtomFilter
 {
     private static final Logger logger = LoggerFactory.getLogger(SliceQueryFilter.class);
 
+    /**
+     * A special value for compositesToGroup that indicates that partitioned tombstones should not be included in results
+     * or count towards the limit.  See CASSANDRA-8490 for more details on why this is needed (and done this way).
+     **/
+    public static final int IGNORE_TOMBSTONED_PARTITIONS = -2;
+
     public final ColumnSlice[] slices;
     public final boolean reversed;
     public volatile int count;
@@ -209,34 +215,41 @@ public class SliceQueryFilter implements IDiskAtomFilter
 
             if (respectTombstoneThresholds() && columnCounter.ignored() > DatabaseDescriptor.getTombstoneFailureThreshold())
             {
-                Tracing.trace("Scanned over {} tombstones; query aborted (see tombstone_failure_threshold)", DatabaseDescriptor.getTombstoneFailureThreshold());
-                logger.error("Scanned over {} tombstones in {}.{}; query aborted (see tombstone_failure_threshold)",
-                             DatabaseDescriptor.getTombstoneFailureThreshold(), container.metadata().ksName, container.metadata().cfName);
-                throw new TombstoneOverwhelmingException();
+                Tracing.trace("Scanned over {} tombstones; query aborted (see tombstone_failure_threshold); slices={}",
+                              DatabaseDescriptor.getTombstoneFailureThreshold(), getSlicesInfo(container));
+                throw new TombstoneOverwhelmingException(columnCounter.ignored(), count, container.metadata().ksName, container.metadata().cfName,
+                                container.getComparator().getString(cell.name()), getSlicesInfo(container),  container.deletionInfo().toString());
             }
 
             container.maybeAppendColumn(cell, tester, gcBefore);
         }
 
-        Tracing.trace("Read {} live and {} tombstoned cells", columnCounter.live(), columnCounter.ignored());
-        if (respectTombstoneThresholds() && columnCounter.ignored() > DatabaseDescriptor.getTombstoneWarnThreshold())
+        boolean warnTombstones = respectTombstoneThresholds() && columnCounter.ignored() > DatabaseDescriptor.getTombstoneWarnThreshold();
+        if (warnTombstones)
         {
-            StringBuilder sb = new StringBuilder();
-            CellNameType type = container.metadata().comparator;
-            for (ColumnSlice sl : slices)
-            {
-                assert sl != null;
-
-                sb.append('[');
-                sb.append(type.getString(sl.start));
-                sb.append('-');
-                sb.append(type.getString(sl.finish));
-                sb.append(']');
-            }
-
-            logger.warn("Read {} live and {} tombstoned cells in {}.{} (see tombstone_warn_threshold). {} columns was requested, slices={}, delInfo={}",
-                        columnCounter.live(), columnCounter.ignored(), container.metadata().ksName, container.metadata().cfName, count, sb, container.deletionInfo());
+            logger.warn("Read {} live and {} tombstoned cells in {}.{} (see tombstone_warn_threshold). {} columns were requested, slices={}, delInfo={}",
+                        columnCounter.live(), columnCounter.ignored(), container.metadata().ksName, container.metadata().cfName, count,
+                        getSlicesInfo(container), container.deletionInfo());
         }
+        Tracing.trace("Read {} live and {} tombstoned cells{}",
+                      new Object[]{ columnCounter.live(), columnCounter.ignored(), (warnTombstones ? " (see tombstone_warn_threshold)" : "") });
+    }
+
+    private String getSlicesInfo(ColumnFamily container)
+    {
+        StringBuilder sb = new StringBuilder();
+        CellNameType type = container.metadata().comparator;
+        for (ColumnSlice sl : slices)
+        {
+            assert sl != null;
+
+            sb.append('[');
+            sb.append(type.getString(sl.start));
+            sb.append('-');
+            sb.append(type.getString(sl.finish));
+            sb.append(']');
+        }
+        return sb.toString();
     }
 
     protected boolean respectTombstoneThresholds()

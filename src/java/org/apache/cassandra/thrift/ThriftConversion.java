@@ -90,7 +90,9 @@ public class ThriftConversion
     // for methods that have a return value.
     public static RuntimeException rethrow(RequestExecutionException e) throws UnavailableException, TimedOutException
     {
-        if (e instanceof RequestTimeoutException)
+        if (e instanceof RequestFailureException)
+            throw toThrift((RequestFailureException)e);
+        else if (e instanceof RequestTimeoutException)
             throw toThrift((RequestTimeoutException)e);
         else
             throw new UnavailableException();
@@ -126,6 +128,12 @@ public class ThriftConversion
                 toe.setPaxos_in_progress(true);
         }
         return toe;
+    }
+
+    // Thrift does not support RequestFailureExceptions, so we translate them into timeouts
+    public static TimedOutException toThrift(RequestFailureException e)
+    {
+        return new TimedOutException();
     }
 
     public static List<org.apache.cassandra.db.IndexExpression> indexExpressionsFromThrift(List<IndexExpression> exprs)
@@ -425,7 +433,7 @@ public class ThriftConversion
     throws SyntaxException, ConfigurationException
     {
         if (thriftDefs == null)
-            return Collections.emptyList();
+            return new ArrayList<>();
 
         List<ColumnDefinition> defs = new ArrayList<>(thriftDefs.size());
         for (ColumnDef thriftColumnDef : thriftDefs)

@@ -156,9 +156,9 @@ public class RowCacheTest
         rowCacheLoad(100, Integer.MAX_VALUE, 1000);
 
         ColumnFamilyStore store = Keyspace.open(KEYSPACE_CACHED).getColumnFamilyStore(CF_CACHED);
-        assertEquals(CacheService.instance.rowCache.getKeySet().size(), 100);
+        assertEquals(CacheService.instance.rowCache.size(), 100);
         store.cleanupCache();
-        assertEquals(CacheService.instance.rowCache.getKeySet().size(), 100);
+        assertEquals(CacheService.instance.rowCache.size(), 100);
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
         byte[] tk1, tk2;
         tk1 = "key1000".getBytes();
@@ -166,7 +166,7 @@ public class RowCacheTest
         tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
         tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
         store.cleanupCache();
-        assertEquals(CacheService.instance.rowCache.getKeySet().size(), 50);
+        assertEquals(50, CacheService.instance.rowCache.size());
         CacheService.instance.setRowCacheCapacityInMB(0);
     }
 
@@ -185,8 +185,8 @@ public class RowCacheTest
         Keyspace keyspace = Keyspace.open(KEYSPACE_CACHED);
         String cf = "CachedIntCF";
         ColumnFamilyStore cachedStore  = keyspace.getColumnFamilyStore(cf);
-        long startRowCacheHits = cachedStore.metric.rowCacheHit.count();
-        long startRowCacheOutOfRange = cachedStore.metric.rowCacheHitOutOfRange.count();
+        long startRowCacheHits = cachedStore.metric.rowCacheHit.getCount();
+        long startRowCacheOutOfRange = cachedStore.metric.rowCacheHitOutOfRange.getCount();
         // empty the row cache
         CacheService.instance.invalidateRowCache();
 
@@ -206,31 +206,31 @@ public class RowCacheTest
                                                                 Composites.EMPTY,
                                                                 Composites.EMPTY,
                                                                 false, 10, System.currentTimeMillis()));
-        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.count());
+        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
 
         // do another query, limit is 20, which is < 100 that we cache, we should get a hit and it should be in range
         cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
                                                                 Composites.EMPTY,
                                                                 Composites.EMPTY,
                                                                 false, 20, System.currentTimeMillis()));
-        assertEquals(++startRowCacheHits, cachedStore.metric.rowCacheHit.count());
-        assertEquals(startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.count());
+        assertEquals(++startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
+        assertEquals(startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
 
         // get a slice from 95 to 105, 95->99 are in cache, we should not get a hit and then row cache is out of range
         cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
                                                                CellNames.simpleDense(ByteBufferUtil.bytes(95)),
                                                                CellNames.simpleDense(ByteBufferUtil.bytes(105)),
                                                                false, 10, System.currentTimeMillis()));
-        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.count());
-        assertEquals(++startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.count());
+        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
+        assertEquals(++startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
 
         // get a slice with limit > 100, we should get a hit out of range.
         cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
                                                                Composites.EMPTY,
                                                                Composites.EMPTY,
                                                                false, 101, System.currentTimeMillis()));
-        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.count());
-        assertEquals(++startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.count());
+        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
+        assertEquals(++startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
 
 
         CacheService.instance.invalidateRowCache();
@@ -240,7 +240,7 @@ public class RowCacheTest
                                                                 Composites.EMPTY,
                                                                 Composites.EMPTY,
                                                                 false, 105, System.currentTimeMillis()));
-        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.count());
+        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
         // validate the stuff in cache;
         ColumnFamily cachedCf = (ColumnFamily)CacheService.instance.rowCache.get(rck);
         assertEquals(cachedCf.getColumnCount(), 100);
@@ -259,19 +259,19 @@ public class RowCacheTest
 
         // empty the cache
         CacheService.instance.invalidateRowCache();
-        assert CacheService.instance.rowCache.size() == 0;
+        assertEquals(0, CacheService.instance.rowCache.size());
 
         // insert data and fill the cache
         SchemaLoader.insertData(KEYSPACE_CACHED, CF_CACHED, offset, totalKeys);
         SchemaLoader.readData(KEYSPACE_CACHED, CF_CACHED, offset, totalKeys);
-        assert CacheService.instance.rowCache.size() == totalKeys;
+        assertEquals(totalKeys, CacheService.instance.rowCache.size());
 
         // force the cache to disk
         CacheService.instance.rowCache.submitWrite(keysToSave).get();
 
         // empty the cache again to make sure values came from disk
         CacheService.instance.invalidateRowCache();
-        assert CacheService.instance.rowCache.size() == 0;
-        assert CacheService.instance.rowCache.loadSaved(store) == (keysToSave == Integer.MAX_VALUE ? totalKeys : keysToSave);
+        assertEquals(0, CacheService.instance.rowCache.size());
+        assertEquals(keysToSave == Integer.MAX_VALUE ? totalKeys : keysToSave, CacheService.instance.rowCache.loadSaved(store));
     }
 }

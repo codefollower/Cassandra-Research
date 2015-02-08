@@ -93,10 +93,15 @@ public class CommitLogSegmentManager
      */
     private volatile boolean createReserveSegments = false;
 
-    private final Thread managerThread;
+    private Thread managerThread;
     private volatile boolean run = true;
 
     public CommitLogSegmentManager()
+    {
+        start();
+    }
+
+    private void start()
     {
         // The run loop for the manager thread
         Runnable runnable = new WrappedRunnable()
@@ -145,8 +150,7 @@ public class CommitLogSegmentManager
                             }
                             catch (InterruptedException e)
                             {
-                                // shutdown signal; exit cleanly
-                                continue;
+                                throw new AssertionError();
                             }
                         }
 
@@ -169,6 +173,8 @@ public class CommitLogSegmentManager
                 }
             }
         };
+
+        run = true;
 
         managerThread = new Thread(runnable, "COMMIT-LOG-ALLOCATOR");
         managerThread.start();
@@ -454,9 +460,10 @@ public class CommitLogSegmentManager
 
     private long unusedCapacity()
     {
+        long total = DatabaseDescriptor.getTotalCommitlogSpaceInMB() * 1024 * 1024;
         long currentSize = size.get();
-        logger.debug("Total active commitlog segment space used is {}", currentSize);
-        return DatabaseDescriptor.getTotalCommitlogSpaceInMB() * 1024 * 1024 - currentSize;
+        logger.debug("Total active commitlog segment space used is {} out of {}", currentSize, total);
+        return total - currentSize;
     }
 
     /**
@@ -514,10 +521,29 @@ public class CommitLogSegmentManager
      */
     public void resetUnsafe()
     {
+        stopUnsafe();
+        startUnsafe();
+    }
+
+    /**
+     * Stops CL, for testing purposes. DO NOT USE THIS OUTSIDE OF TESTS.
+     */
+    public void stopUnsafe()
+    {
         logger.debug("Closing and clearing existing commit log segments...");
 
         while (!segmentManagementTasks.isEmpty())
             Thread.yield();
+
+        shutdown();
+        try
+        {
+            awaitTermination();
+        }
+        catch (InterruptedException e)
+        {
+            throw new RuntimeException(e);
+        }
 
         for (CommitLogSegment segment : activeSegments)
             segment.close();
@@ -528,6 +554,20 @@ public class CommitLogSegmentManager
         availableSegments.clear();
 
         allocatingFrom = null;
+
+        size.set(0L);
+
+        logger.debug("Done with closing and clearing existing commit log segments.");
+    }
+
+    /**
+     * Starts CL, for testing purposes. DO NOT USE THIS OUTSIDE OF TESTS.
+     */
+    public void startUnsafe()
+    {
+        start();
+
+        wakeManager();
     }
 
     /**
@@ -536,7 +576,7 @@ public class CommitLogSegmentManager
     public void shutdown()
     {
         run = false;
-        managerThread.interrupt();
+        segmentManagementTasks.add(Callables.<CommitLogSegment>returning(null));
     }
 
     /**

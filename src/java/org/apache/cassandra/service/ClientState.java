@@ -18,12 +18,12 @@
 package org.apache.cassandra.service;
 
 import java.net.SocketAddress;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,16 +32,15 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.schema.LegacySchemaTables;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
-import org.apache.cassandra.tracing.TraceKeyspace;
+import org.apache.cassandra.schema.LegacySchemaTables;
 import org.apache.cassandra.thrift.ThriftValidation;
+import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.SemanticVersion;
 
 /**
@@ -55,16 +54,27 @@ public class ClientState
 
     private static final Set<IResource> READABLE_SYSTEM_RESOURCES = new HashSet<>();
     private static final Set<IResource> PROTECTED_AUTH_RESOURCES = new HashSet<>();
-
+    private static final Set<String> ALTERABLE_SYSTEM_KEYSPACES = new HashSet<>();
+    private static final Set<IResource> DROPPABLE_SYSTEM_TABLES = new HashSet<>();
     static
     {
         // We want these system cfs to be always readable to authenticated users since many tools rely on them
         // (nodetool, cqlsh, bulkloader, etc.)
         for (String cf : Iterables.concat(Arrays.asList(SystemKeyspace.LOCAL, SystemKeyspace.PEERS), LegacySchemaTables.ALL))
-            READABLE_SYSTEM_RESOURCES.add(DataResource.columnFamily(SystemKeyspace.NAME, cf));
+            READABLE_SYSTEM_RESOURCES.add(DataResource.table(SystemKeyspace.NAME, cf));
 
         PROTECTED_AUTH_RESOURCES.addAll(DatabaseDescriptor.getAuthenticator().protectedResources());
         PROTECTED_AUTH_RESOURCES.addAll(DatabaseDescriptor.getAuthorizer().protectedResources());
+        PROTECTED_AUTH_RESOURCES.addAll(DatabaseDescriptor.getRoleManager().protectedResources());
+
+        // allow users with sufficient privileges to alter KS level options on AUTH_KS and
+        // TRACING_KS, and also to drop legacy tables (users, credentials, permissions) from
+        // AUTH_KS
+        ALTERABLE_SYSTEM_KEYSPACES.add(AuthKeyspace.NAME);
+        ALTERABLE_SYSTEM_KEYSPACES.add(TraceKeyspace.NAME);
+        DROPPABLE_SYSTEM_TABLES.add(DataResource.table(AuthKeyspace.NAME, PasswordAuthenticator.LEGACY_CREDENTIALS_TABLE));
+        DROPPABLE_SYSTEM_TABLES.add(DataResource.table(AuthKeyspace.NAME, CassandraRoleManager.LEGACY_USERS_TABLE));
+        DROPPABLE_SYSTEM_TABLES.add(DataResource.table(AuthKeyspace.NAME, CassandraAuthorizer.USER_PERMISSIONS));
     }
 
     // Current user for the session
@@ -207,10 +217,13 @@ public class ClientState
      */
     public void login(AuthenticatedUser user) throws AuthenticationException
     {
-        if (!user.isAnonymous() && !Auth.isExistingUser(user.getName()))
-           throw new AuthenticationException(String.format("User %s doesn't exist - create it with CREATE USER query first",
-                                                           user.getName()));
-        this.user = user;
+        // Login privilege is not inherited via granted roles, so just
+        // verify that the role with the credentials that were actually
+        // supplied has it
+        if (user.isAnonymous() || DatabaseDescriptor.getRoleManager().canLogin(user.getPrimaryRole()))
+            this.user = user;
+        else
+            throw new AuthenticationException(String.format("%s is not permitted to log in", user.getName()));
     }
 
     public void hasAllKeyspacesAccess(Permission perm) throws UnauthorizedException
@@ -230,7 +243,7 @@ public class ClientState
     throws UnauthorizedException, InvalidRequestException
     {
         ThriftValidation.validateColumnFamily(keyspace, columnFamily);
-        hasAccess(keyspace, perm, DataResource.columnFamily(keyspace, columnFamily));
+        hasAccess(keyspace, perm, DataResource.table(keyspace, columnFamily));
     }
 
     private void hasAccess(String keyspace, Permission perm, DataResource resource)
@@ -271,10 +284,15 @@ public class ClientState
         if (SystemKeyspace.NAME.equalsIgnoreCase(keyspace))
             throw new UnauthorizedException(keyspace + " keyspace is not user-modifiable.");
 
-        // we want to allow altering AUTH_KS and TRACING_KS.
-        Set<String> allowAlter = Sets.newHashSet(Auth.AUTH_KS, TraceKeyspace.NAME);
-        if (allowAlter.contains(keyspace.toLowerCase()) && !(resource.isKeyspaceLevel() && (perm == Permission.ALTER)))
+        // allow users with sufficient privileges to alter KS level options on AUTH_KS and
+        // TRACING_KS, and also to drop legacy tables (users, credentials, permissions) from
+        // AUTH_KS
+        if (ALTERABLE_SYSTEM_KEYSPACES.contains(resource.getKeyspace().toLowerCase())
+           && ((perm == Permission.ALTER && !resource.isKeyspaceLevel())
+               || (perm == Permission.DROP && !DROPPABLE_SYSTEM_TABLES.contains(resource))))
+        {
             throw new UnauthorizedException(String.format("Cannot %s %s", perm, resource));
+        }
     }
 
     public void validateLogin() throws UnauthorizedException
@@ -314,21 +332,24 @@ public class ClientState
 
     private Set<Permission> authorize(IResource resource)
     {
-        // AllowAllAuthorizer or manually disabled caching.
-        if (Auth.permissionsCache == null)
-            return DatabaseDescriptor.getAuthorizer().authorize(user, resource);
-
-        try
-        {
-            //当permissionsCache在最初调用initPermissionsCache()不为null时，
-            //这里传进去的Pair.create(user, resource)会保留在CacheLoader中，默认保存两秒
-            //这样如果连续的两次访问只要间隔不超过两秒就不会去读system_auth.permissions表
-            return Auth.permissionsCache.get(Pair.create(user, resource));
-        }
-        catch (ExecutionException e)
-        {
-            throw new RuntimeException(e);
-        }
+//<<<<<<< HEAD
+//        // AllowAllAuthorizer or manually disabled caching.
+//        if (Auth.permissionsCache == null)
+//            return DatabaseDescriptor.getAuthorizer().authorize(user, resource);
+//
+//        try
+//        {
+//            //当permissionsCache在最初调用initPermissionsCache()不为null时，
+//            //这里传进去的Pair.create(user, resource)会保留在CacheLoader中，默认保存两秒
+//            //这样如果连续的两次访问只要间隔不超过两秒就不会去读system_auth.permissions表
+//            return Auth.permissionsCache.get(Pair.create(user, resource));
+//        }
+//        catch (ExecutionException e)
+//        {
+//            throw new RuntimeException(e);
+//        }
+//=======
+        return AuthenticatedUser.getPermissions(user, resource);
     }
 
     //我加上的，用于测试，触发memtable的flush
