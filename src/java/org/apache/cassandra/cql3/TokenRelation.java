@@ -51,6 +51,7 @@ public final class TokenRelation extends Relation
 
     private final Term.Raw value;
 
+    //WHERE token(user_id,f1) > 10时会分开成两次，entity分别是user_id和f1，值都是10
     public TokenRelation(List<ColumnIdentifier.Raw> entities, Operator type, Term.Raw value)
     {
         this.entities = entities;

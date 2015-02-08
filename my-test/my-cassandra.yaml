@@ -9,7 +9,7 @@ native_transport_port: 9042
 
 commitlog_sync: batch
 #commitlog_sync_batch_window_in_ms: 1.0
-commitlog_sync_batch_window_in_ms: 3
+commitlog_sync_batch_window_in_ms: 50
 
 #partitioner: org.apache.cassandra.dht.ByteOrderedPartitioner
 partitioner: org.apache.cassandra.dht.Murmur3Partitioner

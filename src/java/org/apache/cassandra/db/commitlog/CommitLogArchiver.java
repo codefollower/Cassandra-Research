@@ -67,6 +67,7 @@ public class CommitLogArchiver
         try
         {
             stream = getClass().getClassLoader().getResourceAsStream("commitlog_archiving.properties");
+            getClass().getClassLoader().getResource("commitlog_archiving.properties");
 
             if (stream == null)
             {

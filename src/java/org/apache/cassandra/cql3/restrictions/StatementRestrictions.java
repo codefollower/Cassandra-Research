@@ -542,6 +542,9 @@ public final class StatementRestrictions
      *
      * @return <code>true</code> if the query returns a range of columns, <code>false</code> otherwise.
      */
+    //isColumnRange()返回false只有两种情况:
+    //1. SimpleSparseCellNameType
+    //2. SimpleDenseCellNameType和CompoundDenseCellNameType且所有的CLUSTERING_COLUMN都在where中出现并且不是Slice查询
     public boolean isColumnRange()
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not dense, composite).
@@ -566,6 +569,7 @@ public final class StatementRestrictions
             numberOfRestrictedColumns += restrictions.size();
 
         return numberOfRestrictedColumns > 1
+                //表示在where子句中出现了CLUSTERING_COLUMN字段
                 || (numberOfRestrictedColumns == 0 && !clusteringColumnsRestrictions.isEmpty())
                 || (numberOfRestrictedColumns != 0
                         && nonPrimaryKeyRestrictions.hasMultipleContains());

@@ -50,25 +50,6 @@ public final class SingleColumnRelation extends Relation
     private final Term.Raw value;
     private final List<Term.Raw> inValues;
 
-//<<<<<<< HEAD
-//    //WHERE token(user_id,f1) > 10时会分开成两次，entity分别是user_id和f1，值都是10
-//    //但是会抛异常:
-//    /*
-//     * java.lang.IllegalArgumentException: null
-//        at java.nio.Buffer.limit(Buffer.java:267) ~[na:1.7.0_10]
-//        at org.apache.cassandra.db.marshal.AbstractCompositeType.getBytes(AbstractCompositeType.java:55) ~[main/:na]
-//        at org.apache.cassandra.db.marshal.AbstractCompositeType.getWithShortLength(AbstractCompositeType.java:64) ~[main/:na]
-//        at org.apache.cassandra.db.marshal.CompositeType.split(CompositeType.java:147) ~[main/:na]
-//        at org.apache.cassandra.cql3.statements.SelectStatement.processColumnFamily(SelectStatement.java:861) ~[main/:na]
-//        at org.apache.cassandra.cql3.statements.SelectStatement.process(SelectStatement.java:840) ~[main/:na]
-//        at org.apache.cassandra.cql3.statements.SelectStatement.processResults(SelectStatement.java:212) ~[main/:na]
-//        at org.apache.cassandra.cql3.statements.SelectStatement.execute(SelectStatement.java:171) ~[main/:na]
-//        at org.apache.cassandra.cql3.statements.SelectStatement.execute(SelectStatement.java:1) ~[main/:na]
-//        at org.apache.cassandra.cql3.QueryProcessor.processStatement(QueryProcessor.java:189) ~[main/:na]
-//        at org.apache.cassandra.cql3.QueryProcessor.process(QueryProcessor.java:222) ~[main/:na]
-//     */
-//    private SingleColumnRelation(ColumnIdentifier.Raw entity, Operator type, Term.Raw value, List<Term.Raw> inValues)
-//=======
     private SingleColumnRelation(ColumnIdentifier.Raw entity, Term.Raw mapKey, Operator type, Term.Raw value, List<Term.Raw> inValues)
     {
         this.entity = entity;
@@ -76,10 +57,6 @@ public final class SingleColumnRelation extends Relation
         this.relationType = type;
         this.value = value;
         this.inValues = inValues;
-//<<<<<<< HEAD
-//        this.onToken = onToken; //比如WHERE token(user_id) > 10时onToken为true
-//=======
-//>>>>>>> a7208383fba67fda025d354c66491c668887602a
     }
 
     /**

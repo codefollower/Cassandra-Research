@@ -41,6 +41,7 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.invalidReq
  *  - SELECT ... WHERE (a, b) < ?
  *  - SELECT ... WHERE (a, b) IN ?
  */
+//只能用于clustering columns
 public class MultiColumnRelation extends Relation
 {
     private final List<ColumnIdentifier.Raw> entities;
