@@ -17,20 +17,23 @@
  */
 package org.apache.cassandra.utils;
 
-import java.nio.ByteBuffer;
-
 public class AlwaysPresentFilter implements IFilter
 {
-    public boolean isPresent(ByteBuffer key)
+    public boolean isPresent(FilterKey key)
     {
         return true;
     }
 
-    public void add(ByteBuffer key) { }
+    public void add(FilterKey key) { }
 
     public void clear() { }
 
     public void close() { }
+
+    public IFilter sharedCopy()
+    {
+        return this;
+    }
 
     public long serializedSize() { return 0; }
 

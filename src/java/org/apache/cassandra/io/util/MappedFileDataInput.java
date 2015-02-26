@@ -20,7 +20,6 @@ package org.apache.cassandra.io.util;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -31,16 +30,19 @@ public class MappedFileDataInput extends AbstractDataInput implements FileDataIn
     private final long segmentOffset;
     private int position;
 
-    //未使用
-    public MappedFileDataInput(FileInputStream stream, String filename, long segmentOffset, int position) throws IOException
-    {
-        FileChannel channel = stream.getChannel();
-        buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, channel.size());
-        this.filename = filename;
-        this.segmentOffset = segmentOffset;
-        this.position = position;
-    }
-
+//<<<<<<< HEAD
+//    //未使用
+//    public MappedFileDataInput(FileInputStream stream, String filename, long segmentOffset, int position) throws IOException
+//    {
+//        FileChannel channel = stream.getChannel();
+//        buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, channel.size());
+//        this.filename = filename;
+//        this.segmentOffset = segmentOffset;
+//        this.position = position;
+//    }
+//
+//=======
+//>>>>>>> 2c15d8212020022f0cf9e101772169b5dc541ae4
     public MappedFileDataInput(MappedByteBuffer buffer, String filename, long segmentOffset, int position)
     {
         assert buffer != null;

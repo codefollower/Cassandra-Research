@@ -81,7 +81,12 @@ public abstract class ColumnFamily implements Iterable<Cell>, IRowCacheEntry
 
     public ColumnFamily cloneMeShallow()
     {
-        return cloneMeShallow(getFactory(), isInsertReversed());
+        return cloneMeShallow(false);
+    }
+
+    public ColumnFamily cloneMeShallow(boolean reversed)
+    {
+        return cloneMeShallow(getFactory(), reversed);
     }
 
     public ColumnFamilyType getType()

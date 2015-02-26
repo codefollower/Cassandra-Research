@@ -19,11 +19,7 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import com.google.common.collect.Sets;
 import org.junit.After;
@@ -177,15 +173,14 @@ public class SSTableRewriterTest extends SchemaLoader
                         if (sstable.openReason == SSTableReader.OpenReason.EARLY)
                         {
                             SSTableReader c = sstables.iterator().next();
-                            long lastKeySize = sstable.getPosition(sstable.last, SSTableReader.Operator.GT).position - sstable.getPosition(sstable.last, SSTableReader.Operator.EQ).position;
                             Collection<Range<Token>> r = Arrays.asList(new Range<>(cfs.partitioner.getMinimumToken(), cfs.partitioner.getMinimumToken()));
                             List<Pair<Long, Long>> tmplinkPositions = sstable.getPositionsForRanges(r);
                             List<Pair<Long, Long>> compactingPositions = c.getPositionsForRanges(r);
                             assertEquals(1, tmplinkPositions.size());
                             assertEquals(1, compactingPositions.size());
                             assertEquals(0, tmplinkPositions.get(0).left.longValue());
-                            // make sure we have one key overlap between the early opened file and the compacting one:
-                            assertEquals(tmplinkPositions.get(0).right.longValue(), compactingPositions.get(0).left + lastKeySize);
+                            // make sure we have no overlap between the early opened file and the compacting one:
+                            assertEquals(tmplinkPositions.get(0).right.longValue(), compactingPositions.get(0).left.longValue());
                             assertEquals(c.uncompressedLength(), compactingPositions.get(0).right.longValue());
                         }
                     }
@@ -228,13 +223,12 @@ public class SSTableRewriterTest extends SchemaLoader
         assertTrue(s != s2);
         assertFileCounts(dir.list(), 2, 3);
 
-        s.setReplacedBy(s2);
-        s2.markObsolete();
-        s.sharedRef().release();
-        s2.sharedRef().release();
-
-        writer.abort(false);
-
+        s.markObsolete();
+        s.selfRef().release();
+        s2.selfRef().release();
+        Thread.sleep(1000);
+        assertFileCounts(dir.list(), 0, 3);
+        writer.abort();
         Thread.sleep(1000);
         int datafiles = assertFileCounts(dir.list(), 0, 0);
         assertEquals(datafiles, 0);
@@ -322,9 +316,11 @@ public class SSTableRewriterTest extends SchemaLoader
         }
         List<SSTableReader> sstables = rewriter.finish();
         assertEquals(files, sstables.size());
-        assertEquals(files + 1, cfs.getSSTables().size());
+        assertEquals(files, cfs.getSSTables().size());
+        assertEquals(1, cfs.getDataTracker().getView().shadowed.size());
         cfs.getDataTracker().markCompactedSSTablesReplaced(compacting, sstables, OperationType.COMPACTION);
         assertEquals(files, cfs.getSSTables().size());
+        assertEquals(0, cfs.getDataTracker().getView().shadowed.size());
         Thread.sleep(1000);
         assertFileCounts(s.descriptor.directory.list(), 0, 0);
         validateCFS(cfs);
@@ -731,7 +727,7 @@ public class SSTableRewriterTest extends SchemaLoader
         for (SSTableReader sstable : cfs.getSSTables())
         {
             assertFalse(sstable.isMarkedCompacted());
-            assertEquals(1, sstable.sharedRef().globalCount());
+            assertEquals(1, sstable.selfRef().globalCount());
             liveDescriptors.add(sstable.descriptor.generation);
         }
         for (File dir : cfs.directories.getCFDirectories())

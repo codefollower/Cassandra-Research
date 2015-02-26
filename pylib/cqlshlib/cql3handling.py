@@ -1013,7 +1013,7 @@ syntax_rules += r'''
                                cf=<columnFamilyName> "(" (
                                    col=<cident> |
                                    "keys(" col=<cident> ")" |
-                                   "fullCollection(" col=<cident> ")"
+                                   "full(" col=<cident> ")"
                                ) ")"
                                ( "USING" <stringLiteral> ( "WITH" "OPTIONS" "=" <mapLiteral> )? )?
                          ;
@@ -1191,8 +1191,8 @@ syntax_rules += r'''
                               ( "SUPERUSER" | "NOSUPERUSER" )?
                               ( "LOGIN" | "NOLOGIN" )?
                        ;
-<roleProperty> ::= "PASSWORD" <stringLiteral>
-                 | "OPTIONS" <mapLiteral>
+<roleProperty> ::= "PASSWORD" "="? <stringLiteral>
+                 | "OPTIONS" "="? <mapLiteral>
                  ;
 
 <dropRoleStatement> ::= "DROP" "ROLE" <rolename>

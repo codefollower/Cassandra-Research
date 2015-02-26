@@ -47,6 +47,8 @@ public interface IAuthorizer //Authorizer受权
     /**
      * Grants a set of permissions on a resource to a role.
      * The opposite of revoke().
+     * This method is optional and may be called internally, so implementations which do
+     * not support it should be sure to throw UnsupportedOperationException.
      *
      * @param performer User who grants the permissions.
      * @param permissions Set of permissions to grant.
@@ -55,6 +57,7 @@ public interface IAuthorizer //Authorizer受权
      *
      * @throws RequestValidationException
      * @throws RequestExecutionException
+     * @throws java.lang.UnsupportedOperationException
      */
     //performer是执行grant语句的人，to才是被受权的人
     void grant(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, RoleResource grantee)
@@ -63,6 +66,8 @@ public interface IAuthorizer //Authorizer受权
     /**
      * Revokes a set of permissions on a resource from a user.
      * The opposite of grant().
+     * This method is optional and may be called internally, so implementations which do
+     * not support it should be sure to throw UnsupportedOperationException.
      *
      * @param performer User who revokes the permissions.
      * @param permissions Set of permissions to revoke.
@@ -71,12 +76,15 @@ public interface IAuthorizer //Authorizer受权
      *
      * @throws RequestValidationException
      * @throws RequestExecutionException
+     * @throws java.lang.UnsupportedOperationException
      */
     void revoke(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, RoleResource revokee)
     throws RequestValidationException, RequestExecutionException;
 
     /**
      * Returns a list of permissions on a resource granted to a role.
+     * This method is optional and may be called internally, so implementations which do
+     * not support it should be sure to throw UnsupportedOperationException.
      *
      * @param performer User who wants to see the permissions.
      * @param permissions Set of Permission values the user is interested in. The result should only include the
@@ -90,6 +98,7 @@ public interface IAuthorizer //Authorizer受权
      *
      * @throws RequestValidationException
      * @throws RequestExecutionException
+     * @throws java.lang.UnsupportedOperationException
      */
     Set<PermissionDetails> list(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, RoleResource grantee)
     throws RequestValidationException, RequestExecutionException;
@@ -98,16 +107,22 @@ public interface IAuthorizer //Authorizer受权
      * Called before deleting a role with DROP ROLE statement (or the alias provided for compatibility,
      * DROP USER) so that a new role with the same name wouldn't inherit permissions of the deleted one in the future.
      * This removes all permissions granted to the Role in question.
+     * This method is optional and may be called internally, so implementations which do
+     * not support it should be sure to throw UnsupportedOperationException.
      *
      * @param revokee The role to revoke all permissions from.
+     * @throws java.lang.UnsupportedOperationException
      */
     void revokeAllFrom(RoleResource revokee);
 
     /**
      * This method is called after a resource is removed (i.e. keyspace, table or role is dropped) and revokes all
      * permissions granted on the IResource in question.
+     * This method is optional and may be called internally, so implementations which do
+     * not support it should be sure to throw UnsupportedOperationException.
      *
      * @param droppedResource The resource to revoke all permissions on.
+     * @throws java.lang.UnsupportedOperationException
      */
     void revokeAllOn(IResource droppedResource);
 

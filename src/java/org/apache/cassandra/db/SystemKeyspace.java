@@ -378,7 +378,8 @@ public final class SystemKeyspace
                 + "range_end text,"
                 + "mean_partition_size bigint,"
                 + "partitions_count bigint,"
-                + "PRIMARY KEY ((keyspace_name), table_name, range_start, range_end))");
+                + "PRIMARY KEY ((keyspace_name), table_name, range_start, range_end))")
+                .gcGraceSeconds(0);
 
     private static CFMetaData compile(String name, String description, String schema)
     {

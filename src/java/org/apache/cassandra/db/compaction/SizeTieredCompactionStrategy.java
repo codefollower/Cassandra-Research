@@ -147,8 +147,8 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         // calculate the total reads/sec across all sstables
         double totalReads = 0.0;
         for (SSTableReader sstr : sstables)
-            if (sstr.readMeter != null)
-                totalReads += sstr.readMeter.twoHourRate();
+            if (sstr.getReadMeter() != null)
+                totalReads += sstr.getReadMeter().twoHourRate();
 
         // if this is a system table with no read meters or we don't have any read rates yet, just return them all
         if (totalReads == 0.0)
@@ -164,11 +164,11 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         while (cutoffIndex < sstables.size())
         {
             SSTableReader sstable = sstables.get(cutoffIndex);
-            if (sstable.readMeter == null)
+            if (sstable.getReadMeter() == null)
             {
                 throw new AssertionError("If you're seeing this exception, please attach your logs to CASSANDRA-8238 to help us debug. "+sstable);
             }
-            double reads = sstable.readMeter.twoHourRate();
+            double reads = sstable.getReadMeter().twoHourRate();
             if (totalColdReads + reads > maxColdReads)
                 break;
 
@@ -317,7 +317,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         // system tables don't have read meters, just use 0.0 for the hotness
         //sstr.readMeter.twoHourRate()是读次数
         //读次数除以预估的key个数
-        return sstr.readMeter == null ? 0.0 : sstr.readMeter.twoHourRate() / sstr.estimatedKeys();
+        return sstr.getReadMeter() == null ? 0.0 : sstr.getReadMeter().twoHourRate() / sstr.estimatedKeys();
     }
 
     public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
@@ -340,7 +340,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
     public Collection<AbstractCompactionTask> getMaximalTask(final int gcBefore)
     {
         Iterable<SSTableReader> filteredSSTables = filterSuspectSSTables(sstables);
-        if (Iterables.isEmpty(sstables))
+        if (Iterables.isEmpty(filteredSSTables))
             return null;
         if (!cfs.getDataTracker().markCompacting(filteredSSTables))
             return null;
