@@ -50,14 +50,7 @@ import static org.apache.cassandra.auth.CassandraRoleManager.consistencyForRole;
  * PasswordAuthenticator requires the use of CassandraRoleManager
  * for storage & retrieval of encryted passwords.
  */
-//对应system_auth.credentials表
-//启动时，会先调用setup()方法
-//    CREATE TABLE system_auth.credentials (
-//        username text,
-//        salted_hash text, //使用BCrypt算法
-//        options map<text,text>, //这个字段目前未使用
-//        PRIMARY KEY(username)
-//    ) WITH gc_grace_seconds=90 * 24 * 60 * 60 // 3 months
+//对应system_auth.roles表
 public class PasswordAuthenticator implements IAuthenticator
 {
     private static final Logger logger = LoggerFactory.getLogger(PasswordAuthenticator.class);
@@ -69,11 +62,9 @@ public class PasswordAuthenticator implements IAuthenticator
     public static final String USERNAME_KEY = "username";
     public static final String PASSWORD_KEY = "password";
 
-//<<<<<<< HEAD
-//    //SELECT salted_hash FROM system_auth.credentials WHERE username = ?
-//    private SelectStatement authenticateStatement;  //在setup中初始化，使用prepare的方式
-//=======
     private static final byte NUL = 0;
+    //在setup中初始化，使用prepare的方式
+    //SELECT salted_hash FROM system_auth.roles WHERE role = ?
     private SelectStatement authenticateStatement;
 
     public static final String LEGACY_CREDENTIALS_TABLE = "credentials";
@@ -89,17 +80,6 @@ public class PasswordAuthenticator implements IAuthenticator
     {
         try
         {
-//<<<<<<< HEAD
-//            //在system_auth.credentials表中按用户名取出对应密码的hash值
-//            ResultMessage.Rows rows = authenticateStatement.execute(QueryState.forInternalCalls(),
-//                                                                    QueryOptions.forInternalCalls(consistencyForUser(username),
-//                                                                                                  Lists.newArrayList(ByteBufferUtil.bytes(username))));
-//            result = UntypedResultSet.create(rows.result);
-//        }
-//        catch (RequestValidationException e)
-//        {
-//            throw new AssertionError(e); // not supposed to happen
-//=======
             // If the legacy users table exists try to verify credentials there. This is to handle the case
             // where the cluster is being upgraded and so is running with mixed versions of the authn tables
             SelectStatement authenticationStatement = Schema.instance.getCFMetaData(AuthKeyspace.NAME, LEGACY_CREDENTIALS_TABLE) == null
@@ -112,50 +92,6 @@ public class PasswordAuthenticator implements IAuthenticator
             logger.debug("Error performing internal authentication", e);
             throw new AuthenticationException(e.toString());
         }
-//<<<<<<< HEAD
-//
-//        //password是明文，result.one().getString(SALTED_HASH)是hash值
-//        if (result.isEmpty() || !BCrypt.checkpw(password, result.one().getString(SALTED_HASH)))
-//            throw new AuthenticationException("Username and/or password are incorrect");
-//
-//        return new AuthenticatedUser(username);
-//    }
-//
-//    //在system_auth.credentials表中新增一条记录只有这两个字段:(username, salted_hash)
-//    //不包含options字段
-//    public void create(String username, Map<Option, Object> options) throws InvalidRequestException, RequestExecutionException
-//    {
-//        String password = (String) options.get(Option.PASSWORD);
-//        if (password == null)
-//            throw new InvalidRequestException("PasswordAuthenticator requires PASSWORD option");
-//
-//        process(String.format("INSERT INTO %s.%s (username, salted_hash) VALUES ('%s', '%s')",
-//                              Auth.AUTH_KS,
-//                              CREDENTIALS_CF,
-//                              escape(username),
-//                              escape(hashpw(password))),
-//                consistencyForUser(username));
-//    }
-//
-//    //按用户名修改system_auth.credentials表中的salted_hash字段值
-//    public void alter(String username, Map<Option, Object> options) throws RequestExecutionException
-//    {
-//        //options map<text,text>, //这个字段目前未使用
-//        process(String.format("UPDATE %s.%s SET salted_hash = '%s' WHERE username = '%s'",
-//                              Auth.AUTH_KS,
-//                              CREDENTIALS_CF,
-//                              escape(hashpw((String) options.get(Option.PASSWORD))),
-//                              escape(username)),
-//                consistencyForUser(username));
-//    }
-//
-//    //删除username对应的记录
-//    public void drop(String username) throws RequestExecutionException
-//    {
-//        process(String.format("DELETE FROM %s.%s WHERE username = '%s'", Auth.AUTH_KS, CREDENTIALS_CF, escape(username)),
-//                consistencyForUser(username));
-//=======
-//>>>>>>> 223d0e755ee0480316f90621ac6389e942c23d97
     }
 
     public Set<DataResource> protectedResources()
@@ -168,33 +104,8 @@ public class PasswordAuthenticator implements IAuthenticator
     {
     }
 
-    public void setup() //由Auth.setup()触发
+    public void setup() //由StorageService.doAuthSetup()触发
     {
-//<<<<<<< HEAD
-//        Auth.setupTable(CREDENTIALS_CF, CREDENTIALS_CF_SCHEMA); //创建system_auth.credentials表
-//
-//        // the delay is here to give the node some time to see its peers - to reduce
-//        // "skipped default user setup: some nodes are were not ready" log spam.
-//        // It's the only reason for the delay.
-//        //见org.apache.cassandra.auth.Auth.setup()的对应注
-//        ScheduledExecutors.nonPeriodicTasks.schedule(new Runnable()
-//        {
-//            public void run()
-//            {
-//              setupDefaultUser(); //创建默认超级用户cassandra/cassandra
-//            }
-//        }, Auth.SUPERUSER_SETUP_DELAY, TimeUnit.MILLISECONDS);
-//
-//        try
-//        {
-//            String query = String.format("SELECT %s FROM %s.%s WHERE username = ?",
-//                                         SALTED_HASH,
-//                                         Auth.AUTH_KS,
-//                                         CREDENTIALS_CF);
-//            authenticateStatement = (SelectStatement) QueryProcessor.parseStatement(query).prepare().statement;
-//        }
-//        catch (RequestValidationException e)
-//=======
         String query = String.format("SELECT %s FROM %s.%s WHERE role = ?",
                                      SALTED_HASH,
                                      AuthKeyspace.NAME,
@@ -226,21 +137,18 @@ public class PasswordAuthenticator implements IAuthenticator
 
     public SaslNegotiator newSaslNegotiator()
     {
-//<<<<<<< HEAD
-//        //见https://code.google.com/p/jbcrypt/
-//        return BCrypt.hashpw(password, BCrypt.gensalt(GENSALT_LOG2_ROUNDS));
-//=======
         return new PlainTextSaslAuthenticator();
     }
 
     private AuthenticatedUser doAuthenticate(String username, String password, SelectStatement authenticationStatement)
     throws RequestExecutionException, AuthenticationException
     {
+        //在system_auth.credentials表中按用户名取出对应密码的hash值
         ResultMessage.Rows rows = authenticationStatement.execute(QueryState.forInternalCalls(),
                                                                   QueryOptions.forInternalCalls(consistencyForRole(username),
                                                                                                 Lists.newArrayList(ByteBufferUtil.bytes(username))));
         UntypedResultSet result = UntypedResultSet.create(rows.result);
-
+        //password是明文，result.one().getString(SALTED_HASH)是hash值
         if ((result.isEmpty() || !result.one().has(SALTED_HASH)) || !BCrypt.checkpw(password, result.one().getString(SALTED_HASH)))
             throw new AuthenticationException("Username and/or password are incorrect");
 
@@ -258,11 +166,7 @@ public class PasswordAuthenticator implements IAuthenticator
         private String username;
         private String password;
 
-//<<<<<<< HEAD
-//        //在org.apache.cassandra.transport.messages.AuthResponse.execute(QueryState)调用
-//        @Override
-//=======
-//>>>>>>> 223d0e755ee0480316f90621ac6389e942c23d97
+        //在org.apache.cassandra.transport.messages.AuthResponse.execute(QueryState)调用
         public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
         {
             decodeCredentials(clientResponse);
@@ -275,11 +179,7 @@ public class PasswordAuthenticator implements IAuthenticator
             return complete;
         }
 
-//<<<<<<< HEAD
-//        //验证用户名和密码是否正确
-//        @Override
-//=======
-//>>>>>>> 223d0e755ee0480316f90621ac6389e942c23d97
+        //验证用户名和密码是否正确
         public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
         {
             if (!complete)
@@ -300,11 +200,8 @@ public class PasswordAuthenticator implements IAuthenticator
          * would expect
          * @throws javax.security.sasl.SaslException
          */
-//<<<<<<< HEAD
-//        //编码方式见com.datastax.driver.core.PlainTextAuthProvider.PlainTextAuthenticator.initialResponse()
-//        //在org.apache.cassandra.transport.Client.encodeCredentialsForSasl(Map<String, String>)也有
-//        private Map<String, String> decodeCredentials(byte[] bytes) throws AuthenticationException
-//=======
+        //编码方式见com.datastax.driver.core.PlainTextAuthProvider.PlainTextAuthenticator.initialResponse()
+        //在org.apache.cassandra.transport.Client.encodeCredentialsForSasl(Map<String, String>)也有
         private void decodeCredentials(byte[] bytes) throws AuthenticationException
         {
             logger.debug("Decoding credentials from client token");

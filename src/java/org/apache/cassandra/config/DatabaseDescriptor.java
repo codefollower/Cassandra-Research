@@ -48,10 +48,9 @@ import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.memory.*;
 
-//重点关注applyConfig、loadSchemas两个方法
+//重点关注applyConfig方法
 public class DatabaseDescriptor
 {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseDescriptor.class);
@@ -82,12 +81,8 @@ public class DatabaseDescriptor
 
     private static SSTableFormat.Type sstable_format = SSTableFormat.Type.BIG;
 
-//<<<<<<< HEAD
-//    private static IAuthenticator authenticator = new AllowAllAuthenticator(); //认证
-//    private static IAuthorizer authorizer = new AllowAllAuthorizer(); //受权
-//=======
-    private static IAuthenticator authenticator = new AllowAllAuthenticator();
-    private static IAuthorizer authorizer = new AllowAllAuthorizer();
+    private static IAuthenticator authenticator = new AllowAllAuthenticator(); //认证
+    private static IAuthorizer authorizer = new AllowAllAuthorizer(); //受权
     private static IRoleManager roleManager = new CassandraRoleManager();
 
     private static IRequestScheduler requestScheduler;
@@ -590,14 +585,6 @@ public class DatabaseDescriptor
             conf.server_encryption_options = conf.encryption_options;
         }
 
-//<<<<<<< HEAD
-//        // hardcoded system keyspace
-//        //指system中的列族，不包含system_auth和system_traces
-//        //把KSMetaData和CFMetaData放到Schema的keyspaces和cfIdMap两个字段中
-//        Schema.instance.load(SystemKeyspace.definition()); //这行执行完后只是把元数据放到内存中，还没有保存到硬盘
-//
-//=======
-//>>>>>>> bf599fb5b062cbcc652da78b7d699e7a01b949ad
         // load the seeds for node contact points
         if (conf.seed_provider == null)
         {
@@ -630,58 +617,6 @@ public class DatabaseDescriptor
         return conf.dynamic_snitch ? new DynamicEndpointSnitch(snitch) : snitch;
     }
 
-//<<<<<<< HEAD
-//    /** load keyspace (keyspace) definitions, but do not initialize the keyspace instances. */
-//    public static void loadSchemas()
-//    {
-//        //读取schema_keyspaces表
-//        ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_TABLE);
-//
-//        // if keyspace with definitions is empty try loading the old way
-//        if (schemaCFS.estimateKeys() == 0) //相当于schema_keyspaces表中没有记录，第一次启动时就是这种情况
-//        {
-//            logger.info("Couldn't detect any schema definitions in local storage.");
-//            // peek around the data directories to see if anything is there.
-//            if (hasExistingNoSystemTables())
-//                logger.info("Found keyspace data in data directories. Consider using cqlsh to define your schema.");
-//            else
-//                logger.info("To create keyspaces and column families, see 'help create' in cqlsh.");
-//        }
-//        else
-//        {
-//            Schema.instance.load(DefsTables.loadFromKeyspace());
-//        }
-//
-//        Schema.instance.updateVersion();
-//    }
-//
-//    private static boolean hasExistingNoSystemTables()
-//    {
-//        for (String dataDir : getAllDataFileLocations())
-//        {
-//            File dataPath = new File(dataDir);
-//            if (dataPath.exists() && dataPath.isDirectory())
-//            {
-//                // see if there are other directories present.
-//                int dirCount = dataPath.listFiles(new FileFilter()
-//                {
-//                    //除"system"之外的目录名
-//                    public boolean accept(File pathname)
-//                    {
-//                        return pathname.isDirectory() && !pathname.getName().equals(SystemKeyspace.NAME);
-//                    }
-//                }).length;
-//
-//                if (dirCount > 0)
-//                    return true;
-//            }
-//        }
-//
-//        return false;
-//    }
-//
-//=======
-//>>>>>>> bf599fb5b062cbcc652da78b7d699e7a01b949ad
     public static IAuthenticator getAuthenticator()
     {
         return authenticator;

@@ -55,7 +55,6 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.StorageMetrics;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.tracing.Tracing;
@@ -237,8 +236,6 @@ public class CassandraDaemon
                 // if permissions aren't sufficient, stop cassandra.
                 exitOrFail(3, "Insufficient permissions on directory " + dataDir);
             }
-
-
         }
 
         //这里会触发key、row缓存的初始化

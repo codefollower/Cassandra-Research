@@ -109,32 +109,20 @@ public class CassandraAuthorizer implements IAuthorizer
         return permissions;
     }
 
-//<<<<<<< HEAD
-//    //performer参数未使用
-//    //把resource上的permissions付给to
-//    public void grant(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String to)
-//    throws RequestExecutionException
-//    {
-//        modify(permissions, resource, to, "+"); //permissions字段是set类型，所以用"+"
-//    }
-//
-//    //把from上对resource的permissions撤消
-//    public void revoke(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String from)
-//    throws RequestExecutionException
-//    {
-//        modify(permissions, resource, from, "-"); //permissions字段是set类型，所以用"-"
-//=======
+    //performer参数未使用
+    //把resource上的permissions付给grantee
     public void grant(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, RoleResource grantee)
     throws RequestValidationException, RequestExecutionException
     {
-        modifyRolePermissions(permissions, resource, grantee, "+");
+        modifyRolePermissions(permissions, resource, grantee, "+"); //permissions字段是set类型，所以用"+"
         addLookupEntry(resource, grantee);
     }
 
+    //把revokee上对resource的permissions撤消
     public void revoke(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, RoleResource revokee)
     throws RequestValidationException, RequestExecutionException
     {
-        modifyRolePermissions(permissions, resource, revokee, "-");
+        modifyRolePermissions(permissions, resource, revokee, "-"); //permissions字段是set类型，所以用"-"
         removeLookupEntry(resource, revokee);
     }
 
@@ -410,7 +398,7 @@ public class CassandraAuthorizer implements IAuthorizer
 //        //2. 然后再一条条删除
 //        for (UntypedResultSet.Row row : rows)
 //=======
-    public void setup()
+    public void setup() //由StorageService.doAuthSetup()触发
     {
         authorizeRoleStatement = prepare(ROLE, AuthKeyspace.ROLE_PERMISSIONS);
 
@@ -439,12 +427,6 @@ public class CassandraAuthorizer implements IAuthorizer
         return (SelectStatement) QueryProcessor.getStatement(query, ClientState.forInternalCalls()).statement;
     }
 
-//<<<<<<< HEAD
-//    public void setup() //由Auth.setup()触发
-//    {
-//        Auth.setupTable(PERMISSIONS_CF, PERMISSIONS_CF_SCHEMA);  //创建permissions表
-//
-//=======
     /**
      * Copy legacy authz data from the system_auth.permissions table to the new system_auth.role_permissions table and
      * also insert entries into the reverse lookup table.

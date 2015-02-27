@@ -40,7 +40,7 @@ public class DropRoleStatement extends AuthenticationStatement
     public void checkAccess(ClientState state) throws UnauthorizedException
     {
         super.checkPermission(state, Permission.DROP, role);
-        if (hasSuperuserStatus(role) && !state.getUser().isSuper())
+        if (hasSuperuserStatus(role) && !state.getUser().isSuper()) //只有超级用户才有drop user的权限
             throw new UnauthorizedException("Only superusers can drop a role with superuser status");
     }
 
@@ -53,19 +53,7 @@ public class DropRoleStatement extends AuthenticationStatement
             throw new InvalidRequestException(String.format("%s doesn't exist", role.getRoleName()));
 
         AuthenticatedUser user = state.getUser();
-//<<<<<<< HEAD:src/java/org/apache/cassandra/cql3/statements/DropUserStatement.java
-//        //当前用户不能删除自己
-//        if (user != null && user.getName().equals(username))
-//            throw new InvalidRequestException("Users aren't allowed to DROP themselves");
-//    }
-//
-//    public void checkAccess(ClientState state) throws UnauthorizedException
-//    {
-//        //只有超级用户才有drop user的权限
-//        if (!state.getUser().isSuper())
-//            throw new UnauthorizedException("Only superusers are allowed to perform DROP USER queries");
-//=======
-        if (user != null && user.getName().equals(role.getRoleName()))
+        if (user != null && user.getName().equals(role.getRoleName())) //当前用户不能删除自己
             throw new InvalidRequestException("Cannot DROP primary role for current login");
     }
 
@@ -76,13 +64,6 @@ public class DropRoleStatement extends AuthenticationStatement
         if (ifExists && !DatabaseDescriptor.getRoleManager().isExistingRole(role))
             return null;
 
-//<<<<<<< HEAD:src/java/org/apache/cassandra/cql3/statements/DropUserStatement.java
-//        // clean up permissions after the dropped user.
-//        //删除permissions、users、credentials三个表中与username相关的记录
-//        DatabaseDescriptor.getAuthorizer().revokeAll(username);
-//        Auth.deleteUser(username);
-//        DatabaseDescriptor.getAuthenticator().drop(username);
-//=======
         // clean up grants and permissions of/on the dropped role.
         DatabaseDescriptor.getRoleManager().dropRole(state.getUser(), role);
         DatabaseDescriptor.getAuthorizer().revokeAllFrom(role);

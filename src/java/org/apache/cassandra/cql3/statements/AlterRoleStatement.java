@@ -88,11 +88,6 @@ public class AlterRoleStatement extends AuthenticationStatement
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
         if (!opts.isEmpty())
-//<<<<<<< HEAD:src/java/org/apache/cassandra/cql3/statements/AlterUserStatement.java
-//            DatabaseDescriptor.getAuthenticator().alter(username, opts.getOptions()); //这里是用UPDATE
-//        if (superuser != null)
-//            Auth.insertUser(username, superuser.booleanValue()); //没有更新操作，还是用insert
-//=======
             DatabaseDescriptor.getRoleManager().alterRole(state.getUser(), role, opts.getOptions());
         return null;
     }

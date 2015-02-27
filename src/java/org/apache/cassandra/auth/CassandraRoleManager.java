@@ -544,7 +544,7 @@ public class CassandraRoleManager implements IRoleManager
 
     private static String hashpw(String password)
     {
-        return BCrypt.hashpw(password, BCrypt.gensalt(GENSALT_LOG2_ROUNDS));
+        return BCrypt.hashpw(password, BCrypt.gensalt(GENSALT_LOG2_ROUNDS)); //见https://code.google.com/p/jbcrypt/
     }
 
     private static String escape(String name)

@@ -29,7 +29,6 @@ import org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.NativeAllocator;
-import org.apache.cassandra.utils.FBUtilities;
 import org.supercsv.io.CsvListReader;
 import org.supercsv.prefs.CsvPreference;
 

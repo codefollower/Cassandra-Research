@@ -48,12 +48,6 @@ public class RoleOptions
     {
         for (IRoleManager.Option option : options.keySet())
         {
-//<<<<<<< HEAD:src/java/org/apache/cassandra/cql3/UserOptions.java
-//            //只有org.apache.cassandra.auth.PasswordAuthenticator类有选项参数
-//            if (!DatabaseDescriptor.getAuthenticator().supportedOptions().contains(option))
-//                throw new InvalidRequestException(String.format("%s doesn't support %s option",
-//                                                                DatabaseDescriptor.getAuthenticator().getClass().getName(),
-//=======
             if (!DatabaseDescriptor.getRoleManager().supportedOptions().contains(option))
                 throw new InvalidRequestException(String.format("%s doesn't support %s",
                                                                 DatabaseDescriptor.getRoleManager().getClass().getName(),

@@ -67,7 +67,7 @@ public class CommitLogArchiver
         try
         {
             stream = getClass().getClassLoader().getResourceAsStream("commitlog_archiving.properties");
-            getClass().getClassLoader().getResource("commitlog_archiving.properties");
+            getClass().getClassLoader().getResource("commitlog_archiving.properties"); //我加上的，看看这文件在哪
 
             if (stream == null)
             {
