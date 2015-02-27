@@ -38,7 +38,7 @@ import org.apache.cassandra.utils.MD5Digest;
 
 import static org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 
-//如果不想用正式的java-driver，可以通过这类个做些简单的测试，
+//如果不想用正式的java-driver，可以通过这个类做些简单的测试，
 public class Client extends SimpleClient
 {
 	 //我加上的

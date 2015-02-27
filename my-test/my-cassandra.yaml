@@ -44,8 +44,9 @@ incremental_backups: true
 #flush_largest_memtables_at: 1.0
 compaction_throughput_mb_per_sec: 0
 
-authenticator: org.apache.cassandra.auth.PasswordAuthenticator
-authorizer: org.apache.cassandra.auth.CassandraAuthorizer
+authenticator: PasswordAuthenticator
+authorizer: CassandraAuthorizer
+role_manager: CassandraRoleManager
 
 row_cache_size_in_mb: 5
 row_cache_save_period: 14400

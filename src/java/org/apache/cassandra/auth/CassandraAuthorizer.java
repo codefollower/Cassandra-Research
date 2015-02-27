@@ -50,13 +50,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * user permissions internally in C* using the system_auth.role_permissions
  * table.
  */
-////对应system_auth.permissions表
-//    CREATE TABLE system_auth.permissions (
-//        username text,
-//        resource text,
-//        permissions set<text>,
-//        PRIMARY KEY(username, resource)
-//    ) WITH gc_grace_seconds=90 * 24 * 60 * 60 // 3 months
 public class CassandraAuthorizer implements IAuthorizer
 {
     private static final Logger logger = LoggerFactory.getLogger(CassandraAuthorizer.class);
@@ -69,13 +62,6 @@ public class CassandraAuthorizer implements IAuthorizer
     public static final String USERNAME = "username";
     public static final String USER_PERMISSIONS = "permissions";
 
-//<<<<<<< HEAD
-//    //SELECT permissions FROM system_auth.permissions WHERE username = ? AND resource = ?
-//    private SelectStatement authorizeStatement; //在setup中初始化，使用prepare的方式
-//
-//    // Returns every permission on the resource granted to the user.
-//    //看看user在resource上有什么权限(Permission)，这是一个查询操作，并不是GRANT或REVOKE
-//=======
     private SelectStatement authorizeRoleStatement;
     private SelectStatement legacyAuthorizeRoleStatement;
 
@@ -280,20 +266,14 @@ public class CassandraAuthorizer implements IAuthorizer
     // If the user requesting 'LIST PERMISSIONS' is not a superuser OR their username doesn't match 'of', we
     // throw UnauthorizedException. So only a superuser can view everybody's permissions. Regular users are only
     // allowed to see their own permissions.
-//<<<<<<< HEAD
-//    //查看用户"of"在指定资源"resource"上的权限细节(权限类型只限定在Set<Permission> permissions中指定的类型)
-//    public Set<PermissionDetails> list(AuthenticatedUser performer, Set<Permission> permissions, IResource resource, String of)
-//    throws RequestValidationException, RequestExecutionException
-//    {
-//        //如果不是超级用户，不能看别人的权限，只能看自己的。
-//        if (!performer.isSuper() && !performer.getName().equals(of))
-//=======
+    //查看用户"grantee"在指定资源"resource"上的权限细节(权限类型只限定在Set<Permission> permissions中指定的类型)
     public Set<PermissionDetails> list(AuthenticatedUser performer,
                                        Set<Permission> permissions,
                                        IResource resource,
                                        RoleResource grantee)
     throws RequestValidationException, RequestExecutionException
     {
+        //如果不是超级用户，不能看别人的权限，只能看自己的
         if (!performer.isSuper() && !performer.getRoles().contains(grantee))
             throw new UnauthorizedException(String.format("You are not authorized to view %s's permissions",
                                                           grantee == null ? "everyone" : grantee.getRoleName()));
@@ -378,26 +358,6 @@ public class CassandraAuthorizer implements IAuthorizer
     {
     }
 
-//<<<<<<< HEAD
-//        UntypedResultSet rows;
-//        try
-//        {
-//            // TODO: switch to secondary index on 'resource' once https://issues.apache.org/jira/browse/CASSANDRA-5125 is resolved.
-//            //1. 先找到拥有droppedResource这个资源权限的所有用户
-//            rows = process(String.format("SELECT username FROM %s.%s WHERE resource = '%s' ALLOW FILTERING",
-//                                         Auth.AUTH_KS,
-//                                         PERMISSIONS_CF,
-//                                         escape(droppedResource.getName())));
-//        }
-//        catch (RequestExecutionException e)
-//        {
-//            logger.warn("CassandraAuthorizer failed to revoke all permissions on {}: {}", droppedResource, e);
-//            return;
-//        }
-//
-//        //2. 然后再一条条删除
-//        for (UntypedResultSet.Row row : rows)
-//=======
     public void setup() //由StorageService.doAuthSetup()触发
     {
         authorizeRoleStatement = prepare(ROLE, AuthKeyspace.ROLE_PERMISSIONS);

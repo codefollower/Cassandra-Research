@@ -270,11 +270,8 @@ public class Server implements CassandraDaemon.Server
             this.server = server;
         }
 
-//<<<<<<< HEAD
-//        //收到消息时的触发顺序: Frame.Decoder => frameDecompressor => messageDecoder => executionHandler => dispatcher
-//        //发送响应时的顺序: messageEncoder => frameCompressor => frameEncoder
-//        public ChannelPipeline getPipeline() throws Exception
-//=======
+        //收到消息时的触发顺序: Frame.Decoder => frameDecompressor => messageDecoder => executionHandler => dispatcher
+        //发送响应时的顺序: messageEncoder => frameCompressor => frameEncoder
         protected void initChannel(Channel channel) throws Exception
         {
             ChannelPipeline pipeline = channel.pipeline();

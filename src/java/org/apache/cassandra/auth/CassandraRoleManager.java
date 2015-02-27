@@ -167,6 +167,7 @@ public class CassandraRoleManager implements IRoleManager
         return alterableOptions;
     }
 
+    //分布式的
     public void createRole(AuthenticatedUser performer, RoleResource role, Map<Option, Object> options)
     throws RequestValidationException, RequestExecutionException
     {

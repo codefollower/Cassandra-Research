@@ -32,9 +32,9 @@ import com.google.common.collect.Sets;
 public enum Permission
 {
     @Deprecated
-    READ,
+    READ, //已经没有任何代码用到
     @Deprecated
-    WRITE,
+    WRITE, //已经没有任何代码用到
 
     // schema and role management
     // CREATE, ALTER and DROP permissions granted on an appropriate DataResource are required for

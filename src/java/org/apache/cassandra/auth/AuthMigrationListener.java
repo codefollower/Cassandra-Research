@@ -27,11 +27,13 @@ public class AuthMigrationListener extends MigrationListener
 {
     public void onDropKeyspace(String ksName)
     {
+        //删除与ksName相关的所有权限
         DatabaseDescriptor.getAuthorizer().revokeAllOn(DataResource.keyspace(ksName));
     }
 
     public void onDropColumnFamily(String ksName, String cfName)
     {
+        //删除与ksName、cfName相关的所有权限
         DatabaseDescriptor.getAuthorizer().revokeAllOn(DataResource.table(ksName, cfName));
     }
 }

@@ -116,10 +116,7 @@ public class ServerConnection extends Connection
         }
     }
 
-//<<<<<<< HEAD
-//    //在org.apache.cassandra.transport.messages.AuthResponse.execute(QueryState)调用
-//    public SaslAuthenticator getAuthenticator()
-//=======
+    //在org.apache.cassandra.transport.messages.AuthResponse.execute(QueryState)调用
     public IAuthenticator.SaslNegotiator getSaslNegotiator()
     {
         if (saslNegotiator == null)
