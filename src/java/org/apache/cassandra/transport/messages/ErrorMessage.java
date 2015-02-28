@@ -21,6 +21,7 @@ import java.util.List;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.CodecException;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -326,8 +327,7 @@ public class ErrorMessage extends Message.Response
         return new WrappedException(t, streamId);
     }
 
-    @SuppressWarnings("serial")
-    private static class WrappedException extends RuntimeException
+    public static class WrappedException extends RuntimeException
     {
         private final int streamId;
 
@@ -335,6 +335,12 @@ public class ErrorMessage extends Message.Response
         {
             super(cause);
             this.streamId = streamId;
+        }
+
+        @VisibleForTesting
+        public int getStreamId()
+        {
+            return this.streamId;
         }
     }
 
