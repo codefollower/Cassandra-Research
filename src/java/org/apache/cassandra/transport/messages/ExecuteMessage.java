@@ -29,6 +29,7 @@ import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.statements.ParsedStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
+import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.*;
@@ -100,7 +101,7 @@ public class ExecuteMessage extends Message.Request
     {
         try
         {
-            QueryHandler handler = state.getClientState().getCQLQueryHandler();
+            QueryHandler handler = ClientState.getCQLQueryHandler(); //state.getClientState().getCQLQueryHandler();
             ParsedStatement.Prepared prepared = handler.getPrepared(statementId);
             if (prepared == null)
                 throw new PreparedQueryNotFoundException(statementId);

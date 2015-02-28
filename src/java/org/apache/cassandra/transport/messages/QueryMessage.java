@@ -26,6 +26,7 @@ import io.netty.buffer.ByteBuf;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.*;
@@ -117,7 +118,8 @@ public class QueryMessage extends Message.Request
                 Tracing.instance.begin("Execute CQL3 query", builder.build());
             }
 
-            Message.Response response = state.getClientState().getCQLQueryHandler().process(query, state, options);
+            //Message.Response response = state.getClientState().getCQLQueryHandler().process(query, state, options);
+            Message.Response response = ClientState.getCQLQueryHandler().process(query, state, options);
             if (options.skipMetadata() && response instanceof ResultMessage.Rows)
                 ((ResultMessage.Rows)response).result.metadata.setSkipMetadata();
 

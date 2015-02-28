@@ -239,7 +239,7 @@ public abstract class Message
     @ChannelHandler.Sharable
     public static class ProtocolDecoder extends MessageToMessageDecoder<Frame>
     {   //注意: 这个方法不单纯只负责Request，还负责Response的解码
-        public void decode(ChannelHandlerContext ctx, Frame frame, List results)
+        public void decode(ChannelHandlerContext ctx, Frame frame, List<Object> results)
         {
             boolean isRequest = frame.header.type.direction == Direction.REQUEST;
             boolean isTracing = frame.header.flags.contains(Frame.Header.Flag.TRACING);
@@ -287,7 +287,7 @@ public abstract class Message
     @ChannelHandler.Sharable
     public static class ProtocolEncoder extends MessageToMessageEncoder<Message>
     {
-        public void encode(ChannelHandlerContext ctx, Message message, List results)
+        public void encode(ChannelHandlerContext ctx, Message message, List<Object> results)
         {
             Connection connection = ctx.channel().attr(Connection.attributeKey).get();
             // The only case the connection can be null is when we send the initial STARTUP message (client side thus)
@@ -301,16 +301,12 @@ public abstract class Message
             Codec<Message> codec = (Codec<Message>)message.type.codec;
             try
             {
-//<<<<<<< HEAD
-//                //执行QueryMessage、PrepareMessage、ExecuteMessage、BatchMessage时才有可能返回不为null的tracingId
-//                UUID tracingId = ((Response)message).getTracingId(); //tracingId的长度是16字节
-//                if (tracingId != null)
-//=======
                 int messageSize = codec.encodedSize(message, version);
                 ByteBuf body;
                 if (message instanceof Response)
                 {
-                    UUID tracingId = ((Response)message).getTracingId();
+                    //执行QueryMessage、PrepareMessage、ExecuteMessage、BatchMessage时才有可能返回不为null的tracingId
+                    UUID tracingId = ((Response)message).getTracingId(); //tracingId的长度是16字节
                     if (tracingId != null)
                     {
                         body = CBUtil.allocator.buffer(CBUtil.sizeOfUUID(tracingId) + messageSize);

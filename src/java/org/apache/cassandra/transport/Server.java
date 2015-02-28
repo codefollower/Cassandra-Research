@@ -191,6 +191,7 @@ public class Server implements CassandraDaemon.Server
         });
     }
 
+    @SuppressWarnings("deprecation")
     private void close()
     {
         // Close opened connections
@@ -253,7 +254,7 @@ public class Server implements CassandraDaemon.Server
         }
     }
 
-    private static class Initializer extends ChannelInitializer
+    private static class Initializer extends ChannelInitializer<Channel>
     {
         // Stateless handlers
         private static final Message.ProtocolDecoder messageDecoder = new Message.ProtocolDecoder();

@@ -22,6 +22,7 @@ import java.util.UUID;
 import com.google.common.collect.ImmutableMap;
 import io.netty.buffer.ByteBuf;
 
+import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.*;
@@ -74,7 +75,8 @@ public class PrepareMessage extends Message.Request
                 Tracing.instance.begin("Preparing CQL3 query", ImmutableMap.of("query", query));
             }
 
-            Message.Response response = state.getClientState().getCQLQueryHandler().prepare(query, state);
+            //Message.Response response = state.getClientState().getCQLQueryHandler().prepare(query, state);
+            Message.Response response = ClientState.getCQLQueryHandler().prepare(query, state);
 
             if (tracingId != null)
                 response.setTracingId(tracingId);

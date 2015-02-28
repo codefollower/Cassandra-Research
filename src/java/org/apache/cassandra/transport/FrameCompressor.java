@@ -132,6 +132,7 @@ public interface FrameCompressor
      * it feels like putting little-endian here would be a annoying trap for
      * client writer.
      */
+    @SuppressWarnings("deprecation")
     public static class LZ4Compressor implements FrameCompressor
     {
         public static final LZ4Compressor instance = new LZ4Compressor();
