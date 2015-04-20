@@ -22,6 +22,7 @@ import java.util.List;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.QueryOptions;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.IndexExpression;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -46,6 +47,8 @@ interface Restrictions
      */
     public boolean usesFunction(String ksName, String functionName);
 
+    public Iterable<Function> getFunctions();
+
     /**
      * Check if the restriction is on indexed columns.
      *
@@ -69,9 +72,9 @@ interface Restrictions
                                      throws InvalidRequestException;
 
     /**
-     * Checks if this <code>SingleColumnPrimaryKeyRestrictions</code> is empty or not.
+     * Checks if this <code>PrimaryKeyRestrictionSet</code> is empty or not.
      *
-     * @return <code>true</code> if this <code>SingleColumnPrimaryKeyRestrictions</code> is empty, <code>false</code> otherwise.
+     * @return <code>true</code> if this <code>PrimaryKeyRestrictionSet</code> is empty, <code>false</code> otherwise.
      */
     boolean isEmpty();
 

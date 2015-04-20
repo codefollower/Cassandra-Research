@@ -41,22 +41,24 @@ public interface CQL3Type
     //16个本地类型
     public enum Native implements CQL3Type
     {
-        ASCII    (AsciiType.instance), //与TEXT类似，但是使用US-ASCII编码，而TEXT用UTF-8
-        BIGINT   (LongType.instance),
-        BLOB     (BytesType.instance),
-        BOOLEAN  (BooleanType.instance),
-        COUNTER  (CounterColumnType.instance),
-        DECIMAL  (DecimalType.instance),
-        DOUBLE   (DoubleType.instance),
-        FLOAT    (FloatType.instance),
-        INET     (InetAddressType.instance),
-        INT      (Int32Type.instance),
-        TEXT     (UTF8Type.instance),
-        TIMESTAMP(TimestampType.instance),
-        UUID     (UUIDType.instance),
-        VARCHAR  (UTF8Type.instance),
-        VARINT   (IntegerType.instance), //Int32Type对应int类型，而IntegerType对应BigInteger
-        TIMEUUID (TimeUUIDType.instance);
+        ASCII       (AsciiType.instance), //与TEXT类似，但是使用US-ASCII编码，而TEXT用UTF-8
+        BIGINT      (LongType.instance),
+        BLOB        (BytesType.instance),
+        BOOLEAN     (BooleanType.instance),
+        COUNTER     (CounterColumnType.instance),
+        DECIMAL     (DecimalType.instance),
+        DOUBLE      (DoubleType.instance),
+        FLOAT       (FloatType.instance),
+        INET        (InetAddressType.instance),
+        INT         (Int32Type.instance),
+        TEXT        (UTF8Type.instance),
+        TIMESTAMP   (TimestampType.instance),
+        UUID        (UUIDType.instance),
+        VARCHAR     (UTF8Type.instance),
+        VARINT      (IntegerType.instance), //Int32Type对应int类型，而IntegerType对应BigInteger
+        TIMEUUID    (TimeUUIDType.instance),
+        DATE        (SimpleDateType.instance),
+        TIME        (TimeType.instance);
 
         private final AbstractType<?> type;
 

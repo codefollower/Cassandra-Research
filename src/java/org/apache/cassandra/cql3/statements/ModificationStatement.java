@@ -20,19 +20,21 @@ package org.apache.cassandra.cql3.statements;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import com.google.common.base.Function;
+import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.restrictions.Restriction;
 import org.apache.cassandra.cql3.restrictions.SingleColumnRestriction;
 import org.apache.cassandra.cql3.selection.Selection;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CBuilder;
 import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.CompositesBuilder;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.marshal.BooleanType;
@@ -43,6 +45,10 @@ import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.Pair;
+
+import static org.apache.cassandra.cql3.statements.RequestValidations.checkFalse;
+import static org.apache.cassandra.cql3.statements.RequestValidations.checkNotNull;
+import static org.apache.cassandra.cql3.statements.RequestValidations.invalidRequest;
 
 /*
  * Abstract parent class of individual modifications, i.e. INSERT, UPDATE and DELETE.
@@ -75,7 +81,8 @@ public abstract class ModificationStatement implements CQLStatement
     private boolean setsStaticColumns;
     private boolean setsRegularColumns;
 
-    private final Function<ColumnCondition, ColumnDefinition> getColumnForCondition = new Function<ColumnCondition, ColumnDefinition>()
+    private final com.google.common.base.Function<ColumnCondition, ColumnDefinition> getColumnForCondition =
+      new com.google.common.base.Function<ColumnCondition, ColumnDefinition>()
     {
         public ColumnDefinition apply(ColumnCondition cond)
         {
@@ -91,26 +98,56 @@ public abstract class ModificationStatement implements CQLStatement
         this.attrs = attrs;
     }
 
-    public boolean usesFunction(String ksName, String functionName)
+    public boolean usesFunction(String ksName, final String functionName)
     {
         if (attrs.usesFunction(ksName, functionName))
             return true;
+
         for (Restriction restriction : processedKeys.values())
-            if (restriction != null && restriction.usesFunction(ksName, functionName))
+            if (restriction.usesFunction(ksName, functionName))
                 return true;
-        for (Operation operation : columnOperations)
-            if (operation != null && operation.usesFunction(ksName, functionName))
-                return true;
-        for (ColumnCondition condition : columnConditions)
-            if (condition != null && condition.usesFunction(ksName, functionName))
-                return true;
-        for (ColumnCondition condition : staticConditions)
-            if (condition != null && condition.usesFunction(ksName, functionName))
-                return true;
+
+        if (columnOperations != null)
+            for (Operation operation : columnOperations)
+                if (operation.usesFunction(ksName, functionName))
+                    return true;
+
+        if (columnConditions != null)
+            for (ColumnCondition condition : columnConditions)
+                if (condition.usesFunction(ksName, functionName))
+                    return true;
+
+        if (staticConditions != null)
+            for (ColumnCondition condition : staticConditions)
+                if (condition.usesFunction(ksName, functionName))
+                    return true;
+
         return false;
     }
 
     //update和insert返回true，delete返回false
+    public Iterable<Function> getFunctions()
+    {
+        Iterable<Function> functions = attrs.getFunctions();
+
+        for (Restriction restriction : processedKeys.values())
+                functions = Iterables.concat(functions, restriction.getFunctions());
+
+        if (columnOperations != null)
+            for (Operation operation : columnOperations)
+                functions = Iterables.concat(functions, operation.getFunctions());
+
+        if (columnConditions != null)
+            for (ColumnCondition condition : columnConditions)
+                functions = Iterables.concat(functions, condition.getFunctions());
+
+        if (staticConditions != null)
+            for (ColumnCondition condition : staticConditions)
+                functions = Iterables.concat(functions, condition.getFunctions());
+
+        return functions;
+    }
+
     public abstract boolean requireFullClusteringKey();
     public abstract void addUpdateForKey(ColumnFamily updates, ByteBuffer key, Composite prefix, UpdateParameters params) throws InvalidRequestException;
 
@@ -156,6 +193,9 @@ public abstract class ModificationStatement implements CQLStatement
         // CAS updates can be used to simulate a SELECT query, so should require Permission.SELECT as well.
         if (hasConditions())
             state.hasColumnFamilyAccess(keyspace(), columnFamily(), Permission.SELECT);
+
+        for (Function function : getFunctions())
+            state.ensureHasPermission(Permission.EXECUTE, function);
     }
 
     public void validate(ClientState state) throws InvalidRequestException
@@ -322,41 +362,40 @@ public abstract class ModificationStatement implements CQLStatement
     public List<ByteBuffer> buildPartitionKeyNames(QueryOptions options)
     throws InvalidRequestException
     {
-        CBuilder keyBuilder = cfm.getKeyValidatorAsCType().builder();
-        List<ByteBuffer> keys = new ArrayList<ByteBuffer>();
+        CompositesBuilder keyBuilder = new CompositesBuilder(cfm.getKeyValidatorAsCType());
         for (ColumnDefinition def : cfm.partitionKeyColumns())
         {
-            Restriction r = processedKeys.get(def.name);
-            if (r == null)
-                throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
-
-            List<ByteBuffer> values = r.values(options);
-
-            //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
-            //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
-            //就会得到两个PARTITION_KEY: (x,y)和(x,z)
-            if (keyBuilder.remainingCount() == 1)
-            {
-                for (ByteBuffer val : values)
-                {
-                    if (val == null)
-                        throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
-                    ByteBuffer key = keyBuilder.buildWith(val).toByteBuffer();
-                    ThriftValidation.validateKey(cfm, key);
-                    keys.add(key);
-                }
-            }
-            else
-            {
-                if (values.size() != 1)
-                    throw new InvalidRequestException("IN is only supported on the last column of the partition key");
-                ByteBuffer val = values.get(0);
-                if (val == null)
-                    throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
-                keyBuilder.add(val);
-            }
+            Restriction r = checkNotNull(processedKeys.get(def.name), "Missing mandatory PRIMARY KEY part %s", def.name);
+            r.appendTo(keyBuilder, options);
         }
-        return keys;
+
+//<<<<<<< HEAD
+//            //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
+//            //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
+//            //就会得到两个PARTITION_KEY: (x,y)和(x,z)
+//            if (keyBuilder.remainingCount() == 1)
+//            {
+//                for (ByteBuffer val : values)
+//                {
+//                    if (val == null)
+//                        throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
+//                    ByteBuffer key = keyBuilder.buildWith(val).toByteBuffer();
+//                    ThriftValidation.validateKey(cfm, key);
+//                    keys.add(key);
+//                }
+//            }
+//            else
+//=======
+        return Lists.transform(keyBuilder.build(), new com.google.common.base.Function<Composite, ByteBuffer>()
+        {
+            @Override
+            public ByteBuffer apply(Composite composite)
+            {
+                ByteBuffer byteBuffer = composite.toByteBuffer();
+                ThriftValidation.validateKey(cfm, byteBuffer);
+                return byteBuffer;
+            }
+        });
     }
 
     public Composite createClusteringPrefix(QueryOptions options)
@@ -397,7 +436,7 @@ public abstract class ModificationStatement implements CQLStatement
     private Composite createClusteringPrefixBuilderInternal(QueryOptions options)
     throws InvalidRequestException
     {
-        CBuilder builder = cfm.comparator.prefixBuilder();
+        CompositesBuilder builder = new CompositesBuilder(cfm.comparator);
         ColumnDefinition firstEmptyKey = null;
         for (ColumnDefinition def : cfm.clusteringColumns())
         {
@@ -405,26 +444,25 @@ public abstract class ModificationStatement implements CQLStatement
             if (r == null)
             {
                 firstEmptyKey = def;
-
-                //满足这个if条件的只有update语句，并且是CreateTableStatement.comparator中的第4种情况
-                if (requireFullClusteringKey() && !cfm.comparator.isDense() && cfm.comparator.isCompound())
-                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
+//<<<<<<< HEAD
+//
+//                //满足这个if条件的只有update语句，并且是CreateTableStatement.comparator中的第4种情况
+//                if (requireFullClusteringKey() && !cfm.comparator.isDense() && cfm.comparator.isCompound())
+//                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
+//=======
+                checkFalse(requireFullClusteringKey() && !cfm.comparator.isDense() && cfm.comparator.isCompound(), 
+                           "Missing mandatory PRIMARY KEY part %s", def.name);
             }
             else if (firstEmptyKey != null) //CLUSTERING_COLUMN中最前面的字段不允许为空，比如a、b两字段，不能只出现b
             {
-                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s since %s is set", firstEmptyKey.name, def.name));
+                throw invalidRequest("Missing PRIMARY KEY part %s since %s is set", firstEmptyKey.name, def.name);
             }
             else
             {
-                List<ByteBuffer> values = r.values(options);
-                assert values.size() == 1; // We only allow IN for row keys so far
-                ByteBuffer val = values.get(0);
-                if (val == null)
-                    throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s", def.name));
-                builder.add(val);
+                r.appendTo(builder, options);
             }
         }
-        return builder.build();
+        return builder.build().get(0); // We only allow IN for row keys so far
     }
 
     protected ColumnDefinition getFirstEmptyKey()
@@ -598,7 +636,7 @@ public abstract class ModificationStatement implements CQLStatement
         boolean success = cf == null;
 
         ColumnSpecification spec = new ColumnSpecification(ksName, cfName, CAS_RESULT_COLUMN, BooleanType.instance);
-        ResultSet.Metadata metadata = new ResultSet.Metadata(Collections.singletonList(spec));
+        ResultSet.ResultMetadata metadata = new ResultSet.ResultMetadata(Collections.singletonList(spec));
         List<List<ByteBuffer>> rows = Collections.singletonList(Collections.singletonList(BooleanType.instance.decompose(success)));
 
         //只是一个默认结果集，占位
@@ -626,7 +664,7 @@ public abstract class ModificationStatement implements CQLStatement
             row.addAll(right.rows.get(i));
             rows.add(row);
         }
-        return new ResultSet(new ResultSet.Metadata(specs), rows);
+        return new ResultSet(new ResultSet.ResultMetadata(specs), rows);
     }
 
     private static ResultSet buildCasFailureResultSet(ByteBuffer key, ColumnFamily cf, Iterable<ColumnDefinition> columnsWithConditions, boolean isBatch, QueryOptions options)
@@ -657,7 +695,7 @@ public abstract class ModificationStatement implements CQLStatement
         }
 
         long now = System.currentTimeMillis();
-        Selection.ResultSetBuilder builder = selection.resultSetBuilder(now);
+        Selection.ResultSetBuilder builder = selection.resultSetBuilder(now, false);
         SelectStatement.forSelection(cfm, selection).processColumnFamily(key, cf, options, now, builder);
 
         return builder.build(options.getProtocolVersion());
@@ -755,7 +793,8 @@ public abstract class ModificationStatement implements CQLStatement
         {
             VariableSpecifications boundNames = getBoundVariables();
             ModificationStatement statement = prepare(boundNames);
-            return new ParsedStatement.Prepared(statement, boundNames);
+            CFMetaData cfm = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
+            return new ParsedStatement.Prepared(statement, boundNames, boundNames.getPartitionKeyBindIndexes(cfm));
         }
 
         //PARTITION_KEY和CLUSTERING_COLUMN不能出现在if子句中

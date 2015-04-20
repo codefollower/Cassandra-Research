@@ -65,6 +65,7 @@
     <property name="test.microbench.src" value="${test.dir}/microbench"/>
     <property name="test.pig.src" value="${test.dir}/pig"/>
     <property name="dist.dir" value="${build.dir}/dist"/>
+    <property name="tmp.dir" value="${java.io.tmpdir}"/>
 	
 	<property name="source.version" value="1.7"/>
 	<property name="target.version" value="1.7"/>
@@ -204,7 +205,7 @@
     <target name="gen-cql3-grammar" depends="check-gen-cql3-grammar" unless="cql3current">
       <echo>Building Grammar ${build.src.java}/org/apache/cassandra/cql3/Cql.g  ...</echo>
       <java classname="org.antlr.Tool"
-            classpath="${build.dir.lib}/jars/antlr-3.5.2.jar;${build.lib}/antlr-runtime-3.5.2.jar;${build.lib}/stringtemplate-4.0.2.jar"
+            classpath="${build.dir.lib}/jars/antlr-3.5.2.jar;${build.lib}/antlr-runtime-3.5.2.jar;${build.lib}/ST4-4.0.8.jar"
             fork="true"
             failonerror="true">
          <jvmarg value="-Xmx512M" />
@@ -325,10 +326,13 @@
           <dependency groupId="commons-codec" artifactId="commons-codec" version="1.2"/>
           <dependency groupId="org.apache.commons" artifactId="commons-lang3" version="3.1"/>
           <dependency groupId="org.apache.commons" artifactId="commons-math3" version="3.2"/>
-          <dependency groupId="com.googlecode.concurrentlinkedhashmap" artifactId="concurrentlinkedhashmap-lru" version="1.3"/>
-          <dependency groupId="org.antlr" artifactId="antlr" version="3.5.2"/>
-          <dependency groupId="org.antlr" artifactId="antlr-runtime" version="3.5.2"/>
-          <dependency groupId="org.antlr" artifactId="stringtemplate" version="4.0.2"/>
+          <dependency groupId="com.googlecode.concurrentlinkedhashmap" artifactId="concurrentlinkedhashmap-lru" version="1.4"/>
+          <dependency groupId="org.antlr" artifactId="antlr" version="3.5.2">
+            <exclusion groupId="org.antlr" artifactId="stringtemplate"/>
+          </dependency>
+          <dependency groupId="org.antlr" artifactId="antlr-runtime" version="3.5.2">
+            <exclusion groupId="org.antlr" artifactId="stringtemplate"/>
+          </dependency>
           <dependency groupId="org.slf4j" artifactId="slf4j-api" version="1.7.2"/>
           <dependency groupId="org.slf4j" artifactId="log4j-over-slf4j" version="1.7.2"/>
           <dependency groupId="org.slf4j" artifactId="jcl-over-slf4j" version="1.7.2" />
@@ -339,6 +343,7 @@
           <dependency groupId="com.googlecode.json-simple" artifactId="json-simple" version="1.1"/>
           <dependency groupId="com.boundary" artifactId="high-scale-lib" version="1.0.6"/>
           <dependency groupId="com.github.jbellis" artifactId="jamm" version="0.3.0"/>
+	  	  <dependency groupId="com.github.tjake" artifactId="crc32ex" version="0.1.1"/>
           <dependency groupId="com.thinkaurelius.thrift" artifactId="thrift-server" version="0.3.7">
             <exclusion groupId="org.slf4j" artifactId="slf4j-log4j12"/>
           </dependency>
@@ -370,7 +375,7 @@
           <dependency groupId="org.apache.cassandra" artifactId="cassandra-all" version="${version}" />
           <dependency groupId="org.apache.cassandra" artifactId="cassandra-thrift" version="${version}" />
           <dependency groupId="io.dropwizard.metrics" artifactId="metrics-core" version="3.1.0" />
-          <dependency groupId="com.addthis.metrics" artifactId="reporter-config" version="2.1.0" />
+          <dependency groupId="com.addthis.metrics" artifactId="reporter-config3" version="3.0.0" />
           <dependency groupId="org.mindrot" artifactId="jbcrypt" version="0.3m" />
           <dependency groupId="io.airlift" artifactId="airline" version="0.6" />
           <dependency groupId="io.netty" artifactId="netty-all" version="4.0.23.Final" />
@@ -378,12 +383,14 @@
           <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.2" />
           <dependency groupId="com.datastax.cassandra" artifactId="cassandra-driver-core" version="2.1.2" />
           <dependency groupId="org.javassist" artifactId="javassist" version="3.18.2-GA" />
-          <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core" version="0.3.2" />
+          <dependency groupId="org.caffinitas.ohc" artifactId="ohc-core" version="0.3.4" />
           <dependency groupId="net.sf.supercsv" artifactId="super-csv" version="2.1.0" />
 	      <dependency groupId="net.ju-n.compile-command-annotations" artifactId="compile-command-annotations" version="1.2.0" />
           <dependency groupId="org.fusesource" artifactId="sigar" version="1.6.4">
           	<exclusion groupId="log4j" artifactId="log4j"/>
           </dependency>
+          <dependency groupId="joda-time" artifactId="joda-time" version="2.4" />
+        	
         </dependencyManagement>
         <developer id="alakshman" name="Avinash Lakshman"/>
         <developer id="aleksey" name="Aleksey Yeschenko"/>
@@ -450,7 +457,7 @@
                 artifactId="cassandra-parent"
                 version="${version}"/>
         <!-- do NOT remove this, it breaks pig-test -->
-        <dependency groupId="joda-time" artifactId="joda-time" version="2.3" />
+        <dependency groupId="joda-time" artifactId="joda-time" version="2.4" />
       </artifact:pom>
 
       <!-- now the pom's for artifacts being deployed to Maven Central -->
@@ -474,7 +481,6 @@
         <dependency groupId="com.googlecode.concurrentlinkedhashmap" artifactId="concurrentlinkedhashmap-lru"/>
         <dependency groupId="org.antlr" artifactId="antlr"/>
         <dependency groupId="org.antlr" artifactId="antlr-runtime"/>
-        <dependency groupId="org.antlr" artifactId="stringtemplate" version="4.0.2"/>
         <dependency groupId="org.slf4j" artifactId="slf4j-api"/>
         <dependency groupId="org.slf4j" artifactId="log4j-over-slf4j"/>
         <dependency groupId="org.slf4j" artifactId="jcl-over-slf4j"/>
@@ -485,7 +491,7 @@
         <dependency groupId="org.yaml" artifactId="snakeyaml"/>
         <dependency groupId="org.mindrot" artifactId="jbcrypt"/>
         <dependency groupId="io.dropwizard.metrics" artifactId="metrics-core"/>
-        <dependency groupId="com.addthis.metrics" artifactId="reporter-config"/>
+        <dependency groupId="com.addthis.metrics" artifactId="reporter-config3"/>
         <dependency groupId="com.thinkaurelius.thrift" artifactId="thrift-server" version="0.3.5"/>
         <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.2" />
         <dependency groupId="net.sf.supercsv" artifactId="super-csv" version="2.1.0" />
@@ -508,7 +514,10 @@
         
         <!-- don't need jamm unless running a server in which case it needs to be a -javagent to be used anyway -->
         <dependency groupId="com.github.jbellis" artifactId="jamm"/>
+		<dependency groupId="com.github.tjake" artifactId="crc32ex"/>
         <dependency groupId="io.netty" artifactId="netty-all"/>
+      	
+      	<dependency groupId="joda-time" artifactId="joda-time" version="2.4" />
 
         <dependency groupId="org.fusesource" artifactId="sigar" version="1.6.4"/>
       </artifact:pom>
@@ -1080,14 +1089,15 @@
      includeantruntime="false"
      source="${source.version}" 
      target="${target.version}">
-      <classpath>
+     <classpath>
         <path refid="cassandra.classpath"/>
-      </classpath>
-	  <compilerarg line="-encoding UTF-8"/>
-      <src path="${test.unit.src}"/>
-      <src path="${test.long.src}"/>
-      <src path="${test.pig.src}"/>
-      <src path="${test.microbench.src}"/>
+     </classpath>
+	 <compilerarg value="-XDignore.symbol.file"/>
+	 <compilerarg line="-encoding UTF-8"/>
+     <src path="${test.unit.src}"/>
+     <src path="${test.long.src}"/>
+     <src path="${test.pig.src}"/>
+     <src path="${test.microbench.src}"/>
     </javac>
 
     <!-- Non-java resources needed by the test suite -->
@@ -1201,6 +1211,7 @@
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+      <jvmarg value="-Djava.io.tmpdir=${tmp.dir}"/>
     </testmacro>
     <fileset dir="${test.unit.src}">
         <exclude name="**/pig/*.java" />
@@ -1245,13 +1256,20 @@
   </target>
     
   <target name="test-compression" depends="build-test" description="Execute unit tests with sstable compression enabled">
-      <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
+    <property name="compressed_yaml" value="${build.test.dir}/cassandra.compressed.yaml"/>
+    <concat destfile="${compressed_yaml}">
+      <fileset file="${test.conf}/cassandra.yaml"/>
+      <fileset file="${test.conf}/commitlog_compression.yaml"/>
+    </concat>
+    <echo>Compressed config: ${compressed_yaml}</echo>
+    <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.test.compression=true"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+      <jvmarg value="-Dcassandra.config=file:///${compressed_yaml}"/>
     </testmacro>
     <fileset dir="${test.unit.src}">
         <exclude name="**/pig/*.java" />
@@ -1567,6 +1585,207 @@
       </java>
   </target>
 
+  <!-- Generate IDEA project description files -->
+  <target name="generate-idea-files" depends="build-test" description="Generate IDEA files">
+    <echo file="${eclipse.project.name}.iml"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<module type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_1_7" inherit-compiler-output="false">
+    <output url="file://$MODULE_DIR$/.idea/out/main" />
+    <output-test url="file://$MODULE_DIR$/.idea/out/test" />
+    <exclude-output />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src/java" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/gen-java" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/resources" type="java-resource" />
+      <sourceFolder url="file://$MODULE_DIR$/interface/thrift/gen-java" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tools/stress/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/test/unit" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test/long" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test/pig" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test/microbench" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test/resources" type="java-test-resource" />
+      <excludeFolder url="file://$MODULE_DIR$/.idea" />
+      <excludeFolder url="file://$MODULE_DIR$/.settings" />
+      <excludeFolder url="file://$MODULE_DIR$/build" />
+      <excludeFolder url="file://$MODULE_DIR$/data"/>
+      <excludeFolder url="file://$MODULE_DIR$/logs"/>
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />]]>
+    </echo>
+
+  	<path id="idea-project-libs-path">
+  	 <fileset dir="lib">
+  	    <include name="**/*.jar" />
+     </fileset>
+ 	 <fileset dir="build/lib/jars">
+  	    <include name="**/*.jar" />
+  	 </fileset>
+  	 <fileset dir="tools/lib">
+  	     <include name="**/*.jar" />
+  	 </fileset>
+  	</path>
+    <mkdir dir=".idea"/>
+    <mkdir dir=".idea/libraries"/>
+    <copy todir=".idea">
+        <fileset dir="ide/idea"/>
+    </copy>
+  	<property name="idea-project-libs" refid="idea-project-libs-path"/>
+  	<script language="javascript" classpathref="cassandra.classpath"> <![CDATA[
+  		var File = java.io.File;
+  		var FilenameUtils = Packages.org.apache.commons.io.FilenameUtils;
+  		var basedir = project.getProperty("basedir");
+  		jars = project.getProperty("idea-project-libs").split(project.getProperty("path.separator"));
+
+  		cp = "\n";
+  	    for (i=0; i< jars.length; i++) {
+  	       basename = FilenameUtils.getBaseName(jars[i]);
+  	       srcjar = basename + '-sources.jar';
+  		   srcdir = FilenameUtils.concat(project.getProperty("build.dir.lib"), 'sources');
+  		   srcfile = new File(FilenameUtils.concat(srcdir, srcjar));
+
+  		   cp += '    <orderEntry type="library" name="' + basename + '" level="project" />\n';
+
+  		   lib = '';
+           lib += '<component name="libraryTable">\n';
+           lib += '  <library name="' + basename + '">\n';
+           lib += '    <CLASSES>\n';
+           lib += '      <root url="jar://' + jars[i].replace(basedir,"$PROJECT_DIR$") + '!/" />\n';
+           lib += '    </CLASSES>\n';
+           lib += '    <JAVADOC />\n';
+  		   if (srcfile.exists()) {
+               lib += '    <SOURCES>\n';
+               lib += '      <root url="jar://' + srcfile.getAbsolutePath().replace(basedir,"$PROJECT_DIR$") + '!/" />\n';
+               lib += '    </SOURCES>\n';
+           } else {
+               lib += '    <SOURCES />\n';
+           }
+           lib += '  </library>\n';
+           lib += '</component>';
+
+           echo = project.createTask("echo");
+           echo.setMessage(lib);
+           echo.setFile(new File(".idea/libraries/" + basename.replace('-','_').replace('.','_') + ".xml"));
+           echo.setAppend(false);
+           echo.perform();
+  		}
+
+  		echo = project.createTask("echo");
+  	    echo.setMessage(cp);
+  		echo.setFile(new File(project.getProperty("eclipse.project.name") + ".iml"));
+  		echo.setAppend(true);
+  	    echo.perform();
+  	]]> </script>
+    <echo file="${eclipse.project.name}.iml" append="true"><![CDATA[
+    </component>
+</module>]]>
+    </echo>
+    <echo file=".idea/.name">Apache Cassandra ${eclipse.project.name}</echo>
+    <echo file=".idea/modules.xml"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/]]>${eclipse.project.name}<![CDATA[.iml" filepath="$PROJECT_DIR$/]]>${eclipse.project.name}<![CDATA[.iml" />
+    </modules>
+  </component>
+</project>]]></echo>
+    <echo file=".idea/misc.xml"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+<component name="ProjectRootManager" version="2" languageLevel="JDK_1_7" default="false" assert-keyword="true" jdk-15="true" project-jdk-name="1.7" project-jdk-type="JavaSDK" />
+</project>]]></echo>
+    <echo file=".idea/vcs.xml"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+  </component>
+</project>]]></echo>
+    <echo file=".idea/workspace.xml"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+    <component name="RunManager" selected="Application.Cassandra">
+        <configuration default="true" type="Application" factoryName="Application">
+          <extension name="coverage" enabled="false" merge="false" sample_coverage="true" runner="idea" />
+          <option name="MAIN_CLASS_NAME" value="" />
+          <option name="VM_PARAMETERS" value="-Dcassandra.config=file://$PROJECT_DIR$/conf/cassandra.yaml -Dcassandra.storagedir=$PROJECT_DIR$/data -Dlogback.configurationFile=file://$PROJECT_DIR$/conf/logback.xml -Dcassandra.logdir=$PROJECT_DIR$/data/logs -ea" />
+          <option name="PROGRAM_PARAMETERS" value="" />
+          <option name="WORKING_DIRECTORY" value="" />
+          <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="false" />
+          <option name="ALTERNATIVE_JRE_PATH" value="" />
+          <option name="ENABLE_SWING_INSPECTOR" value="false" />
+          <option name="ENV_VARIABLES" />
+          <option name="PASS_PARENT_ENVS" value="true" />
+          <module name="" />
+          <envs />
+          <method>
+            <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/build.xml" target="gen-cql3-grammar" />
+            <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/build.xml" target="gen-thrift-java" />
+            <option name="Make" enabled="true" />
+          </method>
+        </configuration>
+        <configuration default="true" type="JUnit" factoryName="JUnit">
+          <extension name="coverage" enabled="false" merge="false" sample_coverage="true" runner="idea" />
+          <module name="" />
+          <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="false" />
+          <option name="ALTERNATIVE_JRE_PATH" value="" />
+          <option name="PACKAGE_NAME" />
+          <option name="MAIN_CLASS_NAME" value="" />
+          <option name="METHOD_NAME" value="" />
+          <option name="TEST_OBJECT" value="class" />
+          <option name="VM_PARAMETERS" value="-Dcassandra.config=file://$PROJECT_DIR$/test/conf/cassandra.yaml -Dlogback.configurationFile=file://$PROJECT_DIR$/test/conf/logback-test.xml -Dcassandra.logdir=$PROJECT_DIR$/build/test/logs -ea" />
+          <option name="PARAMETERS" value="" />
+          <option name="WORKING_DIRECTORY" value="" />
+          <option name="ENV_VARIABLES" />
+          <option name="PASS_PARENT_ENVS" value="true" />
+          <option name="TEST_SEARCH_SCOPE">
+            <value defaultName="singleModule" />
+          </option>
+          <envs />
+          <patterns />
+          <method>
+            <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/build.xml" target="gen-cql3-grammar" />
+            <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/build.xml" target="gen-thrift-java" />
+            <option name="Make" enabled="true" />
+          </method>
+        </configuration>
+        <configuration default="false" name="Cassandra" type="Application" factoryName="Application">
+          <extension name="coverage" enabled="false" merge="false" sample_coverage="true" runner="idea" />
+          <option name="MAIN_CLASS_NAME" value="org.apache.cassandra.service.CassandraDaemon" />
+          <option name="VM_PARAMETERS" value="-Dcassandra-foreground=yes -Dcassandra.config=file://$PROJECT_DIR$/conf/cassandra.yaml -Dcassandra.storagedir=$PROJECT_DIR$/data -Dlogback.configurationFile=file://$PROJECT_DIR$/conf/logback.xml -Dcassandra.logdir=$PROJECT_DIR$/data/logs -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=7199 -Dcom.sun.management.jmxremote.local.only=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -ea -Xmx1G" />
+          <option name="PROGRAM_PARAMETERS" value="" />
+          <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+          <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="false" />
+          <option name="ALTERNATIVE_JRE_PATH" value="" />
+          <option name="ENABLE_SWING_INSPECTOR" value="false" />
+          <option name="ENV_VARIABLES" />
+          <option name="PASS_PARENT_ENVS" value="true" />
+          <module name="]]>${eclipse.project.name}<![CDATA[" />
+          <envs />
+          <RunnerSettings RunnerId="Debug">
+            <option name="DEBUG_PORT" value="" />
+            <option name="TRANSPORT" value="0" />
+            <option name="LOCAL" value="true" />
+          </RunnerSettings>
+          <RunnerSettings RunnerId="Run" />
+          <ConfigurationWrapper RunnerId="Debug" />
+          <ConfigurationWrapper RunnerId="Run" />
+          <method>
+            <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/build.xml" target="gen-cql3-grammar" />
+            <option name="AntTarget" enabled="true" antfile="file://$PROJECT_DIR$/build.xml" target="gen-thrift-java" />
+            <option name="Make" enabled="true" />
+          </method>
+        </configuration>
+    </component>
+    <component name="antWorkspaceConfiguration">
+        <option name="IS_AUTOSCROLL_TO_SOURCE" value="false" />
+        <option name="FILTER_TARGETS" value="false" />
+        <buildFile url="file://$PROJECT_DIR$/build.xml">
+            <expanded value="true" />
+        </buildFile>
+  </component>
+</project>
+    ]]>
+    </echo>
+  </target>
+
   <!-- Generate Eclipse project description files -->
   <target name="generate-eclipse-files" depends="build-test" description="Generate eclipse files">
     <echo file=".project"><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
@@ -1592,6 +1811,7 @@
   <classpathentry kind="src" path="src/resources"/>
   <classpathentry kind="src" path="src/gen-java"/>
   <classpathentry kind="src" path="src/jdkoverride"/>
+  <classpathentry kind="src" path="interface/thrift/gen-java"/>
   <classpathentry kind="src" output="build/test/classes" path="test/unit"/>
   <classpathentry kind="src" output="build/test/classes" path="test/long"/>
   <classpathentry kind="src" output="build/test/classes" path="test/pig"/>

@@ -19,8 +19,8 @@ from cassandra.metadata import maybe_escape_name
 from cassandra.metadata import escape_name
 
 
-simple_cql_types = set(('ascii', 'bigint', 'blob', 'boolean', 'counter', 'decimal', 'double', 'float', 'inet', 'int',
-                        'text', 'timestamp', 'timeuuid', 'uuid', 'varchar', 'varint'))
+simple_cql_types = set(('ascii', 'bigint', 'blob', 'boolean', 'counter', 'date', 'decimal', 'double', 'float', 'inet', 'int',
+                        'text', 'time', 'timestamp', 'timeuuid', 'uuid', 'varchar', 'varint'))
 simple_cql_types.difference_update(('set', 'map', 'list'))
 
 from . import helptopics
@@ -33,7 +33,7 @@ class UnexpectedTableStructure(UserWarning):
     def __str__(self):
         return 'Unexpected table structure; may not translate correctly to CQL. ' + self.msg
 
-SYSTEM_KEYSPACES = ('system', 'system_traces', 'system_auth')
+SYSTEM_KEYSPACES = ('system', 'system_traces', 'system_auth', 'system_distributed')
 NONALTERBALE_KEYSPACES = ('system')
 
 class Cql3ParsingRuleSet(CqlParsingRuleSet):
@@ -42,7 +42,7 @@ class Cql3ParsingRuleSet(CqlParsingRuleSet):
         'limit', 'using', 'use', 'set',
         'begin', 'apply', 'batch', 'truncate', 'delete', 'in', 'create',
         'function', 'aggregate', 'keyspace', 'schema', 'columnfamily', 'table', 'index', 'on', 'drop',
-        'primary', 'into', 'values', 'timestamp', 'ttl', 'alter', 'add', 'type',
+        'primary', 'into', 'values', 'date', 'time', 'timestamp', 'ttl', 'alter', 'add', 'type',
         'compact', 'storage', 'order', 'by', 'asc', 'desc', 'clustering',
         'token', 'writetime', 'map', 'list', 'to', 'custom', 'if', 'not'
     ))
@@ -484,7 +484,6 @@ def cf_prop_val_mapkey_completer(ctxt, cass):
             opts.add('min_threshold')
             opts.add('bucket_high')
             opts.add('bucket_low')
-            opts.add('cold_reads_to_omit')
         elif csc == 'LeveledCompactionStrategy':
             opts.add('sstable_size_in_mb')
         elif csc == 'DateTieredCompactionStrategy':
@@ -613,7 +612,7 @@ def working_on_keyspace(ctxt):
 syntax_rules += r'''
 <useStatement> ::= "USE" <keyspaceName>
                  ;
-<selectStatement> ::= "SELECT" <selectClause>
+<selectStatement> ::= "SELECT" ( "JSON" )? <selectClause>
                         "FROM" cf=<columnFamilyName>
                           ( "WHERE" <whereClause> )?
                           ( "ORDER" "BY" <orderByClause> ( "," <orderByClause> )* )?
@@ -693,10 +692,9 @@ explain_completion('selector', 'colname')
 
 syntax_rules += r'''
 <insertStatement> ::= "INSERT" "INTO" cf=<columnFamilyName>
-                               "(" [colname]=<cident> "," [colname]=<cident>
-                                   ( "," [colname]=<cident> )* ")"
-                      "VALUES" "(" [newval]=<term> valcomma="," [newval]=<term>
-                                   ( valcomma="," [newval]=<term> )* valcomma=")"
+                      ( ( "(" [colname]=<cident> ( "," [colname]=<cident> )* ")"
+                          "VALUES" "(" [newval]=<term> ( valcomma="," [newval]=<term> )* valcomma=")")
+                        | ("JSON" <stringLiteral>))
                       ( "IF" "NOT" "EXISTS")?
                       ( "USING" [insertopt]=<usingOption>
                                 ( "AND" [insertopt]=<usingOption> )* )?
@@ -1182,17 +1180,16 @@ syntax_rules += r'''
 
 <createRoleStatement> ::= "CREATE" "ROLE" <rolename>
                               ( "WITH" <roleProperty> ("AND" <roleProperty>)*)?
-                              ( "SUPERUSER" | "NOSUPERUSER" )?
-                              ( "LOGIN" | "NOLOGIN" )?
                         ;
 
 <alterRoleStatement> ::= "ALTER" "ROLE" <rolename>
                               ( "WITH" <roleProperty> ("AND" <roleProperty>)*)?
-                              ( "SUPERUSER" | "NOSUPERUSER" )?
-                              ( "LOGIN" | "NOLOGIN" )?
                        ;
-<roleProperty> ::= "PASSWORD" "="? <stringLiteral>
-                 | "OPTIONS" "="? <mapLiteral>
+
+<roleProperty> ::= "PASSWORD" "=" <stringLiteral>
+                 | "OPTIONS" "=" <mapLiteral>
+                 | "SUPERUSER" "=" <boolean>
+                 | "LOGIN" "=" <boolean>
                  ;
 
 <dropRoleStatement> ::= "DROP" "ROLE" <rolename>
@@ -1210,7 +1207,7 @@ syntax_rules += r'''
 '''
 
 syntax_rules += r'''
-<grantStatement> ::= "GRANT" <permissionExpr> "ON" <resource>  "TO" <rolename>
+<grantStatement> ::= "GRANT" <permissionExpr> "ON" <resource> "TO" <rolename>
                    ;
 
 <revokeStatement> ::= "REVOKE" <permissionExpr> "ON" <resource> "FROM" <rolename>
@@ -1227,6 +1224,7 @@ syntax_rules += r'''
                | "SELECT"
                | "MODIFY"
                | "DESCRIBE"
+               | "EXECUTE"
                ;
 
 <permissionExpr> ::= ( <permission> "PERMISSION"? )
@@ -1235,6 +1233,7 @@ syntax_rules += r'''
 
 <resource> ::= <dataResource>
              | <roleResource>
+             | <functionResource>
              ;
 
 <dataResource> ::= ( "ALL" "KEYSPACES" )
@@ -1245,6 +1244,10 @@ syntax_rules += r'''
 <roleResource> ::= ("ALL" "ROLES")
                  | ("ROLE" <rolename>)
                  ;
+
+<functionResource> ::= ( "ALL" "FUNCTIONS" ("IN KEYSPACE" <keyspaceName>)? )
+                     | ("FUNCTION" <userFunctionName>)
+                     ;
 '''
 
 @completer_for('username', 'name')

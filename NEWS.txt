@@ -18,6 +18,16 @@ using the provided 'sstableupgrade' tool.
 
 New features
 ------------
+   - It is now possible to do major compactions when using leveled compaction.
+     Doing that will take all sstables and compact them out in levels. The
+     levels will be non overlapping so doing this will still not be something
+     you want to do very often since it might cause more compactions for a while.
+     It is also possible to split output when doing a major compaction with
+     STCS - files will be split in sizes 50%, 25%, 12.5% etc of the total size.
+     This might be a bit better than old major compactions which created one big
+     file on disk.
+   - A new tool has been added bin/sstableverify that checks for errors/bitrot
+     in all sstables.  Unlike scrub, this is a non-invasive tool. 
    - Authentication & Authorization APIs have been updated to introduce
      roles. Roles and Permissions granted to them are inherited, supporting
      role based access control. The role concept supercedes that of users
@@ -38,6 +48,16 @@ New features
      directory.
    - Support for user-defined functions and user-defined aggregates have
      been added to CQL.
+   - Row-cache is now fully off-heap.
+   - jemalloc is now automatically preloaded and used on Linux and OS-X if
+     installed.
+   - Please ensure on Unix platforms that there is no libjnadispath.so
+     installed which is accessible by Cassandra. Old versions of
+     libjna packages (< 4.0.0) will cause problems - e.g. Debian Wheezy
+     contains libjna versin 3.2.x.
+   - The node now keeps up when streaming is failed during bootstrapping. You can
+     use new `nodetool bootstrap resume` command to continue streaming after resolving
+     an issue.
 
 
 Upgrading
@@ -66,6 +86,29 @@ Upgrading
    - The results of CQL3 queries containing an IN restriction will be ordered
      in the normal order and not anymore in the order in which the column values were
      specified in the IN restriction.
+   - Some secondary index queries with restrictions on non-indexed clustering
+     columns were not requiring ALLOW FILTERING as they should. This has been
+     fixed, and those queries now require ALLOW FILTERING (see CASSANDRA-8418
+     for details).
+
+2.1.5
+=====
+
+Upgrading
+---------
+    - The option to omit cold sstables with size tiered compaction has been
+      removed - it is almost always better to use date tiered compaction for
+      workloads that have cold data. 
+
+New features
+------------
+    - New `SimpleDateType` (cql date). 4-byte unsigned integer w/out timestamp
+    - New `TimeType` (cql time). 8-byte long nano-second resolution timestamp
+
+2.1.4
+=====
+The default JMX config now listens to localhost only. You must enable 
+the other JMX flags in cassandra-env.sh manually.
 
 2.1.3
 =====

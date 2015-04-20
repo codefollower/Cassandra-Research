@@ -32,6 +32,7 @@ import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.compress.CompressedSequentialWriter;
+import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.RefCounted;
 import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
@@ -61,8 +62,12 @@ import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
 //子类要实现的抽象方法有两个: getSegment、cleanup
 public abstract class SegmentedFile extends SharedCloseableImpl
 {
-    public final String path; //要读的文件
-    public final long length; //未压缩的长度，length与onDiskLength只有在未压缩时才相等
+//<<<<<<< HEAD
+//    public final String path; //要读的文件
+//    public final long length; //未压缩的长度，length与onDiskLength只有在未压缩时才相等
+//=======
+    public final ChannelProxy channel;
+    public final long length;
 
     // This differs from length for compressed files (but we still need length for
     // SegmentIterator because offsets in the file are relative to the uncompressed size)
@@ -71,15 +76,15 @@ public abstract class SegmentedFile extends SharedCloseableImpl
     /**
      * Use getBuilder to get a Builder to construct a SegmentedFile.
      */
-    SegmentedFile(Cleanup cleanup, String path, long length)
+    SegmentedFile(Cleanup cleanup, ChannelProxy channel, long length)
     {
-        this(cleanup, path, length, length);
+        this(cleanup, channel, length, length);
     }
 
-    protected SegmentedFile(Cleanup cleanup, String path, long length, long onDiskLength)
+    protected SegmentedFile(Cleanup cleanup, ChannelProxy channel, long length, long onDiskLength)
     {
         super(cleanup);
-        this.path = new File(path).getAbsolutePath();
+        this.channel = channel;
         this.length = length;
         this.onDiskLength = onDiskLength;
     }
@@ -87,22 +92,32 @@ public abstract class SegmentedFile extends SharedCloseableImpl
     public SegmentedFile(SegmentedFile copy)
     {
         super(copy);
-        path = copy.path;
+        channel = copy.channel;
         length = copy.length;
         onDiskLength = copy.onDiskLength;
     }
 
+    public String path()
+    {
+        return channel.filePath();
+    }
+
     protected static abstract class Cleanup implements RefCounted.Tidy
     {
-        final String path;
-        protected Cleanup(String path)
+        final ChannelProxy channel;
+        protected Cleanup(ChannelProxy channel)
         {
-            this.path = path;
+            this.channel = channel;
         }
 
         public String name()
         {
-            return path;
+            return channel.filePath();
+        }
+
+        public void tidy()
+        {
+            channel.close();
         }
     }
 
@@ -110,13 +125,13 @@ public abstract class SegmentedFile extends SharedCloseableImpl
 
     public RandomAccessReader createReader()
     {
-        return RandomAccessReader.open(new File(path), length);
+        return RandomAccessReader.open(channel, length);
     }
 
     public RandomAccessReader createThrottledReader(RateLimiter limiter)
     {
         assert limiter != null;
-        return ThrottledReader.open(new File(path), length, limiter);
+        return ThrottledReader.open(channel, length, limiter);
     }
 
     public FileDataInput getSegment(long position)
@@ -126,19 +141,19 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         return reader;
     }
 
+    public void dropPageCache(long before)
+    {
+        CLibrary.trySkipCache(channel.getFileDescriptor(), 0, before);
+    }
+
     /**
      * @return A SegmentedFile.Builder.
      */
-    public static Builder getBuilder(Config.DiskAccessMode mode)
+    public static Builder getBuilder(Config.DiskAccessMode mode, boolean compressed)
     {
-        return mode == Config.DiskAccessMode.mmap
-               ? new MmappedSegmentedFile.Builder()
-               : new BufferedPoolingSegmentedFile.Builder();
-    }
-
-    public static Builder getCompressedBuilder()
-    {
-        return getCompressedBuilder(null);
+        return compressed ? new CompressedSegmentedFile.Builder(null)
+                          : mode == Config.DiskAccessMode.mmap ? new MmappedSegmentedFile.Builder()
+                                                               : new BufferedPoolingSegmentedFile.Builder();
     }
 
     public static Builder getCompressedBuilder(CompressedSequentialWriter writer)
@@ -164,8 +179,10 @@ public abstract class SegmentedFile extends SharedCloseableImpl
     /**
      * Collects potential segmentation points in an underlying file, and builds a SegmentedFile to represent it.
      */
-    public static abstract class Builder
+    public static abstract class Builder implements AutoCloseable
     {
+        private ChannelProxy channel;
+
         /**
          * Adds a position that would be a safe place for a segment boundary in the file. For a block/row based file
          * format, safe boundaries are block/row edges.
@@ -175,23 +192,23 @@ public abstract class SegmentedFile extends SharedCloseableImpl
 
         /**
          * Called after all potential boundaries have been added to apply this Builder to a concrete file on disk.
-         * @param path The file on disk.
+         * @param channel The channel to the file on disk.
          */
-        protected abstract SegmentedFile complete(String path, long overrideLength, boolean isFinal);
+        protected abstract SegmentedFile complete(ChannelProxy channel, long overrideLength, boolean isFinal);
 
         public SegmentedFile complete(String path)
         {
-            return complete(path, -1, true);
+            return complete(getChannel(path), -1, true);
         }
 
         public SegmentedFile complete(String path, boolean isFinal)
         {
-            return complete(path, -1, isFinal);
+            return complete(getChannel(path), -1, isFinal);
         }
 
         public SegmentedFile complete(String path, long overrideLength)
         {
-            return complete(path, overrideLength, false);
+            return complete(getChannel(path), overrideLength, false);
         }
 
         public void serializeBounds(DataOutput out) throws IOException
@@ -203,6 +220,26 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         {
             if (!in.readUTF().equals(DatabaseDescriptor.getDiskAccessMode().name()))
                 throw new IOException("Cannot deserialize SSTable Summary component because the DiskAccessMode was changed!");
+        }
+
+        public void close()
+        {
+            if (channel != null)
+                channel.close();
+        }
+
+        private ChannelProxy getChannel(String path)
+        {
+            if (channel != null)
+            {
+                if (channel.filePath().equals(path))
+                    return channel.sharedCopy();
+                else
+                    channel.close();
+            }
+
+            channel = new ChannelProxy(path);
+            return channel.sharedCopy();
         }
     }
 
@@ -250,7 +287,7 @@ public abstract class SegmentedFile extends SharedCloseableImpl
             }
             catch (IOException e)
             {
-                throw new FSReadError(e, path);
+                throw new FSReadError(e, path());
             }
             return segment;
         }
@@ -260,7 +297,7 @@ public abstract class SegmentedFile extends SharedCloseableImpl
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "(path='" + path + "'" +
+        return getClass().getSimpleName() + "(path='" + path() + "'" +
                ", length=" + length +
                ")";
 }

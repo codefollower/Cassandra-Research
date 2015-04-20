@@ -35,7 +35,7 @@ public class ServerConnection extends Connection
     private volatile State state;
 
     //key是streamId
-    private final ConcurrentMap<Integer, QueryState> queryStates = new NonBlockingHashMap<Integer, QueryState>();
+    private final ConcurrentMap<Integer, QueryState> queryStates = new NonBlockingHashMap<>();
 
     //在Frame.Decoder.decode调用
     public ServerConnection(Channel channel, int version, Connection.Tracker tracker)

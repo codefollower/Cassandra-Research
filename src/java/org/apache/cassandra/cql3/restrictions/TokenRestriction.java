@@ -27,10 +27,12 @@ import com.google.common.base.Joiner;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.Term;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.Bound;
 import org.apache.cassandra.db.IndexExpression;
 import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.CompositesBuilder;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -71,6 +73,18 @@ public abstract class TokenRestriction extends AbstractPrimaryKeyRestrictions
     }
 
     @Override
+    public ColumnDefinition getFirstColumn()
+    {
+        return columnDefs.get(0);
+    }
+
+    @Override
+    public ColumnDefinition getLastColumn()
+    {
+        return columnDefs.get(columnDefs.size() - 1);
+    }
+
+    @Override
     public boolean hasSupportingIndex(SecondaryIndexManager secondaryIndexManager)
     {
         return false;
@@ -82,6 +96,12 @@ public abstract class TokenRestriction extends AbstractPrimaryKeyRestrictions
                                      QueryOptions options)
     {
         throw new UnsupportedOperationException("Index expression cannot be created for token restriction");
+    }
+
+    @Override
+    public CompositesBuilder appendTo(CompositesBuilder builder, QueryOptions options)
+    {
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -133,7 +153,7 @@ public abstract class TokenRestriction extends AbstractPrimaryKeyRestrictions
         if (restriction instanceof PrimaryKeyRestrictions)
             return (PrimaryKeyRestrictions) restriction;
 
-        return new SingleColumnPrimaryKeyRestrictions(ctype).mergeWith(restriction);
+        return new PrimaryKeyRestrictionSet(ctype).mergeWith(restriction);
     }
 
     public static final class EQ extends TokenRestriction
@@ -156,6 +176,12 @@ public abstract class TokenRestriction extends AbstractPrimaryKeyRestrictions
         public boolean usesFunction(String ksName, String functionName)
         {
             return usesFunction(value, ksName, functionName);
+        }
+
+        @Override
+        public Iterable<Function> getFunctions()
+        {
+            return value.getFunctions();
         }
 
         @Override
@@ -211,6 +237,12 @@ public abstract class TokenRestriction extends AbstractPrimaryKeyRestrictions
         {
             return (slice.hasBound(Bound.START) && usesFunction(slice.bound(Bound.START), ksName, functionName))
                     || (slice.hasBound(Bound.END) && usesFunction(slice.bound(Bound.END), ksName, functionName));
+        }
+
+        @Override
+        public Iterable<Function> getFunctions()
+        {
+            return slice.getFunctions();
         }
 
         @Override

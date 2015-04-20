@@ -120,7 +120,7 @@ p. A @<variable>@ can be either anonymous (a question mark (@?@)) or named (an i
 
 p. The @<properties>@ production is use by statement that create and alter keyspaces and tables. Each @<property>@ is either a _simple_ one, in which case it just has a value, or a _map_ one, in which case it's value is a map grouping sub-options. The following will refer to one or the other as the _kind_ (_simple_ or _map_) of the property.
 
-p. A @<tablename>@ will be used to identify a table. This is an identifier representing the table name that can be preceded by a keyspace name. The keyspace name, if provided, allow to identify a table in another keyspace than the currently active one (the currently active keyspace is set through the <a href="#useStmt"><tt>USE</tt></a> statement).
+p. A @<tablename>@ will be used to identify a table. This is an identifier representing the table name that can be preceded by a keyspace name. The keyspace name, if provided, allow to identify a table in another keyspace than the currently active one (the currently active keyspace is set through the <a href=":#useStmt"><tt>USE</tt></a> statement).
 
 p. For supported @<function>@, see the section on "functions":#functions.
 
@@ -139,6 +139,8 @@ h3(#preparedStatement). Prepared Statement
 CQL supports _prepared statements_. Prepared statement is an optimization that allows to parse a query only once but execute it multiple times with different concrete values.
 
 In a statement, each time a column value is expected (in the data manipulation and query statements), a @<variable>@ (see above) can be used instead. A statement with bind variables must then be _prepared_. Once it has been prepared, it can executed by providing concrete values for the bind variables. The exact procedure to prepare a statement and execute a prepared statement depends on the CQL driver used and is beyond the scope of this document.
+
+In addition to providing column values, bind markers may be used to provide values for @LIMIT@, @TIMESTAMP@, and @TTL@ clauses.  If anonymous bind markers are used, the names for the query parameters will be @[limit]@, @[timestamp]@, and @[ttl]@, respectively.
 
 
 h2(#dataDefinition). Data Definition
@@ -201,7 +203,7 @@ ALTER KEYSPACE Excelsior
           WITH replication = {'class': 'SimpleStrategy', 'replication_factor' : 4};
 
 p. 
-The @ALTER KEYSPACE@ statement alter the properties of an existing keyspace. The supported @<properties>@ are the same that for the "@CREATE TABLE@":#createKeyspaceStmt statement.
+The @ALTER KEYSPACE@ statement alters the properties of an existing keyspace. The supported @<properties>@ are the same as for the "@CREATE KEYSPACE@":#createKeyspaceStmt statement.
 
 
 h3(#dropKeyspaceStmt). DROP KEYSPACE
@@ -741,10 +743,14 @@ __Syntax:__
 
 bc(syntax).. 
 <insertStatement> ::= INSERT INTO <tablename>
-                             '(' <identifier> ( ',' <identifier> )* ')'
-                      VALUES '(' <term-or-literal> ( ',' <term-or-literal> )* ')'
+                      ( ( <name-list> VALUES <value-list> )
+                      | ( JSON <string> ))
                       ( IF NOT EXISTS )?
                       ( USING <option> ( AND <option> )* )?
+
+<names-list> ::= '(' <identifier> ( ',' <identifier> )* ')'
+
+<value-list> ::= '(' <term-or-literal> ( ',' <term-or-literal> )* ')'
 
 <term-or-literal> ::= <term>
                     | <collection-literal>
@@ -754,12 +760,14 @@ bc(syntax)..
 p. 
 __Sample:__
 
-bc(sample). 
+bc(sample).. 
 INSERT INTO NerdMovies (movie, director, main_actor, year)
                 VALUES ('Serenity', 'Joss Whedon', 'Nathan Fillion', 2005)
 USING TTL 86400;
 
-The @INSERT@ statement writes one or more columns for a given row in a table. Note that since a row is identified by its @PRIMARY KEY@, at least the columns composing it must be specified.
+INSERT INTO NerdMovies JSON '{"movie": "Serenity", "director": "Joss Whedon", "year": 2005}'
+p. 
+The @INSERT@ statement writes one or more columns for a given row in a table. Note that since a row is identified by its @PRIMARY KEY@, at least the columns composing it must be specified.  The list of columns to insert to must be supplied when using the @VALUES@ syntax.  When using the @JSON@ syntax, they are optional.  See the section on "@INSERT JSON@":#insertJson for more details.
 
 Note that unlike in SQL, @INSERT@ does not check the prior existence of the row by default: the row is created if none existed before, and updated otherwise. Furthermore, there is no mean to know which of creation or update happened.
 
@@ -924,7 +932,7 @@ h3(#selectStmt). SELECT
 __Syntax:__
 
 bc(syntax).. 
-<select-stmt> ::= SELECT <select-clause>
+<select-stmt> ::= SELECT ( JSON )? <select-clause>
                   FROM <tablename>
                   ( WHERE <where-clause> )?
                   ( ORDER BY <order-by> )?
@@ -960,6 +968,8 @@ __Sample:__
 bc(sample).. 
 SELECT name, occupation FROM users WHERE userid IN (199, 200, 207);
 
+SELECT JSON name, occupation FROM users WHERE userid = 199;
+
 SELECT name AS user_name, occupation AS user_occupation FROM users;
 
 SELECT time, value
@@ -973,7 +983,7 @@ SELECT COUNT(*) FROM users;
 SELECT COUNT(*) AS user_count FROM users;
 
 p. 
-The @SELECT@ statements reads one or more columns for one or more rows in a table. It returns a result-set of rows, where each row contains the collection of columns corresponding to the query.
+The @SELECT@ statements reads one or more columns for one or more rows in a table. It returns a result-set of rows, where each row contains the collection of columns corresponding to the query.  If the @JSON@ keyword is used, the results for each row will contain only a single column named "json".  See the section on "@SELECT JSON@":#selectJson for more details.
 
 h4(#selectSelection). @<select-clause>@
 
@@ -1101,12 +1111,14 @@ bc(syntax)..
                 | blob
                 | boolean
                 | counter
+                | date
                 | decimal
                 | double
                 | float
                 | inet
                 | int
                 | text
+                | time
                 | timestamp
                 | timeuuid
                 | uuid
@@ -1127,13 +1139,15 @@ p. The following table gives additional informations on the native data types, a
 |@blob@     |   blobs              |Arbitrary bytes (no validation)|
 |@boolean@  |   booleans           |true or false|
 |@counter@  |   integers           |Counter column (64-bit signed value). See "Counters":#counters for details|
+|@date@     |   integers, strings  |A date (with no corresponding time value).  See "Working with dates":#usingdates below for more information.|
 |@decimal@  |   integers, floats   |Variable-precision decimal|
 |@double@   |   integers           |64-bit IEEE-754 floating point|
 |@float@    |   integers, floats   |32-bit IEEE-754 floating point|
 |@inet@     |   strings            |An IP address. It can be either 4 bytes long (IPv4) or 16 bytes long (IPv6). There is no @inet@ constant, IP address should be inputed as strings|
 |@int@      |   integers           |32-bit signed int|
 |@text@     |   strings            |UTF8 encoded string|
-|@timestamp@|   integers, strings  |A timestamp. Strings constant are allow to input timestamps as dates, see "Working with dates":#usingdates below for more information.|
+|@time@     |   integers, strings  |A time with nanosecond precision.  See "Working with time":#usingtime below for more information.|
+|@timestamp@|   integers, strings  |A timestamp. Strings constant are allow to input timestamps as dates, see "Working with timestamps":#usingtimestamps below for more information.|
 |@timeuuid@ |   uuids              |Type 1 UUID. This is generally used as a "conflict-free" timestamp. Also see the "functions on Timeuuid":#timeuuidFun|
 |@uuid@     |   uuids              |Type 1 or type 4 UUID|
 |@varchar@  |   strings            |UTF8 encoded string|
@@ -1141,7 +1155,7 @@ p. The following table gives additional informations on the native data types, a
 
 For more information on how to use the collection types, see the "Working with collections":#collections section below.
 
-h3(#usingdates). Working with dates
+h3(#usingtimestamps). Working with timestamps
 
 Values of the @timestamp@ type are encoded as 64-bit signed integers representing a number of milliseconds since the standard base time known as "the epoch": January 1 1970 at 00:00:00 GMT.
 
@@ -1173,6 +1187,31 @@ The time of day may also be omitted, if the date is the only piece that matters:
 * @2011-02-03+0000@
 
 In that case, the time of day will default to 00:00:00, in the specified or default time zone.
+
+
+h3(#usingdates). Working with dates
+
+Values of the @date@ type are encoded as 32-bit unsigned integers representing a number of days with "the epoch" at the center of the range (2^31). Epoch is January 1st, 1970
+
+A date can be input in CQL as an unsigned integer as defined above.
+
+They can also be input as string literals in the following format:
+
+* @2014-01-01@
+
+
+h3(#usingtime). Working with time
+
+Values of the @time@ type are encoded as 64-bit signed integers representing the number of nanoseconds since midnight.
+
+A time can be input in CQL as simple long integers, giving the number of nanoseconds since midnight.
+
+They can also be input as string literals in any of the following formats:
+
+* @08:12:54@
+* @08:12:54.123@
+* @08:12:54.123456@
+* @08:12:54.123456789@
 
 
 h3(#counters). Counters
@@ -1339,7 +1378,7 @@ will never return any result by design, since the value returned by @now()@ is g
 
 h4. @minTimeuuid@ and @maxTimeuuid@
 
-The @minTimeuuid@ (resp. @maxTimeuuid@) function takes a @timestamp@ value @t@ (which can be "either a timestamp or a date string":#usingdates) and return a _fake_ @timeuuid@ corresponding to the _smallest_ (resp. _biggest_) possible @timeuuid@ having for timestamp @t@. So for instance:
+The @minTimeuuid@ (resp. @maxTimeuuid@) function takes a @timestamp@ value @t@ (which can be "either a timestamp or a date string":#usingtimestamps) and return a _fake_ @timeuuid@ corresponding to the _smallest_ (resp. _biggest_) possible @timeuuid@ having for timestamp @t@. So for instance:
  
 bc(sample). 
 SELECT * FROM myTable WHERE t > maxTimeuuid('2013-01-01 00:05+0000') AND t < minTimeuuid('2013-02-02 10:00+0000')
@@ -1450,6 +1489,58 @@ p.
 
 See "@CREATE AGGREGATE@":#createAggregateStmt and "@DROP AGGREGATE@":#dropAggregateStmt.
 
+h2(#json). JSON Support
+
+Cassandra 3.0 introduces JSON support to "@SELECT@":#selectStmt and "@INSERT@":#insertStmt statements.  This support does not fundamentally alter the CQL API (for example, the schema is still enforced), it simply provides a convenient way to work with JSON documents.
+
+h3(#selectJson). SELECT JSON
+
+With @SELECT@ statements, the new @JSON@ keyword can be used to return each row as a single @JSON@ encoded map.  The remainder of the @SELECT@ statment behavior is the same.
+
+The result map keys are the same as the column names in a normal result set.  For example, a statement like "@SELECT JSON a, ttl(b) FROM ...@" would result in a map with keys @"a"@ and @"ttl(b)"@.  However, this is one notable exception: for symmetry with @INSERT JSON@ behavior, case-sensitive column names with upper-case letters will be surrounded with double quotes.  For example, "@SELECT JSON myColumn FROM ...@" would result in a map key @"\"myColumn\""@ (note the escaped quotes).
+
+The map values will @JSON@-encoded representations (as described below) of the result set values.
+
+h3(#insertJson). INSERT JSON
+
+With @INSERT@ statements, the new @JSON@ keyword can be used to enable inserting a @JSON@ encoded map as a single row.  The format of the @JSON@ map should generally match that returned by a @SELECT JSON@ statement on the same table.  In particular, case-sensitive column names should be surrounded with double quotes.  For example, to insert into a table with two columns named "myKey" and "value", you would do the following:
+
+bc(sample). 
+INSERT INTO mytable JSON '{"\"myKey\"": 0, "value": 0}'
+
+Any columns which are ommitted from the @JSON@ map will be defaulted to a @NULL@ value (which will result in a tombstone being created).
+
+h3(#jsonEncoding). JSON Encoding of Cassandra Data Types
+
+Where possible, Cassandra will represent and accept data types in their native @JSON@ representation.  Cassandra will also accept string representations matching the CQL literal format for all data types.  The following table describes the encodings that Cassandra will accept in @INSERT JSON@ values (and @fromJson()@ arguments) as well as the format Cassandra will use when returning data for @SELECT JSON@ statements (and @fromJson()@):
+
+|_. type    |_. formats accepted   |_. return format |_. notes|
+|@ascii@    |string                |string           |Uses JSON's @\u@ character escape|
+|@bigint@   |integer, string       |integer          |String must be valid 64 bit integer|
+|@blob@     |string                |string           |String should be 0x followed by an even number of hex digits|
+|@boolean@  |boolean, string       |boolean          |String must be "true" or "false"|
+|@date@     |string                |string           |Date in format @YYYY-MM-DD@, timezone UTC|
+|@decimal@  |integer, float, string|float            |May exceed 32 or 64-bit IEEE-754 floating point precision in client-side decoder|
+|@double@   |integer, float, string|float            |String must be valid integer or float|
+|@float@    |integer, float, string|float            |String must be valid integer or float|
+|@inet@     |string                |string           |IPv4 or IPv6 address|
+|@int@      |integer, string       |integer          |String must be valid 32 bit integer|
+|@text@     |string                |string           |Uses JSON's @\u@ character escape|
+|@time@     |string                |string           |Time of day in format @HH-MM-SS[.fffffffff]@|
+|@timestamp@|integer, string       |string           |A timestamp. Strings constant are allow to input timestamps as dates, see "Working with dates":#usingdates below for more information.  Datestamps with format @YYYY-MM-DD HH:MM:SS.SSS@ are returned.|
+|@timeuuid@ |string                |string           |Type 1 UUID. See "Constants":#constants for the UUID format|
+|@uuid@     |string                |string           |See "Constants":#constants for the UUID format|
+|@varchar@  |string                |string           |Uses JSON's @\u@ character escape|
+|@varint@   |integer, string       |integer          |Variable length; may overflow 32 or 64 bit integers in client-side decoder|
+
+h3(#fromJson). The fromJson() Function
+
+The @fromJson()@ function may be used similarly to @INSERT JSON@, but for a single column value.  It may only be used in the @VALUES@ clause of an @INSERT@ statement or as one of the column values in an @UPDATE@, @DELETE@, or @SELECT@ statement.  For example, it cannot be used in the selection clause of a @SELECT@ statement.
+
+h3(#toJson). The toJson() Function
+
+The @toJson()@ function may be used similarly to @SELECT JSON@, but for a single column value.  It may only be used in the selection clause of a @SELECT@ statement.
+
 h2(#appendixA). Appendix A: CQL Keywords
 
 CQL distinguishes between _reserved_ and _non-reserved_ keywords. Reserved keywords cannot be used as identifier, they are truly reserved for the language (but one can enclose a reserved keyword by double-quotes to use it as an identifier). Non-reserved keywords however only have a specific meaning in certain context but can used as identifer otherwise. The only _raison d'être_ of these non-reserved keywords is convenience: some keyword are non-reserved when it was always easy for the parser to decide whether they were used as keywords or not.
@@ -1552,6 +1643,8 @@ CQL distinguishes between _reserved_ and _non-reserved_ keywords. Reserved keywo
 | @WITH@         | yes |
 | @WRITETIME@    | no  |
 | @DISTINCT@     | no  |
+| @DATE@         | no  |
+| @TIME@         | no  |
 
 h2(#appendixB). Appendix B: CQL Reserved Types
 
@@ -1606,7 +1699,7 @@ h3. 3.1.4
 
 h3. 3.1.3
 
-* Millisecond precision formats have been added to the timestamp parser (see "working with dates":#usingdates).
+* Millisecond precision formats have been added to the timestamp parser (see "working with dates":#usingtimestamps).
 
 h3. 3.1.2
 
@@ -1621,7 +1714,7 @@ h3. 3.1.1
 h3. 3.1.0
 
 * "ALTER TABLE":#alterTableStmt @DROP@ option has been reenabled for CQL3 tables and has new semantics now: the space formerly used by dropped columns will now be eventually reclaimed (post-compaction). You should not readd previously dropped columns unless you use timestamps with microsecond precision (see "CASSANDRA-3919":https://issues.apache.org/jira/browse/CASSANDRA-3919 for more details).
-* @SELECT@ statement now supports aliases in select clause. Aliases in WHERE and ORDER BY clauses are not supported. See the "section on select"#selectStmt for details.
+* @SELECT@ statement now supports aliases in select clause. Aliases in WHERE and ORDER BY clauses are not supported. See the "section on select":#selectStmt for details.
 * @CREATE@ statements for @KEYSPACE@, @TABLE@ and @INDEX@ now supports an @IF NOT EXISTS@ condition. Similarly, @DROP@ statements support a @IF EXISTS@ condition.
 * @INSERT@ statements optionally supports a @IF NOT EXISTS@ condition and @UPDATE@ supports @IF@ conditions.
 
@@ -1646,9 +1739,8 @@ h3. 3.0.2
 
 h3. 3.0.1
 
-* "Date strings":#usingdates (and timestamps) are no longer accepted as valid @timeuuid@ values. Doing so was a bug in the sense that date string are not valid @timeuuid@, and it was thus resulting in "confusing behaviors":https://issues.apache.org/jira/browse/CASSANDRA-4936.  However, the following new methods have been added to help working with @timeuuid@: @now@, @minTimeuuid@, @maxTimeuuid@ , @dateOf@ and @unixTimestampOf@. See the "section dedicated to these methods":#usingtimeuuid for more detail.
+* "Date strings":#usingtimestamps (and timestamps) are no longer accepted as valid @timeuuid@ values. Doing so was a bug in the sense that date string are not valid @timeuuid@, and it was thus resulting in "confusing behaviors":https://issues.apache.org/jira/browse/CASSANDRA-4936.  However, the following new methods have been added to help working with @timeuuid@: @now@, @minTimeuuid@, @maxTimeuuid@ , @dateOf@ and @unixTimestampOf@. See the "section dedicated to these methods":#usingtimeuuid for more detail.
 * "Float constants"#constants now support the exponent notation. In other words, @4.2E10@ is now a valid floating point value.
-
 
 h2. Versioning
 

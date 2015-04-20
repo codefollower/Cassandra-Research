@@ -21,15 +21,12 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.base.Function;
-import com.google.common.collect.*;
-import org.apache.cassandra.config.DatabaseDescriptor;
-
-import org.apache.cassandra.tracing.Tracing;
-
+import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.Composite;
@@ -37,6 +34,7 @@ import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageProxy;
+import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
 /**
@@ -86,6 +84,14 @@ public class BatchStatement implements CQLStatement
             if (statement.usesFunction(ksName, functionName))
                 return true;
         return false;
+    }
+
+    public Iterable<org.apache.cassandra.cql3.functions.Function> getFunctions()
+    {
+        Iterable<org.apache.cassandra.cql3.functions.Function> functions = attrs.getFunctions();
+        for (ModificationStatement statement : statements)
+            functions = Iterables.concat(functions, statement.getFunctions());
+        return functions;
     }
 
     public int getBoundTerms()
@@ -256,7 +262,7 @@ public class BatchStatement implements CQLStatement
             String format = "Batch of prepared statements for {} is of size {}, exceeding specified threshold of {} by {}.{}";
             if (size > failThreshold)
             {
-                Tracing.trace(format, new Object[] {ksCfPairs, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)"});
+                Tracing.trace(format, ksCfPairs, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)");
                 logger.error(format, ksCfPairs, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)");
                 throw new InvalidRequestException(String.format("Batch too large"));
             }
@@ -403,9 +409,25 @@ public class BatchStatement implements CQLStatement
         {
             VariableSpecifications boundNames = getBoundVariables();
 
+            String firstKS = null;
+            String firstCF = null;
+            boolean haveMultipleCFs = false;
+
             List<ModificationStatement> statements = new ArrayList<>(parsedStatements.size());
             for (ModificationStatement.Parsed parsed : parsedStatements)
+            {
+                if (firstKS == null)
+                {
+                    firstKS = parsed.keyspace();
+                    firstCF = parsed.columnFamily();
+                }
+                else if (!haveMultipleCFs)
+                {
+                    haveMultipleCFs = !firstKS.equals(parsed.keyspace()) || !firstCF.equals(parsed.columnFamily());
+                }
+
                 statements.add(parsed.prepare(boundNames));
+            }
 
             Attributes prepAttrs = attrs.prepare("[batch]", "[batch]");
             prepAttrs.collectMarkerSpecification(boundNames);
@@ -413,7 +435,12 @@ public class BatchStatement implements CQLStatement
             BatchStatement batchStatement = new BatchStatement(boundNames.size(), type, statements, prepAttrs);
             batchStatement.validate();
 
-            return new ParsedStatement.Prepared(batchStatement, boundNames);
+            // Use the CFMetadata of the first statement for partition key bind indexes.  If the statements affect
+            // multiple tables, we won't send partition key bind indexes.
+            Short[] partitionKeyBindIndexes = haveMultipleCFs ? null
+                                                              : boundNames.getPartitionKeyBindIndexes(batchStatement.statements.get(0).cfm);
+
+            return new ParsedStatement.Prepared(batchStatement, boundNames, partitionKeyBindIndexes);
         }
     }
 }

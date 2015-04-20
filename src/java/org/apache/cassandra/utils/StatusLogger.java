@@ -52,30 +52,30 @@ public class StatusLogger
 
         for (Stage stage : Stage.jmxEnabledStages())
         {
-            System.out.printf("%-25s%10s%10s%15s%10s%18s%n",
+            logger.info(String.format("%-25s%10s%10s%15s%10s%18s%n",
                               stage.getJmxName(),
                               ThreadPoolMetrics.getJmxMetric(server, stage.getJmxType(), stage.getJmxName(), "ActiveTasks"),
                               ThreadPoolMetrics.getJmxMetric(server, stage.getJmxType(), stage.getJmxName(), "PendingTasks"),
                               ThreadPoolMetrics.getJmxMetric(server, stage.getJmxType(), stage.getJmxName(), "CompletedTasks"),
                               ThreadPoolMetrics.getJmxMetric(server, stage.getJmxType(), stage.getJmxName(), "CurrentlyBlockedTasks"),
-                              ThreadPoolMetrics.getJmxMetric(server, stage.getJmxType(), stage.getJmxName(), "TotalBlockedTasks"));
+                              ThreadPoolMetrics.getJmxMetric(server, stage.getJmxType(), stage.getJmxName(), "TotalBlockedTasks")));
         }
 
         // one offs
         logger.info(String.format("%-25s%10s%10s",
                                   "CompactionManager", CompactionManager.instance.getActiveCompactions(), CompactionManager.instance.getPendingTasks()));
-        int pendingCommands = 0;
-        for (int n : MessagingService.instance().getCommandPendingTasks().values())
+        int pendingLargeMessages = 0;
+        for (int n : MessagingService.instance().getLargeMessagePendingTasks().values())
         {
-            pendingCommands += n;
+            pendingLargeMessages += n;
         }
-        int pendingResponses = 0;
-        for (int n : MessagingService.instance().getResponsePendingTasks().values())
+        int pendingSmallMessages = 0;
+        for (int n : MessagingService.instance().getSmallMessagePendingTasks().values())
         {
-            pendingResponses += n;
+            pendingSmallMessages += n;
         }
         logger.info(String.format("%-25s%10s%10s",
-                                  "MessagingService", "n/a", pendingCommands + "/" + pendingResponses));
+                                  "MessagingService", "n/a", pendingLargeMessages + "/" + pendingSmallMessages));
 
         // Global key/row cache information
         AutoSavingCache<KeyCacheKey, RowIndexEntry> keyCache = CacheService.instance.keyCache;

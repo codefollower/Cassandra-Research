@@ -29,18 +29,13 @@ import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.restrictions.StatementRestrictions;
 import org.apache.cassandra.cql3.selection.RawSelector;
 import org.apache.cassandra.cql3.selection.Selection;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.composites.Composites;
-import org.apache.cassandra.db.filter.ColumnSlice;
-import org.apache.cassandra.db.filter.IDiskAtomFilter;
-import org.apache.cassandra.db.filter.NamesQueryFilter;
-import org.apache.cassandra.db.filter.SliceQueryFilter;
+import org.apache.cassandra.db.composites.*;
+import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.CompositeType;
@@ -89,7 +84,7 @@ public class SelectStatement implements CQLStatement
     private final Comparator<List<ByteBuffer>> orderingComparator;
 
     // Used by forSelection below
-    private static final Parameters defaultParameters = new Parameters(Collections.<ColumnIdentifier.Raw, Boolean>emptyMap(), false, false);
+    private static final Parameters defaultParameters = new Parameters(Collections.<ColumnIdentifier.Raw, Boolean>emptyMap(), false, false, false);
 
     public SelectStatement(CFMetaData cfm,
                            int boundTerms,
@@ -118,6 +113,14 @@ public class SelectStatement implements CQLStatement
                 || (limit != null && limit.usesFunction(ksName, functionName));
     }
 
+    @Override
+    public Iterable<Function> getFunctions()
+    {
+        return Iterables.concat(selection.getFunctions(),
+                                restrictions.getFunctions(),
+                                limit != null ? limit.getFunctions() : Collections.<Function>emptySet());
+    }
+
     // Creates a simple select based on the given selection.
     // Note that the results select statement should not be used for actual queries, but only for processing already
     // queried data through processColumnFamily.
@@ -133,9 +136,9 @@ public class SelectStatement implements CQLStatement
                                    null);
     }
 
-    public ResultSet.Metadata getResultMetadata()
+    public ResultSet.ResultMetadata getResultMetadata()
     {
-        return selection.getResultMetadata();
+        return selection.getResultMetadata(parameters.isJson);
     }
 
     public int getBoundTerms()
@@ -146,6 +149,8 @@ public class SelectStatement implements CQLStatement
     public void checkAccess(ClientState state) throws InvalidRequestException, UnauthorizedException
     {
         state.hasColumnFamilyAccess(keyspace(), columnFamily(), Permission.SELECT);
+        for (Function function : getFunctions())
+            state.ensureHasPermission(Permission.EXECUTE, function);
     }
 
     public void validate(ClientState state) throws InvalidRequestException
@@ -233,7 +238,7 @@ public class SelectStatement implements CQLStatement
     private ResultMessage.Rows pageAggregateQuery(QueryPager pager, QueryOptions options, int pageSize, long now)
             throws RequestValidationException, RequestExecutionException
     {
-        Selection.ResultSetBuilder result = selection.resultSetBuilder(now);
+        Selection.ResultSetBuilder result = selection.resultSetBuilder(now, parameters.isJson);
         while (!pager.isExhausted())
         {
             for (org.apache.cassandra.db.Row row : pager.fetchPage(pageSize))
@@ -582,7 +587,7 @@ public class SelectStatement implements CQLStatement
 
     private ResultSet process(List<Row> rows, QueryOptions options, int limit, long now) throws InvalidRequestException
     {
-        Selection.ResultSetBuilder result = selection.resultSetBuilder(now);
+        Selection.ResultSetBuilder result = selection.resultSetBuilder(now, parameters.isJson);
         for (org.apache.cassandra.db.Row row : rows)
         {
             // Not columns match the query, skip
@@ -624,6 +629,7 @@ public class SelectStatement implements CQLStatement
         if (restrictions.isNonCompositeSliceWithExclusiveBounds())
             cells = applySliceRestriction(cells, options);
 
+        int protocolVersion = options.getProtocolVersion();
         CQL3Row.RowIterator iter = cfm.comparator.CQL3RowBuilder(cfm, now).group(cells);
 
         // If there is static columns but there is no non-static row, then provided the select was a full
@@ -632,7 +638,7 @@ public class SelectStatement implements CQLStatement
         CQL3Row staticRow = iter.getStaticRow();
         if (staticRow != null && !iter.hasNext() && !restrictions.usesSecondaryIndexing() && restrictions.hasNoClusteringColumnsRestriction())
         {
-            result.newRow(options.getProtocolVersion());
+            result.newRow(protocolVersion);
             for (ColumnDefinition def : selection.getColumns())
             {
                 switch (def.kind)
@@ -655,7 +661,7 @@ public class SelectStatement implements CQLStatement
             CQL3Row cql3Row = iter.next();
 
             // Respect requested order
-            result.newRow(options.getProtocolVersion());
+            result.newRow(protocolVersion);
             // Respect selection order
             for (ColumnDefinition def : selection.getColumns())
             {
@@ -744,8 +750,8 @@ public class SelectStatement implements CQLStatement
             VariableSpecifications boundNames = getBoundVariables();
 
             Selection selection = selectClause.isEmpty()
-                                ? Selection.wildcard(cfm)
-                                : Selection.fromSelectors(cfm, selectClause);
+                                  ? Selection.wildcard(cfm)
+                                  : Selection.fromSelectors(cfm, selectClause);
 
             StatementRestrictions restrictions = prepareRestrictions(cfm, boundNames, selection);
             
@@ -777,7 +783,7 @@ public class SelectStatement implements CQLStatement
                                                         orderingComparator,
                                                         prepareLimit(boundNames));
 
-            return new ParsedStatement.Prepared(stmt, boundNames);
+            return new ParsedStatement.Prepared(stmt, boundNames, boundNames.getPartitionKeyBindIndexes(cfm));
         }
 
         /**
@@ -1028,14 +1034,17 @@ public class SelectStatement implements CQLStatement
         private final Map<ColumnIdentifier.Raw, Boolean> orderings;
         private final boolean isDistinct;
         private final boolean allowFiltering;
+        public final boolean isJson;
 
         public Parameters(Map<ColumnIdentifier.Raw, Boolean> orderings,
                           boolean isDistinct,
-                          boolean allowFiltering)
+                          boolean allowFiltering,
+                          boolean isJson)
         {
             this.orderings = orderings;
             this.isDistinct = isDistinct;
             this.allowFiltering = allowFiltering;
+            this.isJson = isJson;
         }
     }
 

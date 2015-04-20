@@ -17,15 +17,18 @@
 */
 package org.apache.cassandra.io.util;
 
-import java.io.File;
-import org.apache.cassandra.io.sstable.format.SSTableWriter;
-
-//与BufferedSegmentedFile类似，只不过有缓存
+//<<<<<<< HEAD
+//import java.io.File;
+//import org.apache.cassandra.io.sstable.format.SSTableWriter;
+//
+////与BufferedSegmentedFile类似，只不过有缓存
+//=======
+//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
 public class BufferedPoolingSegmentedFile extends PoolingSegmentedFile
 {
-    public BufferedPoolingSegmentedFile(String path, long length)
+    public BufferedPoolingSegmentedFile(ChannelProxy channel, long length)
     {
-        super(new Cleanup(path), path, length);
+        super(new Cleanup(channel), channel, length);
     }
 
     private BufferedPoolingSegmentedFile(BufferedPoolingSegmentedFile copy)
@@ -45,11 +48,11 @@ public class BufferedPoolingSegmentedFile extends PoolingSegmentedFile
             // only one segment in a standard-io file
         }
 
-        public SegmentedFile complete(String path, long overrideLength, boolean isFinal)
+        public SegmentedFile complete(ChannelProxy channel, long overrideLength, boolean isFinal)
         {
             assert !isFinal || overrideLength <= 0;
-            long length = overrideLength > 0 ? overrideLength : new File(path).length();
-            return new BufferedPoolingSegmentedFile(path, length);
+            long length = overrideLength > 0 ? overrideLength : channel.size();
+            return new BufferedPoolingSegmentedFile(channel, length);
         }
     }
 }

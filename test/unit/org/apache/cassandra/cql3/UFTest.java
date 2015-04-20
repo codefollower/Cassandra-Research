@@ -118,16 +118,35 @@ public class UFTest extends CQLTester
 
         Assert.assertEquals(1, Functions.find(parseFunctionName(fSin)).size());
 
-        ResultMessage.Prepared prepared = QueryProcessor.prepare(
+        // create a pairs of Select and Inserts. One statement in each pair uses the function so when we
+        // drop it those statements should be removed from the cache in QueryProcessor. The other statements
+        // should be unaffected.
+
+        ResultMessage.Prepared preparedSelect1 = QueryProcessor.prepare(
                                                     String.format("SELECT key, %s(d) FROM %s.%s", fSin, KEYSPACE, currentTable()),
                                                     ClientState.forInternalCalls(), false);
-        Assert.assertNotNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+        ResultMessage.Prepared preparedSelect2 = QueryProcessor.prepare(
+                                                    String.format("SELECT key FROM %s.%s", KEYSPACE, currentTable()),
+                                                    ClientState.forInternalCalls(), false);
+        ResultMessage.Prepared preparedInsert1 = QueryProcessor.prepare(
+                                                      String.format("INSERT INTO %s.%s (key, d) VALUES (?, %s(?))", KEYSPACE, currentTable(), fSin),
+                                                      ClientState.forInternalCalls(), false);
+        ResultMessage.Prepared preparedInsert2 = QueryProcessor.prepare(
+                                                      String.format("INSERT INTO %s.%s (key, d) VALUES (?, ?)", KEYSPACE, currentTable()),
+                                                      ClientState.forInternalCalls(), false);
+
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedSelect1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedSelect2.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedInsert1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedInsert2.statementId));
 
         execute("DROP FUNCTION " + fSin + "(double);");
 
-        Assert.assertNull(QueryProcessor.instance.getPrepared(prepared.statementId));
-
-        //
+        // the statements which use the dropped function should be removed from cache, with the others remaining
+        Assert.assertNull(QueryProcessor.instance.getPrepared(preparedSelect1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedSelect2.statementId));
+        Assert.assertNull(QueryProcessor.instance.getPrepared(preparedInsert1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedInsert2.statementId));
 
         execute("CREATE FUNCTION " + fSin + " ( input double ) " +
                 "RETURNS double " +
@@ -136,14 +155,24 @@ public class UFTest extends CQLTester
 
         Assert.assertEquals(1, Functions.find(fSinName).size());
 
-        prepared = QueryProcessor.prepare(
+        preparedSelect1= QueryProcessor.prepare(
                                          String.format("SELECT key, %s(d) FROM %s.%s", fSin, KEYSPACE, currentTable()),
                                          ClientState.forInternalCalls(), false);
-        Assert.assertNotNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+        preparedInsert1 = QueryProcessor.prepare(
+                                         String.format("INSERT INTO %s.%s (key, d) VALUES (?, %s(?))", KEYSPACE, currentTable(), fSin),
+                                         ClientState.forInternalCalls(), false);
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedSelect1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedInsert1.statementId));
 
         dropPerTestKeyspace();
 
-        Assert.assertNull(QueryProcessor.instance.getPrepared(prepared.statementId));
+        // again, only the 2 statements referencing the function should be removed from cache
+        // this time because the statements select from tables in KEYSPACE, only the function
+        // is scoped to KEYSPACE_PER_TEST
+        Assert.assertNull(QueryProcessor.instance.getPrepared(preparedSelect1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedSelect2.statementId));
+        Assert.assertNull(QueryProcessor.instance.getPrepared(preparedInsert1.statementId));
+        Assert.assertNotNull(QueryProcessor.instance.getPrepared(preparedInsert2.statementId));
     }
 
     @Test
@@ -670,7 +699,7 @@ public class UFTest extends CQLTester
                    row(list, set, map));
 
         // same test - but via native protocol
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
             assertRowsNet(version,
                           executeNet(version, "SELECT " + fList + "(lst), " + fSet + "(st), " + fMap + "(mp) FROM %s WHERE key = 1"),
                           row(list, set, map));
@@ -751,7 +780,7 @@ public class UFTest extends CQLTester
         Assert.assertNull(row.getBytes("t"));
         Assert.assertNull(row.getBytes("u"));
 
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
         {
             Row r = executeNet(version, "SELECT " +
                                         fList + "(lst) as l, " +
@@ -867,7 +896,7 @@ public class UFTest extends CQLTester
                                        DataType.set(DataType.text()),
                                        DataType.map(DataType.cint(), DataType.cboolean()));
         TupleValue tup = tType.newValue(1d, list, set, map);
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
         {
             assertRowsNet(version,
                           executeNet(version, "SELECT " + fTup0 + "(tup) FROM %s WHERE key = 1"),
@@ -894,7 +923,7 @@ public class UFTest extends CQLTester
         createTable("CREATE TABLE %s (key int primary key, udt frozen<" + KEYSPACE + "." + type + ">)");
         execute("INSERT INTO %s (key, udt) VALUES (1, {txt: 'one', i:1})");
 
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
         {
             executeNet(version, "USE " + KEYSPACE);
 
@@ -969,7 +998,7 @@ public class UFTest extends CQLTester
         assertRows(execute("SELECT " + fUdt2 + "(udt) FROM %s WHERE key = 1"),
                    row(1));
 
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
         {
             List<Row> rowsNet = executeNet(version, "SELECT " + fUdt0 + "(udt) FROM %s WHERE key = 1").all();
             Assert.assertEquals(1, rowsNet.size());
@@ -1198,7 +1227,7 @@ public class UFTest extends CQLTester
         assertRows(execute("SELECT " + fName1 + "(lst), " + fName2 + "(st), " + fName3 + "(mp) FROM %s WHERE key = 1"),
                    row("three", "one", "two"));
 
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
             assertRowsNet(version,
                           executeNet(version, "SELECT " + fName1 + "(lst), " + fName2 + "(st), " + fName3 + "(mp) FROM %s WHERE key = 1"),
                           row("three", "one", "two"));
@@ -1240,7 +1269,7 @@ public class UFTest extends CQLTester
         assertRows(execute("SELECT " + fName1 + "(lst), " + fName2 + "(st), " + fName3 + "(mp) FROM %s WHERE key = 1"),
                    row(list, set, map));
 
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
             assertRowsNet(version,
                           executeNet(version, "SELECT " + fName1 + "(lst), " + fName2 + "(st), " + fName3 + "(mp) FROM %s WHERE key = 1"),
                           row(list, set, map));
@@ -1333,7 +1362,7 @@ public class UFTest extends CQLTester
                                        DataType.set(DataType.text()),
                                        DataType.map(DataType.cint(), DataType.cboolean()));
         TupleValue tup = tType.newValue(1d, list, set, map);
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
         {
             assertRowsNet(version,
                           executeNet(version, "SELECT " + fTup1 + "(tup) FROM %s WHERE key = 1"),
@@ -1437,7 +1466,7 @@ public class UFTest extends CQLTester
                    row("three", "one", "two"));
 
         // same test - but via native protocol
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
             assertRowsNet(version,
                           executeNet(version, cqlSelect),
                           row("three", "one", "two"));
@@ -1633,7 +1662,7 @@ public class UFTest extends CQLTester
                                       "CREATE OR REPLACE FUNCTION %s(val double) RETURNS double LANGUAGE JAVA\n" +
                                       "AS 'throw new RuntimeException()';");
 
-        for (int version = Server.VERSION_2; version <= Server.CURRENT_VERSION; version++)
+        for (int version = Server.VERSION_2; version <= maxProtocolVersion; version++)
         {
             // TODO replace with appropiate code
             assertRowsNet(version,

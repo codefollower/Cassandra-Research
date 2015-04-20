@@ -36,6 +36,7 @@ import java.util.UUID;
 import io.netty.buffer.*;
 import io.netty.util.CharsetUtil;
 
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.utils.Pair;
@@ -51,7 +52,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  */
 public abstract class CBUtil
 {
-    public static final ByteBufAllocator allocator = new PooledByteBufAllocator(true);
+    public static final boolean USE_HEAP_ALLOCATOR = Boolean.getBoolean(Config.PROPERTY_PREFIX + "netty_use_heap_allocator");
+    public static final ByteBufAllocator allocator = USE_HEAP_ALLOCATOR ? new UnpooledByteBufAllocator(false) : new PooledByteBufAllocator(true);
 
     private CBUtil() {}
 
@@ -179,6 +181,40 @@ public abstract class CBUtil
     public static int sizeOfBytes(byte[] bytes)
     {
         return 2 + bytes.length;
+    }
+
+    public static Map<String, byte[]> readBytesMap(ByteBuf cb)
+    {
+        int length = cb.readUnsignedShort();
+        Map<String, byte[]> m = new HashMap<>(length);
+        for (int i = 0; i < length; i++)
+        {
+            String k = readString(cb);
+            byte[] v = readBytes(cb);
+            m.put(k, v);
+        }
+        return m;
+    }
+
+    public static void writeBytesMap(Map<String, byte[]> m, ByteBuf cb)
+    {
+        cb.writeShort(m.size());
+        for (Map.Entry<String, byte[]> entry : m.entrySet())
+        {
+            writeString(entry.getKey(), cb);
+            writeBytes(entry.getValue(), cb);
+        }
+    }
+
+    public static int sizeOfBytesMap(Map<String, byte[]> m)
+    {
+        int size = 2;
+        for (Map.Entry<String, byte[]> entry : m.entrySet())
+        {
+            size += sizeOfString(entry.getKey());
+            size += sizeOfBytes(entry.getValue());
+        }
+        return size;
     }
 
     public static ConsistencyLevel readConsistencyLevel(ByteBuf cb)

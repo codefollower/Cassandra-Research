@@ -50,7 +50,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
     /**
      * Inspect the classpath to find storage configuration file
      */
-    private URL getStorageConfigURL() throws ConfigurationException
+    static URL getStorageConfigURL() throws ConfigurationException
     {
         //读取cassandra.yaml文件，可通过System.setProperty("cassandra.config", "xxx")来设置
         String configUrl = System.getProperty("cassandra.config");
@@ -72,7 +72,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
                 String required = "file:" + File.separator + File.separator;
                 if (!configUrl.startsWith(required))
                     throw new ConfigurationException("Expecting URI in variable: [cassandra.config].  Please prefix the file with " + required + File.separator +
-                            " for local files or " + required + "<server>" + File.separator + " for remote files.  Aborting.");
+                            " for local files or " + required + "<server>" + File.separator + " for remote files. Aborting. If you are executing this from an external tool, it needs to set Config.setClientMode(true) to avoid loading configuration.");
                 throw new ConfigurationException("Cannot locate " + configUrl + ".  If this is a local file, please confirm you've provided " + required + File.separator + " as a URI prefix.");
             }
         }
@@ -101,11 +101,11 @@ public class YamlConfigurationLoader implements ConfigurationLoader
                 // getStorageConfigURL should have ruled this out
                 throw new AssertionError(e);
             }
-            
+
             logConfig(configBytes);
 
             org.yaml.snakeyaml.constructor.Constructor constructor = new org.yaml.snakeyaml.constructor.Constructor(Config.class);
-            TypeDescription seedDesc = new TypeDescription(SeedProviderDef.class);
+            TypeDescription seedDesc = new TypeDescription(ParameterizedClass.class);
             seedDesc.putMapPropertyType("parameters", String.class, String.class);
             constructor.addTypeDescription(seedDesc);
             MissingPropertiesChecker propertiesChecker = new MissingPropertiesChecker();
@@ -118,7 +118,7 @@ public class YamlConfigurationLoader implements ConfigurationLoader
         }
         catch (YAMLException e)
         {
-            throw new ConfigurationException("Invalid yaml", e);
+            throw new ConfigurationException("Invalid yaml: " + url, e);
         }
     }
 
@@ -135,16 +135,16 @@ public class YamlConfigurationLoader implements ConfigurationLoader
         }
         logger.info("Node configuration:[{}]", Joiner.on("; ").join(configMap.entrySet()));
     }
-    
-    private static class MissingPropertiesChecker extends PropertyUtils 
+
+    private static class MissingPropertiesChecker extends PropertyUtils
     {
         private final Set<String> missingProperties = new HashSet<>();
-        
+
         public MissingPropertiesChecker()
         {
             setSkipMissingProperties(true);
         }
-        
+
         @Override
         public Property getProperty(Class<? extends Object> type, String name) throws IntrospectionException
         {
@@ -155,10 +155,10 @@ public class YamlConfigurationLoader implements ConfigurationLoader
             }
             return result;
         }
-        
+
         public void check() throws ConfigurationException
         {
-            if (!missingProperties.isEmpty()) 
+            if (!missingProperties.isEmpty())
             {
                 throw new ConfigurationException("Invalid yaml. Please remove properties " + missingProperties + " from your cassandra.yaml");
             }

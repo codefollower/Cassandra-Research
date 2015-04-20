@@ -23,9 +23,11 @@ import java.util.List;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.QueryOptions;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.Bound;
 import org.apache.cassandra.db.IndexExpression;
 import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.composites.CompositesBuilder;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -49,9 +51,27 @@ abstract class ForwardingPrimaryKeyRestrictions implements PrimaryKeyRestriction
     }
 
     @Override
+    public Iterable<Function> getFunctions()
+    {
+        return getDelegate().getFunctions();
+    }
+
+    @Override
     public Collection<ColumnDefinition> getColumnDefs()
     {
         return getDelegate().getColumnDefs();
+    }
+
+    @Override
+    public ColumnDefinition getFirstColumn()
+    {
+        return getDelegate().getFirstColumn();
+    }
+
+    @Override
+    public ColumnDefinition getLastColumn()
+    {
+        return getDelegate().getLastColumn();
     }
 
     @Override
@@ -73,6 +93,12 @@ abstract class ForwardingPrimaryKeyRestrictions implements PrimaryKeyRestriction
     }
 
     @Override
+    public CompositesBuilder appendTo(CompositesBuilder builder, QueryOptions options)
+    {
+        return getDelegate().appendTo(builder, options);
+    }
+
+    @Override
     public List<Composite> valuesAsComposites(QueryOptions options) throws InvalidRequestException
     {
         return getDelegate().valuesAsComposites(options);
@@ -88,6 +114,12 @@ abstract class ForwardingPrimaryKeyRestrictions implements PrimaryKeyRestriction
     public List<Composite> boundsAsComposites(Bound bound, QueryOptions options) throws InvalidRequestException
     {
         return getDelegate().boundsAsComposites(bound, options);
+    }
+
+    @Override
+    public CompositesBuilder appendBoundTo(CompositesBuilder builder, Bound bound, QueryOptions options)
+    {
+        return getDelegate().appendBoundTo(builder, bound, options);
     }
 
     @Override

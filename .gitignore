@@ -19,6 +19,7 @@ src/resources/org/apache/cassandra/config/
 logs/
 data/
 conf/hotspot_compiler
+doc/cql3/CQL.html
 
 # C* debs
 build-stamp
@@ -36,6 +37,7 @@ debian/files
 
 # IntelliJ
 .idea/
+*.eml
 *.iml
 *.ipr
 *.iws

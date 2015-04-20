@@ -17,16 +17,19 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.io.File;
-import org.apache.cassandra.io.sstable.format.SSTableWriter;
-
-//在SSTableReader.openForBatch中使用
-//每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
+//<<<<<<< HEAD
+//import java.io.File;
+//import org.apache.cassandra.io.sstable.format.SSTableWriter;
+//
+////在SSTableReader.openForBatch中使用
+////每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
+//=======
+//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
 public class BufferedSegmentedFile extends SegmentedFile
 {
-    public BufferedSegmentedFile(String path, long length)
+    public BufferedSegmentedFile(ChannelProxy channel, long length)
     {
-        super(new Cleanup(path), path, length);
+        super(new Cleanup(channel), channel, length);
     }
 
     private BufferedSegmentedFile(BufferedSegmentedFile copy)
@@ -36,13 +39,13 @@ public class BufferedSegmentedFile extends SegmentedFile
 
     private static class Cleanup extends SegmentedFile.Cleanup
     {
-        protected Cleanup(String path)
+        protected Cleanup(ChannelProxy channel)
         {
-            super(path);
+            super(channel);
         }
-        public void tidy() throws Exception
+        public void tidy()
         {
-
+            super.tidy();
         }
     }
 
@@ -53,18 +56,18 @@ public class BufferedSegmentedFile extends SegmentedFile
             // only one segment in a standard-io file
         }
 
-        public SegmentedFile complete(String path, long overrideLength, boolean isFinal)
+        public SegmentedFile complete(ChannelProxy channel, long overrideLength, boolean isFinal)
         {
             assert !isFinal || overrideLength <= 0;
-            long length = overrideLength > 0 ? overrideLength : new File(path).length();
-            return new BufferedSegmentedFile(path, length);
+            long length = overrideLength > 0 ? overrideLength : channel.size();
+            return new BufferedSegmentedFile(channel, length);
         }
     }
 
     //每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
     public FileDataInput getSegment(long position)
     {
-        RandomAccessReader reader = RandomAccessReader.open(new File(path));
+        RandomAccessReader reader = RandomAccessReader.open(channel);
         reader.seek(position);
         return reader;
     }

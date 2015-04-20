@@ -143,10 +143,10 @@ public final class SingleColumnRelation extends Relation
         ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
         if (mapKey == null)
         {
-            Term term = toTerm(toReceivers(cfm, columnDef), value, cfm.ksName, boundNames);
+            Term term = toTerm(toReceivers(columnDef), value, cfm.ksName, boundNames);
             return new SingleColumnRestriction.EQ(columnDef, term);
         }
-        List<? extends ColumnSpecification> receivers = toReceivers(cfm, columnDef);
+        List<? extends ColumnSpecification> receivers = toReceivers(columnDef);
         Term entryKey = toTerm(Collections.singletonList(receivers.get(0)), mapKey, cfm.ksName, boundNames);
         Term entryValue = toTerm(Collections.singletonList(receivers.get(1)), value, cfm.ksName, boundNames);
         return new SingleColumnRestriction.Contains(columnDef, entryKey, entryValue);
@@ -157,7 +157,7 @@ public final class SingleColumnRelation extends Relation
                                            VariableSpecifications boundNames) throws InvalidRequestException
     {
         ColumnDefinition columnDef = cfm.getColumnDefinition(getEntity().prepare(cfm));
-        List<? extends ColumnSpecification> receivers = toReceivers(cfm, columnDef);
+        List<? extends ColumnSpecification> receivers = toReceivers(columnDef);
         List<Term> terms = toTerms(receivers, inValues, cfm.ksName, boundNames);
         if (terms == null)
         {
@@ -174,7 +174,7 @@ public final class SingleColumnRelation extends Relation
                                               boolean inclusive) throws InvalidRequestException
     {
         ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
-        Term term = toTerm(toReceivers(cfm, columnDef), value, cfm.ksName, boundNames);
+        Term term = toTerm(toReceivers(columnDef), value, cfm.ksName, boundNames);
         return new SingleColumnRestriction.Slice(columnDef, bound, inclusive, term);
     }
 
@@ -184,19 +184,18 @@ public final class SingleColumnRelation extends Relation
                                                  boolean isKey) throws InvalidRequestException
     {
         ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
-        Term term = toTerm(toReceivers(cfm, columnDef), value, cfm.ksName, boundNames);
+        Term term = toTerm(toReceivers(columnDef), value, cfm.ksName, boundNames);
         return new SingleColumnRestriction.Contains(columnDef, term, isKey);
     }
 
     /**
      * Returns the receivers for this relation.
-     *
-     * @param cfm the Column Family meta data
      * @param columnDef the column definition
+     *
      * @return the receivers for the specified relation.
      * @throws InvalidRequestException if the relation is invalid
      */
-    private List<? extends ColumnSpecification> toReceivers(CFMetaData cfm, ColumnDefinition columnDef) throws InvalidRequestException
+    private List<? extends ColumnSpecification> toReceivers(ColumnDefinition columnDef) throws InvalidRequestException
     {
         ColumnSpecification receiver = columnDef;
 

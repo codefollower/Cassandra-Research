@@ -79,7 +79,7 @@ public class KeyspaceTest
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARDLONG),
-                                    CFMetaData.denseCFMetaData(KEYSPACE1, CF_STANDARDCOMPOSITE2, compositeMaxMin));
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARDCOMPOSITE2, compositeMaxMin));
         SchemaLoader.createKeyspace(KEYSPACE2,
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(1),
@@ -454,7 +454,7 @@ public class KeyspaceTest
         // compact so we have a big row with more than the minimum index count
         if (cfStore.getSSTables().size() > 1)
         {
-            CompactionManager.instance.performMaximal(cfStore);
+            CompactionManager.instance.performMaximal(cfStore, false);
         }
         // verify that we do indeed have multiple index entries
         SSTableReader sstable = cfStore.getSSTables().iterator().next();

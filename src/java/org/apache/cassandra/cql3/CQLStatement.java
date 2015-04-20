@@ -17,10 +17,11 @@
  */
 package org.apache.cassandra.cql3;
 
-import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.cql3.functions.Function;
+import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
-import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.transport.messages.ResultMessage;
 
 //通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
 //调用顺序getBoundsTerms()->checkAccess->validate->execute
@@ -62,4 +63,6 @@ public interface CQLStatement
     public ResultMessage executeInternal(QueryState state, QueryOptions options) throws RequestValidationException, RequestExecutionException;
 
     boolean usesFunction(String ksName, String functionName);
+
+    public Iterable<Function> getFunctions();
 }

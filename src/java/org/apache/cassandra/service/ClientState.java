@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.service;
 
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -32,6 +33,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -90,7 +92,7 @@ public class ClientState
         {
             try
             {
-                handler = (QueryHandler)FBUtilities.construct(customHandlerClass, "QueryHandler");
+                handler = FBUtilities.construct(customHandlerClass, "QueryHandler");
                 logger.info("Using {} as query handler for native protocol queries (as requested with -Dcassandra.custom_query_handler_class)", customHandlerClass);
             }
             catch (Exception e)
@@ -107,7 +109,7 @@ public class ClientState
     public final boolean isInternal;
 
     // The remote address of the client - null for internal clients.
-    private final SocketAddress remoteAddress;
+    private final InetSocketAddress remoteAddress;
 
     // The biggest timestamp that was returned by getTimestamp/assigned to a query
     private final AtomicLong lastTimestampMicros = new AtomicLong(0);
@@ -121,7 +123,7 @@ public class ClientState
         this.remoteAddress = null;
     }
 
-    protected ClientState(SocketAddress remoteAddress)
+    protected ClientState(InetSocketAddress remoteAddress)
     {
         this.isInternal = false;
         this.remoteAddress = remoteAddress;
@@ -143,7 +145,7 @@ public class ClientState
     //只在org.apache.cassandra.transport.ServerConnection.ServerConnection(Channel, int, Tracker)中有调用
     public static ClientState forExternalCalls(SocketAddress remoteAddress)
     {
-        return new ClientState(remoteAddress);
+        return new ClientState((InetSocketAddress)remoteAddress);
     }
 
     /**
@@ -186,7 +188,7 @@ public class ClientState
         return cqlQueryHandler;
     }
 
-    public SocketAddress getRemoteAddress()
+    public InetSocketAddress getRemoteAddress()
     {
         return remoteAddress;
     }
@@ -264,6 +266,36 @@ public class ClientState
 
     public void ensureHasPermission(Permission perm, IResource resource) throws UnauthorizedException
     {
+        if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
+            return;
+
+        // Access to built in functions is unrestricted
+        if(resource instanceof FunctionResource && resource.hasParent())
+            if (((FunctionResource)resource).getKeyspace().equals(SystemKeyspace.NAME))
+                return;
+
+        checkPermissionOnResourceChain(perm, resource);
+    }
+
+    // Convenience method called from checkAccess method of CQLStatement
+    // Also avoids needlessly creating lots of FunctionResource objects
+    public void ensureHasPermission(Permission permission, Function function)
+    {
+        // Save creating a FunctionResource is we don't need to
+        if (DatabaseDescriptor.getAuthorizer() instanceof AllowAllAuthorizer)
+            return;
+
+        // built in functions are always available to all
+        if (function.isNative())
+            return;
+
+        checkPermissionOnResourceChain(permission, FunctionResource.function(function.name().keyspace,
+                                                                             function.name().name,
+                                                                             function.argTypes()));
+    }
+
+    private void checkPermissionOnResourceChain(Permission perm, IResource resource)
+    {
         for (IResource r : Resources.chain(resource))
             if (authorize(r).contains(perm))
                 return;
@@ -332,7 +364,7 @@ public class ClientState
 
     private Set<Permission> authorize(IResource resource)
     {
-        return AuthenticatedUser.getPermissions(user, resource);
+        return user.getPermissions(resource);
     }
 
     //我加上的，用于测试，触发memtable的flush

@@ -18,16 +18,12 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
+
+import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
@@ -146,7 +142,7 @@ public abstract class Maps
         }
     }
 
-    public static class Value extends Term.Terminal implements Term.CollectionTerminal
+    public static class Value extends Term.Terminal
     {
         public final Map<ByteBuffer, ByteBuffer> map;
 
@@ -173,12 +169,7 @@ public abstract class Maps
             }
         }
 
-        public ByteBuffer get(QueryOptions options)
-        {
-            return getWithProtocolVersion(options.getProtocolVersion());
-        }
-
-        public ByteBuffer getWithProtocolVersion(int protocolVersion)
+        public ByteBuffer get(int protocolVersion)
         {
             List<ByteBuffer> buffers = new ArrayList<>(2 * map.size());
             for (Map.Entry<ByteBuffer, ByteBuffer> entry : map.entrySet())
@@ -256,6 +247,12 @@ public abstract class Maps
                 buffers.put(keyBytes, valueBytes);
             }
             return new Value(buffers);
+        }
+
+        public Iterable<Function> getFunctions()
+        {
+            return Iterables.concat(Terms.getFunctions(elements.keySet()),
+                                    Terms.getFunctions(elements.values()));
         }
     }
 
@@ -353,13 +350,13 @@ public abstract class Maps
         static void doPut(Term t, ColumnFamily cf, Composite prefix, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
-            Maps.Value mapValue = (Maps.Value) value;
             if (column.type.isMultiCell())
             {
                 if (value == null)
                     return;
 
-                for (Map.Entry<ByteBuffer, ByteBuffer> entry : mapValue.map.entrySet())
+                Map<ByteBuffer, ByteBuffer> elements = ((Value) value).map;
+                for (Map.Entry<ByteBuffer, ByteBuffer> entry : elements.entrySet())
                 {
                     CellName cellName = cf.getComparator().create(prefix, column, entry.getKey());
                     cf.addColumn(params.makeColumn(cellName, entry.getValue()));
@@ -372,7 +369,7 @@ public abstract class Maps
                 if (value == null)
                     cf.addAtom(params.makeTombstone(cellName));
                 else
-                    cf.addColumn(params.makeColumn(cellName, mapValue.getWithProtocolVersion(Server.CURRENT_VERSION)));
+                    cf.addColumn(params.makeColumn(cellName, value.get(Server.CURRENT_VERSION)));
             }
         }
     }
@@ -391,9 +388,8 @@ public abstract class Maps
             Term.Terminal key = t.bind(params.options);
             if (key == null)
                 throw new InvalidRequestException("Invalid null map key");
-            assert key instanceof Constants.Value;
 
-            CellName cellName = cf.getComparator().create(prefix, column, ((Constants.Value)key).bytes);
+            CellName cellName = cf.getComparator().create(prefix, column, key.get(params.options.getProtocolVersion()));
             cf.addColumn(params.makeTombstone(cellName));
         }
     }

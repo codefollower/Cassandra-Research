@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.exceptions.RequestValidationException;
 
 public abstract class ParsedStatement
@@ -46,27 +47,34 @@ public abstract class ParsedStatement
     {
         public final CQLStatement statement;
         public final List<ColumnSpecification> boundNames;
+        public final Short[] partitionKeyBindIndexes;
 
-        public Prepared(CQLStatement statement, List<ColumnSpecification> boundNames)
+        protected Prepared(CQLStatement statement, List<ColumnSpecification> boundNames, Short[] partitionKeyBindIndexes)
         {
             this.statement = statement;
             this.boundNames = boundNames;
+            this.partitionKeyBindIndexes = partitionKeyBindIndexes;
         }
 
-        public Prepared(CQLStatement statement, VariableSpecifications names)
+        public Prepared(CQLStatement statement, VariableSpecifications names, Short[] partitionKeyBindIndexes)
         {
-            this(statement, names.getSpecifications());
+            this(statement, names.getSpecifications(), partitionKeyBindIndexes);
         }
 
         //凡是调用这个函数的类说明他们对应的CQL是不支持?号占位符的
         public Prepared(CQLStatement statement)
         {
-            this(statement, Collections.<ColumnSpecification>emptyList());
+            this(statement, Collections.<ColumnSpecification>emptyList(), null);
         }
     }
 
     public boolean usesFunction(String ksName, String functionName)
     {
         return false;
+    }
+
+    public List<Function> getFunctions()
+    {
+        return Collections.emptyList();
     }
 }

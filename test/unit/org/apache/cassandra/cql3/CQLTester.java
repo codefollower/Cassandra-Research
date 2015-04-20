@@ -31,27 +31,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableSet;
-import org.junit.AfterClass;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.cql3.statements.ParsedStatement;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.Directories;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.db.marshal.TupleType;
-import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.exceptions.CassandraException;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.service.ClientState;
@@ -70,17 +69,34 @@ public abstract class CQLTester
 
     public static final String KEYSPACE = "cql_test_keyspace";
     public static final String KEYSPACE_PER_TEST = "cql_test_keyspace_alt";
-    private static final boolean USE_PREPARED_VALUES = Boolean.valueOf(System.getProperty("cassandra.test.use_prepared", "true"));
+    protected static final boolean USE_PREPARED_VALUES = Boolean.valueOf(System.getProperty("cassandra.test.use_prepared", "true"));
     private static final AtomicInteger seqNumber = new AtomicInteger();
 
     private static org.apache.cassandra.transport.Server server;
-    private static final int nativePort;
-    private static final InetAddress nativeAddr;
-    private static final Cluster cluster[] = new Cluster[Server.CURRENT_VERSION];
-    private static final Session session[] = new Session[Server.CURRENT_VERSION];
+    protected static final int nativePort;
+    protected static final InetAddress nativeAddr;
+    private static final Cluster[] cluster;
+    private static final Session[] session;
 
-    static
-    {
+    static int maxProtocolVersion;
+    static {
+        int version;
+        for (version = 1; version <= Server.CURRENT_VERSION; version++)
+        {
+            try
+            {
+                ProtocolVersion.fromInt(version);
+            }
+            catch (IllegalArgumentException e)
+            {
+                version--;
+                break;
+            }
+        }
+        maxProtocolVersion = version;
+        cluster = new Cluster[maxProtocolVersion];
+        session = new Session[maxProtocolVersion];
+
         // Once per-JVM is enough
         SchemaLoader.prepareServer();
 
@@ -199,7 +215,7 @@ public abstract class CQLTester
     }
 
     // lazy initialization for all tests that require Java Driver
-    private static void requireNetwork() throws ConfigurationException
+    protected static void requireNetwork() throws ConfigurationException
     {
         if (server != null)
             return;
@@ -211,7 +227,7 @@ public abstract class CQLTester
         server = new org.apache.cassandra.transport.Server(nativeAddr, nativePort);
         server.start();
 
-        for (int version = 1; version <= Server.CURRENT_VERSION; version++)
+        for (int version = 1; version <= maxProtocolVersion; version++)
         {
             if (cluster[version-1] != null)
                 continue;
@@ -353,13 +369,14 @@ public abstract class CQLTester
         schemaChange(fullQuery);
     }
 
-    protected void createTable(String query)
+    protected String createTable(String query)
     {
         String currentTable = "table_" + seqNumber.getAndIncrement();
         tables.add(currentTable);
         String fullQuery = formatQuery(query);
         logger.info(fullQuery);
         schemaChange(fullQuery);
+        return currentTable;
     }
 
     protected void createTableMayThrow(String query) throws Throwable
@@ -457,6 +474,13 @@ public abstract class CQLTester
         requireNetwork();
 
         return session[protocolVersion-1].execute(formatQuery(query), values);
+    }
+
+    protected Session sessionNet(int protocolVersion)
+    {
+        requireNetwork();
+
+        return session[protocolVersion-1];
     }
 
     private String formatQuery(String query)
@@ -644,8 +668,8 @@ public abstract class CQLTester
         {
             execute(query, values);
             String q = USE_PREPARED_VALUES
-                     ? query + " (values: " + formatAllValues(values) + ")"
-                     : replaceValues(query, values);
+                       ? query + " (values: " + formatAllValues(values) + ")"
+                       : replaceValues(query, values);
             Assert.fail("Query should be invalid but no error was thrown. Query is: " + q);
         }
         catch (CassandraException e)
@@ -668,6 +692,19 @@ public abstract class CQLTester
         return USE_PREPARED_VALUES
                ? query + " (values: " + formatAllValues(values) + ")"
                : replaceValues(query, values);
+    }
+
+    protected void assertValidSyntax(String query) throws Throwable
+    {
+        try
+        {
+            QueryProcessor.parseStatement(query);
+        }
+        catch(SyntaxException e)
+        {
+            Assert.fail(String.format("Expected query syntax to be valid but was invalid. Query is: %s; Error is %s",
+                                      query, e.getMessage()));
+        }
     }
 
     protected void assertInvalidSyntax(String query, Object... values) throws Throwable
@@ -887,10 +924,11 @@ public abstract class CQLTester
         AbstractType type = typeFor(value);
         String s = type.getString(type.decompose(value));
 
-        if (type instanceof UTF8Type)
+        if (type instanceof InetAddressType || type instanceof TimestampType)
+            return String.format("'%s'", s);
+        else if (type instanceof UTF8Type)
             return String.format("'%s'", s.replaceAll("'", "''"));
-
-        if (type instanceof BytesType)
+        else if (type instanceof BytesType)
             return "0x" + s;
 
         return s;
@@ -984,6 +1022,15 @@ public abstract class CQLTester
 
         if (value instanceof Boolean)
             return BooleanType.instance;
+
+        if (value instanceof InetAddress)
+            return InetAddressType.instance;
+
+        if (value instanceof Date)
+            return TimestampType.instance;
+
+        if (value instanceof UUID)
+            return UUIDType.instance;
 
         if (value instanceof List)
         {

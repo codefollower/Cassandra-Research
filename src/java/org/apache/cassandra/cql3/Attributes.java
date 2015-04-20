@@ -18,7 +18,11 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
+import java.util.Collections;
 
+import com.google.common.collect.Iterables;
+
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.ExpiringCell;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.LongType;
@@ -53,6 +57,18 @@ public class Attributes
             || (timeToLive != null && timeToLive.usesFunction(ksName, functionName));
     }
 
+    public Iterable<Function> getFunctions()
+    {
+        if (timestamp != null && timeToLive != null)
+            return Iterables.concat(timestamp.getFunctions(), timeToLive.getFunctions());
+        else if (timestamp != null)
+            return timestamp.getFunctions();
+        else if (timeToLive != null)
+            return timeToLive.getFunctions();
+        else
+            return Collections.emptySet();
+    }
+
     public boolean isTimestampSet()
     {
         return timestamp != null;
@@ -78,7 +94,7 @@ public class Attributes
         }
         catch (MarshalException e)
         {
-            throw new InvalidRequestException("Invalid timestamp value");
+            throw new InvalidRequestException("Invalid timestamp value: " + tval);
         }
 
         return LongType.instance.compose(tval);
@@ -99,12 +115,12 @@ public class Attributes
         }
         catch (MarshalException e)
         {
-            throw new InvalidRequestException("Invalid timestamp value");
+            throw new InvalidRequestException("Invalid timestamp value: " + tval);
         }
 
         int ttl = Int32Type.instance.compose(tval);
         if (ttl < 0)
-            throw new InvalidRequestException("A TTL must be greater or equal to 0");
+            throw new InvalidRequestException("A TTL must be greater or equal to 0, but was " + ttl);
 
         if (ttl > ExpiringCell.MAX_TTL)
             throw new InvalidRequestException(String.format("ttl is too large. requested (%d) maximum (%d)", ttl, ExpiringCell.MAX_TTL));

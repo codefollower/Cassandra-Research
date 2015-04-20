@@ -18,7 +18,6 @@
 */
 package org.apache.cassandra.db;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,6 +29,8 @@ import java.util.concurrent.ExecutionException;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterators;
+
+import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -75,7 +76,7 @@ public class RangeTombstoneTest
         SchemaLoader.createKeyspace(KSNAME,
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(1),
-                                    CFMetaData.denseCFMetaData(KSNAME, CFNAME, IntegerType.instance));
+                                    SchemaLoader.standardCFMD(KSNAME, CFNAME, IntegerType.instance));
     }
 
     @Test
@@ -456,7 +457,7 @@ public class RangeTombstoneTest
             assertTrue("Cell " + i + " shouldn't be live", !isLive(cf, cf.getColumn(b(i))));
 
         // Compact everything and re-test
-        CompactionManager.instance.performMaximal(cfs);
+        CompactionManager.instance.performMaximal(cfs, false);
         cf = cfs.getColumnFamily(QueryFilter.getIdentityFilter(dk(key), CFNAME, System.currentTimeMillis()));
 
         for (int i = 0; i < 5; i++)
@@ -533,24 +534,27 @@ public class RangeTombstoneTest
         assertEquals(2, cfs.getSSTables().size());
 
         // compact down to single sstable
-        CompactionManager.instance.performMaximal(cfs);
+        CompactionManager.instance.performMaximal(cfs, false);
         assertEquals(1, cfs.getSSTables().size());
 
         // test the physical structure of the sstable i.e. rt & columns on disk
         SSTableReader sstable = cfs.getSSTables().iterator().next();
-        OnDiskAtomIterator iter = sstable.getScanner().next();
-        int cnt = 0;
-        // after compaction, the first element should be an RT followed by the remaining non-deleted columns
-        while(iter.hasNext())
+        try(ISSTableScanner scanner = sstable.getScanner())
         {
-            OnDiskAtom atom = iter.next();
-            if (cnt == 0)
-                assertTrue(atom instanceof RangeTombstone);
-            if (cnt > 0)
-                assertTrue(atom instanceof Cell);
-            cnt++;
+            OnDiskAtomIterator iter = scanner.next();
+            int cnt = 0;
+            // after compaction, the first element should be an RT followed by the remaining non-deleted columns
+            while (iter.hasNext())
+            {
+                OnDiskAtom atom = iter.next();
+                if (cnt == 0)
+                    assertTrue(atom instanceof RangeTombstone);
+                if (cnt > 0)
+                    assertTrue(atom instanceof Cell);
+                cnt++;
+            }
+            assertEquals(2, cnt);
         }
-        assertEquals(2, cnt);
     }
 
     @Test
@@ -633,7 +637,7 @@ public class RangeTombstoneTest
         // We should have indexed 1 column
         assertEquals(1, index.inserts.size());
 
-        CompactionManager.instance.performMaximal(cfs);
+        CompactionManager.instance.performMaximal(cfs, false);
 
         // compacted down to single sstable
         assertEquals(1, cfs.getSSTables().size());

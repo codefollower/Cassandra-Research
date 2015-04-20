@@ -65,7 +65,7 @@ public interface IRoleManager
      * @throws RequestValidationException
      * @throws RequestExecutionException
      */
-    void createRole(AuthenticatedUser performer, RoleResource role, Map<Option, Object> options)
+    void createRole(AuthenticatedUser performer, RoleResource role, RoleOptions options)
     throws RequestValidationException, RequestExecutionException;
 
     /**
@@ -91,7 +91,7 @@ public interface IRoleManager
      * @throws RequestValidationException
      * @throws RequestExecutionException
      */
-    void alterRole(AuthenticatedUser performer, RoleResource role, Map<Option, Object> options)
+    void alterRole(AuthenticatedUser performer, RoleResource role, RoleOptions options)
     throws RequestValidationException, RequestExecutionException;
 
     /**
@@ -167,6 +167,17 @@ public interface IRoleManager
      * @return true if the role exists and is permitted to login, otherwise false
      */
     boolean canLogin(RoleResource role);
+
+    /**
+     * Where an implementation supports OPTIONS in CREATE and ALTER operations
+     * this method should return the Map<String, String> representing the custom
+     * options associated with the role, as supplied to CREATE or ALTER.
+     * It should never return null; if the implementation does not support
+     * OPTIONS or if none were supplied then it should return an empty map.
+     * @param role Role whose custom options are required
+     * @return Key/Value pairs representing the custom options for the Role
+     */
+    Map<String, String> getCustomOptions(RoleResource role);
 
     /**
      * Return true is a Role with the given name exists in the system.

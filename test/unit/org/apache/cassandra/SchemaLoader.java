@@ -178,7 +178,6 @@ public class SchemaLoader
                                            standardCFMD(ks1, "StandardLowIndexInterval").minIndexInterval(8)
                                                                                         .maxIndexInterval(256)
                                                                                         .caching(CachingOptions.NONE),
-
                                            standardCFMD(ks1, "UUIDKeys").keyValidator(UUIDType.instance),
                                            CFMetaData.denseCFMetaData(ks1, "MixedTypes", LongType.instance).keyValidator(UUIDType.instance).defaultValidator(BooleanType.instance),
                                            CFMetaData.denseCFMetaData(ks1, "MixedTypesComposite", composite).keyValidator(composite).defaultValidator(BooleanType.instance),
@@ -386,16 +385,24 @@ public class SchemaLoader
 
     public static CFMetaData standardCFMD(String ksName, String cfName)
     {
-        return CFMetaData.denseCFMetaData(ksName, cfName, BytesType.instance);
+        return CFMetaData.denseCFMetaData(ksName, cfName, BytesType.instance).compressionParameters(getCompressionParameters());
     }
+
+    public static CFMetaData standardCFMD(String ksName, String cfName, AbstractType<?> comparator)
+    {
+        return CFMetaData.denseCFMetaData(ksName, cfName, comparator).compressionParameters(getCompressionParameters());
+    }
+
     public static CFMetaData superCFMD(String ksName, String cfName, AbstractType subcc)
     {
-        return superCFMD(ksName, cfName, BytesType.instance, subcc);
+        return superCFMD(ksName, cfName, BytesType.instance, subcc).compressionParameters(getCompressionParameters());
     }
+
     public static CFMetaData superCFMD(String ksName, String cfName, AbstractType cc, AbstractType subcc)
     {
-        return CFMetaData.denseCFMetaData(ksName, cfName, cc, subcc);
+        return CFMetaData.denseCFMetaData(ksName, cfName, cc, subcc).compressionParameters(getCompressionParameters());
     }
+
     public static CFMetaData indexCFMD(String ksName, String cfName, final Boolean withIdxType) throws ConfigurationException
     {
         CFMetaData cfm = CFMetaData.sparseCFMetaData(ksName, cfName, BytesType.instance).keyValidator(AsciiType.instance);
@@ -403,8 +410,10 @@ public class SchemaLoader
         ByteBuffer cName = ByteBufferUtil.bytes("birthdate");
         IndexType keys = withIdxType ? IndexType.KEYS : null;
         return cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, cName, LongType.instance, null)
-                                                       .setIndex(withIdxType ? ByteBufferUtil.bytesToHex(cName) : null, keys, null));
+                                                       .setIndex(withIdxType ? ByteBufferUtil.bytesToHex(cName) : null, keys, null))
+                                      .compressionParameters(getCompressionParameters());
     }
+
     public static CFMetaData compositeIndexCFMD(String ksName, String cfName, final Boolean withIdxType) throws ConfigurationException
     {
         final CompositeType composite = CompositeType.getInstance(Arrays.asList(new AbstractType<?>[]{UTF8Type.instance, UTF8Type.instance})); 
@@ -413,17 +422,26 @@ public class SchemaLoader
         ByteBuffer cName = ByteBufferUtil.bytes("col1");
         IndexType idxType = withIdxType ? IndexType.COMPOSITES : null;
         return cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, cName, UTF8Type.instance, 1)
-                                                       .setIndex(withIdxType ? "col1_idx" : null, idxType, Collections.<String, String>emptyMap()));
+                                                       .setIndex(withIdxType ? "col1_idx" : null, idxType, Collections.<String, String>emptyMap()))
+                                       .compressionParameters(getCompressionParameters());
     }
     
     private static CFMetaData jdbcCFMD(String ksName, String cfName, AbstractType comp)
     {
-        return CFMetaData.denseCFMetaData(ksName, cfName, comp).defaultValidator(comp);
+        return CFMetaData.denseCFMetaData(ksName, cfName, comp).defaultValidator(comp).compressionParameters(getCompressionParameters());
     }
 
     public static CFMetaData jdbcSparseCFMD(String ksName, String cfName, AbstractType comp)
     {
-        return CFMetaData.sparseCFMetaData(ksName, cfName, comp).defaultValidator(comp);
+        return CFMetaData.sparseCFMetaData(ksName, cfName, comp).defaultValidator(comp).compressionParameters(getCompressionParameters());
+    }
+
+    public static CompressionParameters getCompressionParameters()
+    {
+        if (Boolean.parseBoolean(System.getProperty("cassandra.test.compression", "false")))
+            return new CompressionParameters(SnappyCompressor.instance);
+        else
+            return new CompressionParameters(null);
     }
 
     public static void cleanupAndLeaveDirs()

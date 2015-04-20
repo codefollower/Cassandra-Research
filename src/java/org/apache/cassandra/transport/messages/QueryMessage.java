@@ -106,7 +106,7 @@ public class QueryMessage extends Message.Request
 
             if (state.traceNextQuery())
             {
-                state.createTracingSession();
+                state.createTracingSession(connection);
 
                 //builder会构建一个Map，作为system_traces.sessions表parameters字段的值
                 ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
@@ -115,11 +115,10 @@ public class QueryMessage extends Message.Request
                     builder.put("page_size", Integer.toString(options.getPageSize()));
 
                 //往system_traces.sessions表插入一条记录
-                Tracing.instance.begin("Execute CQL3 query", builder.build());
+                Tracing.instance.begin("Execute CQL3 query", state.getClientAddress(), builder.build());
             }
 
-            //Message.Response response = state.getClientState().getCQLQueryHandler().process(query, state, options);
-            Message.Response response = ClientState.getCQLQueryHandler().process(query, state, options);
+            Message.Response response = ClientState.getCQLQueryHandler().process(query, state, options, getCustomPayload());
             if (options.skipMetadata() && response instanceof ResultMessage.Rows)
                 ((ResultMessage.Rows)response).result.metadata.setSkipMetadata();
 

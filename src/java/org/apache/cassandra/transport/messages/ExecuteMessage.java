@@ -101,7 +101,7 @@ public class ExecuteMessage extends Message.Request
     {
         try
         {
-            QueryHandler handler = ClientState.getCQLQueryHandler(); //state.getClientState().getCQLQueryHandler();
+            QueryHandler handler = ClientState.getCQLQueryHandler();
             ParsedStatement.Prepared prepared = handler.getPrepared(statementId);
             if (prepared == null)
                 throw new PreparedQueryNotFoundException(statementId);
@@ -121,17 +121,17 @@ public class ExecuteMessage extends Message.Request
 
             if (state.traceNextQuery())
             {
-                state.createTracingSession();
+                state.createTracingSession(connection);
 
                 ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
                 if (options.getPageSize() > 0)
                     builder.put("page_size", Integer.toString(options.getPageSize()));
 
                 // TODO we don't have [typed] access to CQL bind variables here.  CASSANDRA-4560 is open to add support.
-                Tracing.instance.begin("Execute CQL3 prepared query", builder.build());
+                Tracing.instance.begin("Execute CQL3 prepared query", state.getClientAddress(), builder.build());
             }
 
-            Message.Response response = handler.processPrepared(statement, state, options);
+            Message.Response response = handler.processPrepared(statement, state, options, getCustomPayload());
             if (options.skipMetadata() && response instanceof ResultMessage.Rows)
                 ((ResultMessage.Rows)response).result.metadata.setSkipMetadata();
 

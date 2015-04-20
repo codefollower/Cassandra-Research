@@ -61,7 +61,7 @@ import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.utils.concurrent.Ref;
-import org.apache.cassandra.utils.concurrent.RefCounted;
+import org.apache.cassandra.utils.concurrent.SelfRefCounted;
 
 import static org.apache.cassandra.db.Directories.SECONDARY_INDEX_NAME_SEPARATOR;
 
@@ -121,7 +121,7 @@ import static org.apache.cassandra.db.Directories.SECONDARY_INDEX_NAME_SEPARATOR
  *
  * TODO: fill in details about DataTracker and lifecycle interactions for tools, and for compaction strategies
  */
-public abstract class SSTableReader extends SSTable implements RefCounted<SSTableReader>
+public abstract class SSTableReader extends SSTable implements SelfRefCounted<SSTableReader>
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableReader.class);
 
@@ -282,11 +282,11 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
                 if (cardinality != null)
                     cardinalities.add(cardinality);
                 else
-                    logger.debug("Got a null cardinality estimator in: "+sstable.getFilename());
+                    logger.debug("Got a null cardinality estimator in: {}", sstable.getFilename());
             }
             catch (IOException e)
             {
-                logger.warn("Could not read up compaction metadata for " + sstable, e);
+                logger.warn("Could not read up compaction metadata for {}", sstable, e);
             }
         }
         long totalKeyCountBefore = 0;
@@ -347,9 +347,10 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         return open(descriptor, components, metadata, partitioner, true);
     }
 
-    public static SSTableReader openNoValidation(Descriptor descriptor, Set<Component> components, CFMetaData metadata) throws IOException
+    // use only for offline or "Standalone" operations
+    public static SSTableReader openNoValidation(Descriptor descriptor, Set<Component> components, ColumnFamilyStore cfs) throws IOException
     {
-        return open(descriptor, components, metadata, StorageService.getPartitioner(), false);
+        return open(descriptor, components, cfs.metadata, cfs.partitioner, false);
     }
 
     /**
@@ -389,17 +390,19 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
                 statsMetadata, OpenReason.NORMAL);
 
         // special implementation of load to use non-pooled SegmentedFile builders
-        SegmentedFile.Builder ibuilder = new BufferedSegmentedFile.Builder();
-        SegmentedFile.Builder dbuilder = sstable.compression
+        try(SegmentedFile.Builder ibuilder = new BufferedSegmentedFile.Builder();
+            SegmentedFile.Builder dbuilder = sstable.compression
                 ? new CompressedSegmentedFile.Builder(null)
-                : new BufferedSegmentedFile.Builder();
-        if (!sstable.loadSummary(ibuilder, dbuilder))
-            sstable.buildSummary(false, ibuilder, dbuilder, false, Downsampling.BASE_SAMPLING_LEVEL);
-        sstable.ifile = ibuilder.complete(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX));
-        sstable.dfile = dbuilder.complete(sstable.descriptor.filenameFor(Component.DATA));
-        sstable.bf = FilterFactory.AlwaysPresent;
-        sstable.setup();
-        return sstable;
+                : new BufferedSegmentedFile.Builder())
+        {
+            if (!sstable.loadSummary(ibuilder, dbuilder))
+                sstable.buildSummary(false, ibuilder, dbuilder, false, Downsampling.BASE_SAMPLING_LEVEL);
+            sstable.ifile = ibuilder.complete(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX));
+            sstable.dfile = dbuilder.complete(sstable.descriptor.filenameFor(Component.DATA));
+            sstable.bf = FilterFactory.AlwaysPresent;
+            sstable.setup(true);
+            return sstable;
+        }
     }
 
     private static SSTableReader open(Descriptor descriptor,
@@ -437,7 +440,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         sstable.load(validationMetadata);
         logger.debug("INDEX LOAD TIME for {}: {} ms.", descriptor, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
 
-        sstable.setup();
+        sstable.setup(!validate);
         if (validate)
             sstable.validate();
 
@@ -521,7 +524,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         reader.ifile = ifile;
         reader.dfile = dfile;
         reader.indexSummary = isummary;
-        reader.setup();
+        reader.setup(false);
 
         return reader;
     }
@@ -559,9 +562,16 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
     {
         long sum = 0;
         for (SSTableReader sstable : sstables)
-        {
             sum += sstable.onDiskLength();
-        }
+        return sum;
+    }
+
+    public static long getTotalUncompressedBytes(Iterable<SSTableReader> sstables)
+    {
+        long sum = 0;
+        for (SSTableReader sstable : sstables)
+            sum += sstable.uncompressedLength();
+
         return sum;
     }
 
@@ -577,12 +587,12 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
 
     public String getFilename()
     {
-        return dfile.path;
+        return dfile.path();
     }
 
     public String getIndexFilename()
     {
-        return ifile.path;
+        return ifile.path();
     }
 
     public void setTrackedBy(DataTracker tracker)
@@ -646,21 +656,53 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
      */
     private void load(boolean recreateBloomFilter, boolean saveSummaryIfCreated) throws IOException
     {
-        //索引构建器
-        SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
-        //数据构建器
-        SegmentedFile.Builder dbuilder = compression
-                ? SegmentedFile.getCompressedBuilder()
-                : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
+//<<<<<<< HEAD
+//        //索引构建器
+//        SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
+//        //数据构建器
+//        SegmentedFile.Builder dbuilder = compression
+//                ? SegmentedFile.getCompressedBuilder()
+//                : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
+//=======
+        try(SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
+            SegmentedFile.Builder dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), compression))
+        {
+            boolean summaryLoaded = loadSummary(ibuilder, dbuilder);
+            boolean builtSummary = false;
+            if (recreateBloomFilter || !summaryLoaded)
+            {
+                buildSummary(recreateBloomFilter, ibuilder, dbuilder, summaryLoaded, Downsampling.BASE_SAMPLING_LEVEL);
+                builtSummary = true;
+            }
 
-        boolean summaryLoaded = loadSummary(ibuilder, dbuilder);
-        if (recreateBloomFilter || !summaryLoaded)
-            buildSummary(recreateBloomFilter, ibuilder, dbuilder, summaryLoaded, Downsampling.BASE_SAMPLING_LEVEL);
+            ifile = ibuilder.complete(descriptor.filenameFor(Component.PRIMARY_INDEX));
+            dfile = dbuilder.complete(descriptor.filenameFor(Component.DATA));
 
-        ifile = ibuilder.complete(descriptor.filenameFor(Component.PRIMARY_INDEX));
-        dfile = dbuilder.complete(descriptor.filenameFor(Component.DATA));
-        if (saveSummaryIfCreated && (recreateBloomFilter || !summaryLoaded)) // save summary information to disk
-            saveSummary(ibuilder, dbuilder);
+            // Check for an index summary that was downsampled even though the serialization format doesn't support
+            // that.  If it was downsampled, rebuild it.  See CASSANDRA-8993 for details.
+            if (!descriptor.version.hasSamplingLevel() && !builtSummary && !validateSummarySamplingLevel())
+            {
+                indexSummary.close();
+                ifile.close();
+                dfile.close();
+
+                logger.info("Detected erroneously downsampled index summary; will rebuild summary at full sampling");
+                FileUtils.deleteWithConfirm(new File(descriptor.filenameFor(Component.SUMMARY)));
+
+                try(SegmentedFile.Builder ibuilderRebuild = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
+                    SegmentedFile.Builder dbuilderRebuild = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), compression))
+                {
+                    buildSummary(false, ibuilderRebuild, dbuilderRebuild, false, Downsampling.BASE_SAMPLING_LEVEL);
+                    ifile = ibuilderRebuild.complete(descriptor.filenameFor(Component.PRIMARY_INDEX));
+                    dfile = dbuilderRebuild.complete(descriptor.filenameFor(Component.DATA));
+                    saveSummary(ibuilderRebuild, dbuilderRebuild);
+                }
+            }
+            else if (saveSummaryIfCreated && builtSummary)
+            {
+                saveSummary(ibuilder, dbuilder);
+            }
+        }
     }
 
     /**
@@ -688,36 +730,35 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             if (recreateBloomFilter)
                 bf = FilterFactory.getFilter(estimatedKeys, metadata.getBloomFilterFpChance(), true);
 
-            IndexSummaryBuilder summaryBuilder = null;
-            if (!summaryLoaded)
-                summaryBuilder = new IndexSummaryBuilder(estimatedKeys, metadata.getMinIndexInterval(), samplingLevel);
-
-            long indexPosition;
-            RowIndexEntry.IndexSerializer rowIndexSerializer = descriptor.getFormat().getIndexSerializer(metadata);
-
-            while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
+            try (IndexSummaryBuilder summaryBuilder = summaryLoaded ? null : new IndexSummaryBuilder(estimatedKeys, metadata.getMinIndexInterval(), samplingLevel))
             {
-                ByteBuffer key = ByteBufferUtil.readWithShortLength(primaryIndex);
-                RowIndexEntry indexEntry = rowIndexSerializer.deserialize(primaryIndex, descriptor.version);
-                DecoratedKey decoratedKey = partitioner.decorateKey(key);
-                if (first == null)
-                    first = decoratedKey;
-                last = decoratedKey;
+                long indexPosition;
+                RowIndexEntry.IndexSerializer rowIndexSerializer = descriptor.getFormat().getIndexSerializer(metadata);
 
-                if (recreateBloomFilter)
-                    bf.add(decoratedKey);
-
-                // if summary was already read from disk we don't want to re-populate it using primary index
-                if (!summaryLoaded)
+                while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
                 {
-                    summaryBuilder.maybeAddEntry(decoratedKey, indexPosition);
-                    ibuilder.addPotentialBoundary(indexPosition);
-                    dbuilder.addPotentialBoundary(indexEntry.position);
-                }
-            }
+                    ByteBuffer key = ByteBufferUtil.readWithShortLength(primaryIndex);
+                    RowIndexEntry indexEntry = rowIndexSerializer.deserialize(primaryIndex, descriptor.version);
+                    DecoratedKey decoratedKey = partitioner.decorateKey(key);
+                    if (first == null)
+                        first = decoratedKey;
+                    last = decoratedKey;
 
-            if (!summaryLoaded)
-                indexSummary = summaryBuilder.build(partitioner);
+                    if (recreateBloomFilter)
+                        bf.add(decoratedKey);
+
+                    // if summary was already read from disk we don't want to re-populate it using primary index
+                    if (!summaryLoaded)
+                    {
+                        summaryBuilder.maybeAddEntry(decoratedKey, indexPosition);
+                        ibuilder.addPotentialBoundary(indexPosition);
+                        dbuilder.addPotentialBoundary(indexEntry.position);
+                    }
+                }
+
+                if (!summaryLoaded)
+                    indexSummary = summaryBuilder.build(partitioner);
+            }
         }
         finally
         {
@@ -749,7 +790,9 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         try
         {
             iStream = new DataInputStream(new FileInputStream(summariesFile));
-            indexSummary = IndexSummary.serializer.deserialize(iStream, partitioner, descriptor.version.hasSamplingLevel(), metadata.getMinIndexInterval(), metadata.getMaxIndexInterval());
+            indexSummary = IndexSummary.serializer.deserialize(
+                    iStream, partitioner, descriptor.version.hasSamplingLevel(),
+                    metadata.getMinIndexInterval(), metadata.getMaxIndexInterval());
             first = partitioner.decorateKey(ByteBufferUtil.readWithLength(iStream));
             last = partitioner.decorateKey(ByteBufferUtil.readWithLength(iStream));
             ibuilder.deserializeBounds(iStream);
@@ -775,6 +818,57 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
     }
 
     /**
+     * Validates that an index summary has full sampling, as expected when the serialization format does not support
+     * persisting the sampling level.
+     * @return true if the summary has full sampling, false otherwise
+     */
+    private boolean validateSummarySamplingLevel()
+    {
+        // We need to check index summary entries against the index to verify that none of them were dropped due to
+        // downsampling.  Downsampling can drop any of the first BASE_SAMPLING_LEVEL entries (repeating that drop pattern
+        // for the remainder of the summary).  Unfortunately, the first entry to be dropped is the entry at
+        // index (BASE_SAMPLING_LEVEL - 1), so we need to check a full set of BASE_SAMPLING_LEVEL entries.
+        Iterator<FileDataInput> segments = ifile.iterator(0);
+        int i = 0;
+        int summaryEntriesChecked = 0;
+        int expectedIndexInterval = getMinIndexInterval();
+        while (segments.hasNext())
+        {
+            FileDataInput in = segments.next();
+            try
+            {
+                while (!in.isEOF())
+                {
+                    ByteBuffer indexKey = ByteBufferUtil.readWithShortLength(in);
+                    if (i % expectedIndexInterval == 0)
+                    {
+                        ByteBuffer summaryKey = ByteBuffer.wrap(indexSummary.getKey(i / expectedIndexInterval));
+                        if (!summaryKey.equals(indexKey))
+                            return false;
+                        summaryEntriesChecked++;
+
+                        if (summaryEntriesChecked == Downsampling.BASE_SAMPLING_LEVEL)
+                            return true;
+                    }
+                    RowIndexEntry.Serializer.skip(in);
+                    i++;
+                }
+            }
+            catch (IOException e)
+            {
+                markSuspect();
+                throw new CorruptSSTableException(e, in.getPath());
+            }
+            finally
+            {
+                FileUtils.closeQuietly(in);
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Save index summary to Summary.db file.
      *
      * @param ibuilder
@@ -791,10 +885,10 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         if (summariesFile.exists())
             FileUtils.deleteWithConfirm(summariesFile);
 
-        DataOutputStreamAndChannel oStream = null;
+        DataOutputStreamPlus oStream = null;
         try
         {
-            oStream = new DataOutputStreamAndChannel(new FileOutputStream(summariesFile));
+            oStream = new BufferedDataOutputStreamPlus(new FileOutputStream(summariesFile));
             IndexSummary.serializer.serialize(summary, oStream, descriptor.version.hasSamplingLevel());
             ByteBufferUtil.writeWithLength(first.getKey(), oStream);
             ByteBufferUtil.writeWithLength(last.getKey(), oStream);
@@ -845,8 +939,8 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
                 {
                     public void run()
                     {
-                        CLibrary.trySkipCache(dfile.path, 0, dataStart);
-                        CLibrary.trySkipCache(ifile.path, 0, indexStart);
+                        dfile.dropPageCache(dataStart);
+                        ifile.dropPageCache(indexStart);
                         if (runOnClose != null)
                             runOnClose.run();
                     }
@@ -869,8 +963,8 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             {
                 public void run()
                 {
-                    CLibrary.trySkipCache(dfile.path, 0, 0);
-                    CLibrary.trySkipCache(ifile.path, 0, 0);
+                    dfile.dropPageCache(0);
+                    ifile.dropPageCache(0);
                     runOnClose.run();
                 }
             };
@@ -895,6 +989,8 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
      */
     public SSTableReader cloneWithNewSummarySamplingLevel(ColumnFamilyStore parent, int samplingLevel) throws IOException
     {
+        assert descriptor.version.hasSamplingLevel();
+
         synchronized (tidy.global)
         {
             assert openReason != OpenReason.EARLY;
@@ -920,11 +1016,11 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
                 // we can use the existing index summary to make a smaller one
                 newSummary = IndexSummaryBuilder.downsample(indexSummary, samplingLevel, minIndexInterval, partitioner);
 
-                SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
-                SegmentedFile.Builder dbuilder = compression
-                        ? SegmentedFile.getCompressedBuilder()
-                        : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
-                saveSummary(ibuilder, dbuilder, newSummary);
+                try(SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
+                    SegmentedFile.Builder dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), compression))
+                {
+                    saveSummary(ibuilder, dbuilder, newSummary);
+                }
             }
             else
             {
@@ -953,16 +1049,17 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         try
         {
             long indexSize = primaryIndex.length();
-            IndexSummaryBuilder summaryBuilder = new IndexSummaryBuilder(estimatedKeys(), metadata.getMinIndexInterval(), newSamplingLevel);
-
-            long indexPosition;
-            while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
+            try (IndexSummaryBuilder summaryBuilder = new IndexSummaryBuilder(estimatedKeys(), metadata.getMinIndexInterval(), newSamplingLevel))
             {
-                summaryBuilder.maybeAddEntry(partitioner.decorateKey(ByteBufferUtil.readWithShortLength(primaryIndex)), indexPosition);
-                RowIndexEntry.Serializer.skip(primaryIndex);
-            }
+                long indexPosition;
+                while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
+                {
+                    summaryBuilder.maybeAddEntry(partitioner.decorateKey(ByteBufferUtil.readWithShortLength(primaryIndex)), indexPosition);
+                    RowIndexEntry.Serializer.skip(primaryIndex);
+                }
 
-            return summaryBuilder.build(partitioner);
+                return summaryBuilder.build(partitioner);
+            }
         }
         finally
         {
@@ -1022,7 +1119,8 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         return getIndexScanPositionFromBinarySearchResult(indexSummary.binarySearch(key), indexSummary);
     }
 
-    protected static long getIndexScanPositionFromBinarySearchResult(int binarySearchResult, IndexSummary referencedIndexSummary)
+    @VisibleForTesting
+    public static long getIndexScanPositionFromBinarySearchResult(int binarySearchResult, IndexSummary referencedIndexSummary)
     {
         if (binarySearchResult == -1)
             return 0;
@@ -1030,7 +1128,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             return referencedIndexSummary.getPosition(getIndexSummaryIndexFromBinarySearchResult(binarySearchResult));
     }
 
-    protected static int getIndexSummaryIndexFromBinarySearchResult(int binarySearchResult)
+    public static int getIndexSummaryIndexFromBinarySearchResult(int binarySearchResult)
     {
         if (binarySearchResult < 0)
         {
@@ -1124,7 +1222,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             sampleKeyCount += (sampleIndexRange.right - sampleIndexRange.left + 1);
 
         // adjust for the current sampling level: (BSL / SL) * index_interval_at_full_sampling
-        long estimatedKeys = sampleKeyCount * (Downsampling.BASE_SAMPLING_LEVEL * indexSummary.getMinIndexInterval()) / indexSummary.getSamplingLevel();
+        long estimatedKeys = sampleKeyCount * ((long) Downsampling.BASE_SAMPLING_LEVEL * indexSummary.getMinIndexInterval()) / indexSummary.getSamplingLevel();
         return Math.max(1, estimatedKeys);
     }
 
@@ -1255,7 +1353,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         {
             assert !range.isWrapAround() || range.right.isMinimum();
             // truncate the range so it at most covers the sstable
-            AbstractBounds<RowPosition> bounds = range.toRowBounds();
+            AbstractBounds<RowPosition> bounds = Range.makeRowRange(range);
             RowPosition leftBound = bounds.left.compareTo(first) > 0 ? bounds.left : first.getToken().minKeyBound();
             RowPosition rightBound = bounds.right.isMinimum() ? last.getToken().maxKeyBound() : bounds.right;
 
@@ -1754,9 +1852,9 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         return selfRef.ref();
     }
 
-    void setup()
+    void setup(boolean isOffline)
     {
-        tidy.setup(this);
+        tidy.setup(this, isOffline);
         this.readMeter = tidy.global.readMeter;
     }
 
@@ -1803,7 +1901,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
 
         private boolean setup;
 
-        void setup(SSTableReader reader)
+        void setup(SSTableReader reader, boolean isOffline)
         {
             this.setup = true;
             this.bf = reader.bf;
@@ -1814,6 +1912,8 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             this.typeRef = DescriptorTypeTidy.get(reader);
             this.type = typeRef.get();
             this.global = type.globalRef.get();
+            if (!isOffline)
+                global.ensureReadMeter();
         }
 
         InstanceTidier(Descriptor descriptor, CFMetaData metadata)
@@ -1845,12 +1945,12 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
                     if (barrier != null)
                         barrier.await();
                     bf.close();
-                    dfile.close();
-                    ifile.close();
                     if (summary != null)
                         summary.close();
                     if (runOnClose != null)
                         runOnClose.run();
+                    dfile.close();
+                    ifile.close();
                     typeRef.release();
                 }
             });
@@ -1956,7 +2056,7 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
         private RestorableMeter readMeter;
         // the scheduled persistence of the readMeter, that we will cancel once all instances of this logical
         // sstable have been released
-        private final ScheduledFuture readMeterSyncFuture;
+        private ScheduledFuture readMeterSyncFuture;
         // shared state managing if the logical sstable has been compacted; this is used in cleanup both here
         // and in the FINAL type tidier
         private final AtomicBoolean isCompacted;
@@ -1966,6 +2066,13 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             this.desc = reader.descriptor;
             this.isCompacted = new AtomicBoolean();
             this.live = reader;
+        }
+
+        void ensureReadMeter()
+        {
+            if (readMeter != null)
+                return;
+
             // Don't track read rates for tables in the system keyspace and don't bother trying to load or persist
             // the read meter when in client mode.
             if (SystemKeyspace.NAME.equals(desc.ksname))
@@ -1998,8 +2105,8 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             if (isCompacted.get())
                 SystemKeyspace.clearSSTableReadMeter(desc.ksname, desc.cfname, desc.generation);
             // don't ideally want to dropPageCache for the file until all instances have been released
-            dropPageCache(desc.filenameFor(Component.DATA));
-            dropPageCache(desc.filenameFor(Component.PRIMARY_INDEX));
+            CLibrary.trySkipCache(desc.filenameFor(Component.DATA), 0, 0);
+            CLibrary.trySkipCache(desc.filenameFor(Component.PRIMARY_INDEX), 0, 0);
         }
 
         public String name()
@@ -2019,34 +2126,6 @@ public abstract class SSTableReader extends SSTable implements RefCounted<SSTabl
             Ref<?> ex = lookup.putIfAbsent(descriptor, refc);
             assert ex == null;
             return refc;
-        }
-    }
-
-    private static void dropPageCache(String filePath)
-    {
-        RandomAccessFile file = null;
-
-        try
-        {
-            file = new RandomAccessFile(filePath, "r");
-
-            int fd = CLibrary.getfd(file.getFD());
-
-            if (fd > 0)
-            {
-                if (logger.isDebugEnabled())
-                    logger.debug(String.format("Dropping page cache of file %s.", filePath));
-
-                CLibrary.trySkipCache(fd, 0, 0);
-            }
-        }
-        catch (IOException e)
-        {
-            // we don't care if cache cleanup fails
-        }
-        finally
-        {
-            FileUtils.closeQuietly(file);
         }
     }
 

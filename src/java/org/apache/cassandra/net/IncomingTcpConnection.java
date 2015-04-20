@@ -30,15 +30,19 @@ import net.jpountz.lz4.LZ4BlockInputStream;
 import net.jpountz.lz4.LZ4FastDecompressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
-import org.xerial.snappy.SnappyInputStream;
 
+import org.apache.cassandra.config.Config;
+import org.xerial.snappy.SnappyInputStream;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.UnknownColumnFamilyException;
 import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.io.util.NIODataInputStream;
 
 public class IncomingTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(IncomingTcpConnection.class);
+
+    private static final int BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + ".itc_buffer_size", 1024 * 4);
 
     private final int version;
     private final boolean compressed;
@@ -107,7 +111,7 @@ public class IncomingTcpConnection extends Thread
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
         out.writeInt(MessagingService.current_version);
         out.flush();
-        DataInputStream in = new DataInputStream(socket.getInputStream());
+        DataInput in = new DataInputStream(socket.getInputStream());
         int maxVersion = in.readInt();
 
         from = CompactEndpointSerializationHelper.deserialize(in);
@@ -133,7 +137,7 @@ public class IncomingTcpConnection extends Thread
         }
         else
         {
-            in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
+            in = new NIODataInputStream(socket.getChannel(), BUFFER_SIZE);
         }
 
         if (version > MessagingService.current_version)
@@ -152,8 +156,8 @@ public class IncomingTcpConnection extends Thread
         }
     }
 
-    //对应OutboundTcpConnection.writeInternal(MessageOut, int, long)
-    private InetAddress receiveMessage(DataInputStream input, int version) throws IOException
+    //对应OutboundTcpConnection.writeInternal(MessageOut, int)
+    private InetAddress receiveMessage(DataInput input, int version) throws IOException
     {
         int id;
         if (version < MessagingService.VERSION_20)

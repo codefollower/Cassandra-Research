@@ -204,6 +204,16 @@ public interface StorageServiceMBean extends NotificationEmitter
     public void takeColumnFamilySnapshot(String keyspaceName, String columnFamilyName, String tag) throws IOException;
 
     /**
+     * Takes the snapshot of a multiple column family from different keyspaces. A snapshot name must be specified.
+     * 
+     * @param tag
+     *            the tag given to the snapshot; may not be null or empty
+     * @param columnFamilyList
+     *            list of columnfamily from different keyspace in the form of ks1.cf1 ks2.cf2
+     */
+    public void takeMultipleColumnFamilySnapshot(String tag, String... columnFamilyList) throws IOException;
+
+    /**
      * Remove the snapshot with the given name from the given keyspaces.
      * If no tag is specified we will remove all snapshots.
      */
@@ -224,7 +234,7 @@ public interface StorageServiceMBean extends NotificationEmitter
     /**
      * Forces major compaction of a single keyspace
      */
-    public void forceKeyspaceCompaction(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
+    public void forceKeyspaceCompaction(boolean splitOutput, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
 
     /**
      * Trigger a cleanup of keys on a single keyspace
@@ -238,6 +248,14 @@ public interface StorageServiceMBean extends NotificationEmitter
      * Scrubbed CFs will be snapshotted first, if disableSnapshot is false
      */
     public int scrub(boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
+
+    /**
+     * Verify (checksums of) the given keyspace.
+     * If columnFamilies array is empty, all CFs are verified.
+     *
+     * The entire sstable will be read to ensure each cell validates if extendedVerify is true
+     */
+    public int verify(boolean extendedVerify, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
 
     /**
      * Rewrite all sstables to the latest version.
@@ -529,4 +547,12 @@ public interface StorageServiceMBean extends NotificationEmitter
 
     /** Sets the hinted handoff throttle in kb per second, per delivery thread. */
     public void setHintedHandoffThrottleInKB(int throttleInKB);
+
+    /**
+     * Resume bootstrap streaming when there is failed data streaming.
+     *
+     *
+     * @return true if the node successfully starts resuming. (this does not mean bootstrap streaming was success.)
+     */
+    public boolean resumeBootstrap();
 }

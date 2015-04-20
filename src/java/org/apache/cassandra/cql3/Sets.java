@@ -23,6 +23,7 @@ import java.util.*;
 import com.google.common.base.Joiner;
 
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.Composite;
@@ -133,7 +134,7 @@ public abstract class Sets
     }
 
     //BoundStatement和非BoundStatement的场合都使用这个类
-    public static class Value extends Term.Terminal implements Term.CollectionTerminal
+    public static class Value extends Term.Terminal
     {
         public final SortedSet<ByteBuffer> elements;
 
@@ -166,14 +167,9 @@ public abstract class Sets
             }
         }
 
-        public ByteBuffer get(QueryOptions options) //重新按CollectionType进行序列化
+        public ByteBuffer get(int protocolVersion) //重新按CollectionType进行序列化
         {
-            return getWithProtocolVersion(options.getProtocolVersion());
-        }
-
-        public ByteBuffer getWithProtocolVersion(int protocolVersion)
-        {
-            return CollectionSerializer.pack(new ArrayList<>(elements), elements.size(), protocolVersion);
+            return CollectionSerializer.pack(elements, elements.size(), protocolVersion);
         }
 
         public boolean equals(SetType st, Value v)
@@ -234,6 +230,11 @@ public abstract class Sets
             }
             return new Value(buffers);
         }
+
+        public Iterable<Function> getFunctions()
+        {
+            return Terms.getFunctions(elements);
+        }
     }
 
     //用于BoundStatement的场合
@@ -291,14 +292,12 @@ public abstract class Sets
         static void doAdd(Term t, ColumnFamily cf, Composite prefix, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
-            Sets.Value setValue = (Sets.Value)value;
             if (column.type.isMultiCell())
             {
                 if (value == null)
                     return;
 
-                Set<ByteBuffer> toAdd = setValue.elements;
-                for (ByteBuffer bb : toAdd)
+                for (ByteBuffer bb : ((Value) value).elements)
                 {
                     CellName cellName = cf.getComparator().create(prefix, column, bb);
                     cf.addColumn(params.makeColumn(cellName, ByteBufferUtil.EMPTY_BYTE_BUFFER));
@@ -311,7 +310,7 @@ public abstract class Sets
                 if (value == null)
                     cf.addAtom(params.makeTombstone(cellName));
                 else
-                    cf.addColumn(params.makeColumn(cellName, ((Value) value).getWithProtocolVersion(Server.CURRENT_VERSION)));
+                    cf.addColumn(params.makeColumn(cellName, value.get(Server.CURRENT_VERSION)));
             }
         }
     }
@@ -335,14 +334,31 @@ public abstract class Sets
                 return;
 
             // This can be either a set or a single element
-            Set<ByteBuffer> toDiscard = value instanceof Constants.Value
-                                      ? Collections.singleton(((Constants.Value)value).bytes)
-                                      : ((Sets.Value)value).elements; //就是上面的UPDATE例子，减去多个元素
+            Set<ByteBuffer> toDiscard = value instanceof Sets.Value
+                                      ? ((Sets.Value)value).elements //就是上面的UPDATE例子，减去多个元素
+                                      : Collections.singleton(value.get(params.options.getProtocolVersion()));
 
             for (ByteBuffer bb : toDiscard)
-            {
                 cf.addColumn(params.makeTombstone(cf.getComparator().create(prefix, column, bb)));
-            }
+        }
+    }
+
+    public static class ElementDiscarder extends Operation
+    {
+        public ElementDiscarder(ColumnDefinition column, Term k)
+        {
+            super(column, k);
+        }
+
+        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        {
+            assert column.type.isMultiCell() : "Attempted to delete a single element in a frozen set";
+            Term.Terminal elt = t.bind(params.options);
+            if (elt == null)
+                throw new InvalidRequestException("Invalid null set element");
+
+            CellName cellName = cf.getComparator().create(prefix, column, elt.get(params.options.getProtocolVersion()));
+            cf.addColumn(params.makeTombstone(cellName));
         }
     }
 }

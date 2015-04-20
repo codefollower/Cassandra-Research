@@ -17,10 +17,7 @@
  */
 package org.apache.cassandra.io.sstable.format.big;
 
-import java.io.DataInput;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Iterator;
@@ -35,7 +32,6 @@ import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.format.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
@@ -46,12 +42,7 @@ import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
 import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
-import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.io.util.DataOutputStreamAndChannel;
-import org.apache.cassandra.io.util.FileMark;
-import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.SegmentedFile;
-import org.apache.cassandra.io.util.SequentialWriter;
+import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.FilterFactory;
@@ -91,7 +82,7 @@ public class BigTableWriter extends SSTableWriter
         else
         {
             dataFile = SequentialWriter.open(new File(getFilename()), new File(descriptor.filenameFor(Component.CRC)));
-            dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
+            dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), false);
         }
         iwriter = new IndexWriter(keyCount, dataFile);
     }
@@ -119,7 +110,7 @@ public class BigTableWriter extends SSTableWriter
         return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
-    private void afterAppend(DecoratedKey decoratedKey, long dataPosition, RowIndexEntry index)
+    private void afterAppend(DecoratedKey decoratedKey, long dataEnd, RowIndexEntry index) throws IOException
     {
         metadataCollector.addKey(decoratedKey.getKey());
         lastWrittenKey = decoratedKey;
@@ -128,9 +119,9 @@ public class BigTableWriter extends SSTableWriter
             first = lastWrittenKey;
 
         if (logger.isTraceEnabled())
-            logger.trace("wrote {} at {}", decoratedKey, dataPosition);
-        iwriter.append(decoratedKey, index, dataPosition);
-        dbuilder.addPotentialBoundary(dataPosition);
+            logger.trace("wrote {} at {}", decoratedKey, dataEnd);
+        iwriter.append(decoratedKey, index, dataEnd);
+        dbuilder.addPotentialBoundary(dataEnd);
     }
 
     /**
@@ -147,15 +138,15 @@ public class BigTableWriter extends SSTableWriter
             entry = row.write(startPosition, dataFile);
             if (entry == null)
                 return null;
+            long endPosition = dataFile.getFilePointer();
+            metadataCollector.update(endPosition - startPosition, row.columnStats());
+            afterAppend(row.key, endPosition, entry);
+            return entry;
         }
         catch (IOException e)
         {
             throw new FSWriteError(e, dataFile.getPath());
         }
-        long endPosition = dataFile.getFilePointer();
-        metadataCollector.update(endPosition - startPosition, row.columnStats());
-        afterAppend(row.key, endPosition, entry);
-        return entry;
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf)
@@ -170,16 +161,18 @@ public class BigTableWriter extends SSTableWriter
 
         //beforeAppend返回的是Data.db文件的当前位置，decoratedKey就从这个位置开始存放
         long startPosition = beforeAppend(decoratedKey);
+        long endPosition;
         try
         {
             RowIndexEntry entry = rawAppend(cf, startPosition, decoratedKey, dataFile.stream);
-            afterAppend(decoratedKey, startPosition, entry);
+            endPosition = dataFile.getFilePointer();
+            afterAppend(decoratedKey, endPosition, entry);
         }
         catch (IOException e)
         {
             throw new FSWriteError(e, dataFile.getPath());
         }
-        metadataCollector.update(dataFile.getFilePointer() - startPosition, cf.getColumnStats());
+        metadataCollector.update(endPosition - startPosition, cf.getColumnStats());
     }
 
     private static RowIndexEntry rawAppend(ColumnFamily cf, long startPosition, DecoratedKey key, DataOutputPlus out) throws IOException
@@ -299,6 +292,9 @@ public class BigTableWriter extends SSTableWriter
         if (dataFile!= null)
             dataFile.abort();
 
+        if (dbuilder != null)
+            dbuilder.close();
+
         Set<Component> components = SSTable.componentsFor(descriptor);
         try
         {
@@ -353,7 +349,7 @@ public class BigTableWriter extends SSTableWriter
         SSTableReader sstable = SSTableReader.internalOpen(descriptor.asType(Descriptor.Type.FINAL),
                                                            components, metadata,
                                                            partitioner, ifile,
-                                                           dfile, iwriter.summary.build(partitioner, boundary.lastKey),
+                                                           dfile, iwriter.summary.build(partitioner, boundary),
                                                            iwriter.bf.sharedCopy(), maxDataAge, sstableMetadata, SSTableReader.OpenReason.EARLY);
 
         // now it's open, find the ACTUAL last readable key (i.e. for which the data file has also been flushed)
@@ -410,9 +406,12 @@ public class BigTableWriter extends SSTableWriter
         if (finishType.isFinal)
         {
             iwriter.bf.close();
+            iwriter.summary.close();
             // try to save the summaries to disk
             sstable.saveSummary(iwriter.builder, dbuilder);
+            iwriter.builder.close();
             iwriter = null;
+            dbuilder.close();
             dbuilder = null;
         }
         return sstable;
@@ -421,7 +420,12 @@ public class BigTableWriter extends SSTableWriter
     // Close the writer and return the descriptor to the new sstable and it's metadata
     public Pair<Descriptor, StatsMetadata> close()
     {
-        return close(FinishType.CLOSE, this.repairedAt);
+        Pair<Descriptor, StatsMetadata> ret = close(FinishType.CLOSE, this.repairedAt);
+        if (dbuilder != null)
+            dbuilder.close();
+        if (iwriter != null)
+            iwriter.builder.close();
+        return ret;
     }
 
     private Pair<Descriptor, StatsMetadata> close(FinishType type, long repairedAt)
@@ -516,7 +520,7 @@ public class BigTableWriter extends SSTableWriter
         IndexWriter(long keyCount, final SequentialWriter dataFile)
         {
             indexFile = SequentialWriter.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)));
-            builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
+            builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
             summary = new IndexSummaryBuilder(keyCount, metadata.getMinIndexInterval(), Downsampling.BASE_SAMPLING_LEVEL);
             bf = FilterFactory.getFilter(keyCount, metadata.getBloomFilterFpChance(), true);
             // register listeners to be alerted when the data files are flushed
@@ -542,7 +546,7 @@ public class BigTableWriter extends SSTableWriter
             return summary.getLastReadableBoundary();
         }
 
-        public void append(DecoratedKey key, RowIndexEntry indexEntry, long dataEnd)
+        public void append(DecoratedKey key, RowIndexEntry indexEntry, long dataEnd) throws IOException
         {
             bf.add(key);
             long indexStart = indexFile.getFilePointer();
@@ -566,8 +570,10 @@ public class BigTableWriter extends SSTableWriter
 
         public void abort()
         {
+            summary.close();
             indexFile.abort();
             bf.close();
+            builder.close();
         }
 
         /**
@@ -583,7 +589,7 @@ public class BigTableWriter extends SSTableWriter
                     // bloom filter
                     //创建BloomFilter对应的文件Filter.db，并向它写数据
                     FileOutputStream fos = new FileOutputStream(path);
-                    DataOutputStreamAndChannel stream = new DataOutputStreamAndChannel(fos);
+                    DataOutputStreamPlus stream = new BufferedDataOutputStreamPlus(fos);
                     FilterFactory.serialize(bf, stream);
                     stream.flush();
                     fos.getFD().sync();

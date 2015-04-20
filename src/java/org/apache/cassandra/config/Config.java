@@ -28,26 +28,33 @@ import com.google.common.collect.Sets;
 import org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.io.util.NativeAllocator;
 import org.supercsv.io.CsvListReader;
 import org.supercsv.prefs.CsvPreference;
 
 /**
  * A class that contains configuration properties for the cassandra node it runs within.
- * 
+ *
  * Properties declared as volatile can be mutated via JMX.
  */
 //cassandra.yaml文件中只能定义与Config类中的字段同名的参数
 public class Config
 {
+    /*
+     * Prefix for Java properties for internal Cassandra configuration options
+     */
+    public static final String PROPERTY_PREFIX = "cassandra.";
+
+
     public String cluster_name = "Test Cluster";
     public String authenticator;
     public String authorizer;
     public String role_manager;
-    public int permissions_validity_in_ms = 2000;
+    public volatile int permissions_validity_in_ms = 2000;
     public int permissions_cache_max_entries = 1000;
-    public int permissions_update_interval_in_ms = -1;
+    public volatile int permissions_update_interval_in_ms = -1;
     public int roles_validity_in_ms = 2000;
+    public int roles_cache_max_entries = 1000;
+    public int roles_update_interval_in_ms = -1;
 
     /* Hashing strategy Random or OPHF */
     public String partitioner;
@@ -56,9 +63,9 @@ public class Config
     public volatile boolean hinted_handoff_enabled_global = true;
     public String hinted_handoff_enabled;
     public Set<String> hinted_handoff_enabled_by_dc = Sets.newConcurrentHashSet();
-    public volatile Integer max_hint_window_in_ms = 3600 * 1000; // one hour
+    public volatile Integer max_hint_window_in_ms = 3 * 3600 * 1000; // three hours
 
-    public SeedProviderDef seed_provider;
+    public ParameterizedClass seed_provider;
     public DiskAccessMode disk_access_mode = DiskAccessMode.auto;
 
     //用于org.apache.cassandra.io.util.FileUtils.handleFSError(FSError)
@@ -107,12 +114,14 @@ public class Config
     public Integer ssl_storage_port = 7001;
     public String listen_address;
     public String listen_interface;
+    public Boolean listen_interface_prefer_ipv6 = false;
     public String broadcast_address;
     public String internode_authenticator;
 
     public Boolean start_rpc = true;
     public String rpc_address;
     public String rpc_interface;
+    public Boolean rpc_interface_prefer_ipv6 = false;
     public String broadcast_rpc_address;
     public Integer rpc_port = 9160;
     public Integer rpc_listen_backlog = 50;
@@ -129,6 +138,8 @@ public class Config
     public Integer native_transport_port = 9042;
     public Integer native_transport_max_threads = 128;
     public Integer native_transport_max_frame_size_in_mb = 256;
+    public volatile Long native_transport_max_concurrent_connections = -1L;
+    public volatile Long native_transport_max_concurrent_connections_per_ip = -1L;
 
     @Deprecated
     public Integer thrift_max_message_length_in_mb = 16; //代码中没有地方使用了
@@ -160,6 +171,8 @@ public class Config
     public Double commitlog_sync_batch_window_in_ms;
     public Integer commitlog_sync_period_in_ms;
     public int commitlog_segment_size_in_mb = 32;
+    public ParameterizedClass commitlog_compression;
+    public int commitlog_max_compression_buffers_in_pool = 3;
  
     @Deprecated
     public int commitlog_periodic_queue_size = -1;
@@ -207,7 +220,10 @@ public class Config
     public volatile int counter_cache_save_period = 7200;
     public volatile int counter_cache_keys_to_save = Integer.MAX_VALUE;
 
-    public String memory_allocator = NativeAllocator.class.getSimpleName();
+    @Deprecated
+    public String memory_allocator;
+
+    private static boolean isClientMode = false;
 
     public Integer file_cache_size_in_mb;
 
@@ -230,6 +246,22 @@ public class Config
     public int tracetype_query_ttl = (int) TimeUnit.DAYS.toSeconds(1);
     public int tracetype_repair_ttl = (int) TimeUnit.DAYS.toSeconds(7);
 
+    /*
+     * Strategy to use for coalescing messages in OutboundTcpConnection.
+     * Can be fixed, movingaverage, timehorizon, disabled. Setting is case and leading/trailing
+     * whitespace insensitive. You can also specify a subclass of CoalescingStrategies.CoalescingStrategy by name.
+     */
+    public String otc_coalescing_strategy = "TIMEHORIZON";
+
+    /*
+     * How many microseconds to wait for coalescing. For fixed strategy this is the amount of time after the first
+     * messgae is received before it will be sent with any accompanying messages. For moving average this is the
+     * maximum amount of time that will be waited as well as the interval at which messages must arrive on average
+     * for coalescing to be enabled.
+     */
+    public static final int otc_coalescing_window_us_default = 200;
+    public int otc_coalescing_window_us = otc_coalescing_window_us_default;
+
     public static boolean getOutboundBindAny()
     {
         return outboundBindAny;
@@ -238,6 +270,16 @@ public class Config
     public static void setOutboundBindAny(boolean value)
     {
         outboundBindAny = value;
+    }
+
+    public static boolean isClientMode()
+    {
+        return isClientMode;
+    }
+
+    public static void setClientMode(boolean clientMode)
+    {
+        isClientMode = clientMode;
     }
 
     public void configHintedHandoff() throws ConfigurationException

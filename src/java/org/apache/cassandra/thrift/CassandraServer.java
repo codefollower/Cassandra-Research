@@ -581,13 +581,6 @@ public class CassandraServer implements Cassandra.Iface
         }
     }
 
-    private static ByteBuffer getName(ColumnOrSuperColumn cosc)
-    {
-        return cosc.isSetSuper_column() ? cosc.super_column.name :
-                   (cosc.isSetColumn() ? cosc.column.name :
-                       (cosc.isSetCounter_column() ? cosc.counter_column.name : cosc.counter_super_column.name));
-    }
-
     public Map<ByteBuffer, Integer> multiget_count(List<ByteBuffer> keys, ColumnParent column_parent, SlicePredicate predicate, ConsistencyLevel consistency_level)
     throws InvalidRequestException, UnavailableException, TimedOutException
     {
@@ -1867,6 +1860,10 @@ public class CassandraServer implements Cassandra.Iface
         {
             throw new InvalidRequestException("Error deflating query string.");
         }
+        catch (IOException e)
+        {
+            throw new AssertionError(e);
+        }
         return queryString;
     }
 
@@ -1891,7 +1888,10 @@ public class CassandraServer implements Cassandra.Iface
             }
 
             ThriftClientState cState = state();
-            return cState.getCQLQueryHandler().process(queryString, cState.getQueryState(), QueryOptions.fromProtocolV2(ThriftConversion.fromThrift(cLevel), Collections.<ByteBuffer>emptyList())).toThriftResult();
+            return ClientState.getCQLQueryHandler().process(queryString,
+                                                            cState.getQueryState(),
+                                                            QueryOptions.fromProtocolV2(ThriftConversion.fromThrift(cLevel), Collections.<ByteBuffer>emptyList()),
+                                                            null).toThriftResult();
         }
         catch (RequestExecutionException e)
         {
@@ -1922,7 +1922,9 @@ public class CassandraServer implements Cassandra.Iface
         try
         {
             cState.validateLogin();
-            return cState.getCQLQueryHandler().prepare(queryString, cState.getQueryState()).toThriftPreparedResult();
+            return ClientState.getCQLQueryHandler().prepare(queryString,
+                                                       cState.getQueryState(),
+                                                       null).toThriftPreparedResult();
         }
         catch (RequestValidationException e)
         {
@@ -1950,7 +1952,7 @@ public class CassandraServer implements Cassandra.Iface
         try
         {
             ThriftClientState cState = state();
-            ParsedStatement.Prepared prepared = cState.getCQLQueryHandler().getPreparedForThrift(itemId);
+            ParsedStatement.Prepared prepared = ClientState.getCQLQueryHandler().getPreparedForThrift(itemId);
 
             if (prepared == null)
                 throw new InvalidRequestException(String.format("Prepared query with ID %d not found" +
@@ -1959,9 +1961,10 @@ public class CassandraServer implements Cassandra.Iface
                                                                 itemId));
             logger.trace("Retrieved prepared statement #{} with {} bind markers", itemId, prepared.statement.getBoundTerms());
 
-            return cState.getCQLQueryHandler().processPrepared(prepared.statement,
-                                                               cState.getQueryState(),
-                                                               QueryOptions.fromProtocolV2(ThriftConversion.fromThrift(cLevel), bindVariables)).toThriftResult();
+            return ClientState.getCQLQueryHandler().processPrepared(prepared.statement,
+                                                                    cState.getQueryState(),
+                                                                    QueryOptions.fromProtocolV2(ThriftConversion.fromThrift(cLevel), bindVariables),
+                                                                    null).toThriftResult();
         }
         catch (RequestExecutionException e)
         {

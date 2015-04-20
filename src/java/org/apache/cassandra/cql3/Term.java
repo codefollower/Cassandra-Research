@@ -18,8 +18,11 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
 /**
@@ -68,6 +71,8 @@ public interface Term
     public abstract boolean containsBindMarker();
 
     boolean usesFunction(String ksName, String functionName);
+
+    Iterable<Function> getFunctions();
 
     /**
      * A parsed, non prepared (thus untyped) term.
@@ -122,6 +127,11 @@ public interface Term
             return false;
         }
 
+        public Set<Function> getFunctions()
+        {
+            return Collections.emptySet();
+        }
+
         // While some NonTerminal may not have bind markers, no Term can be Terminal
         // with a bind marker
         public boolean containsBindMarker()
@@ -131,24 +141,19 @@ public interface Term
 
         /**
          * @return the serialized value of this terminal.
+         * @param protocolVersion
          */
-        public abstract ByteBuffer get(QueryOptions options);
+        public abstract ByteBuffer get(int protocolVersion) throws InvalidRequestException;
 
         public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException
         {
-            return get(options);
+            return get(options.getProtocolVersion());
         }
     }
 
     public abstract class MultiItemTerminal extends Terminal
     {
         public abstract List<ByteBuffer> getElements();
-    }
-
-    public interface CollectionTerminal
-    {
-        /** Gets the value of the collection when serialized with the given protocol version format */
-        public ByteBuffer getWithProtocolVersion(int protocolVersion);
     }
 
     /**
@@ -163,6 +168,9 @@ public interface Term
      */
     public abstract class NonTerminal implements Term
     {
+        // TODO - this is not necessarily false, yet isn't overridden in concrete classes
+        // representing collection literals
+        // e,g "UPDATE table SET map_col = { key_function() : val_function() }) WHERE ....
         public boolean usesFunction(String ksName, String functionName)
         {
             return false;
@@ -171,7 +179,7 @@ public interface Term
         public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException
         {
             Terminal t = bind(options);
-            return t == null ? null : t.get(options);
+            return t == null ? null : t.get(options.getProtocolVersion());
         }
     }
 }

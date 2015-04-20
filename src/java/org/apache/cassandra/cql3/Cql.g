@@ -93,6 +93,13 @@ options {
         return marker;
     }
 
+    public Json.Marker newJsonBindVariables(ColumnIdentifier name)
+    {
+        Json.Marker marker = new Json.Marker(bindVariables.size());
+        bindVariables.add(name);
+        return marker;
+    }
+
     public void addErrorListener(ErrorListener listener)
     {
         this.listeners.add(listener);
@@ -283,9 +290,12 @@ selectStatement returns [SelectStatement.RawStatement expr]
         Term.Raw limit = null;
         Map<ColumnIdentifier.Raw, Boolean> orderings = new LinkedHashMap<ColumnIdentifier.Raw, Boolean>();
         boolean allowFiltering = false;
+        boolean isJson = false;
     }
-    : K_SELECT ( ( K_DISTINCT { isDistinct = true; } )? sclause=selectClause
-               | sclause=selectCountClause )
+    : K_SELECT 
+      ( K_JSON { isJson = true; } )?
+      ( ( K_DISTINCT { isDistinct = true; } )? sclause=selectClause
+        | sclause=selectCountClause )
       K_FROM cf=columnFamilyName
       ( K_WHERE wclause=whereClause )?
       ( K_ORDER K_BY orderByClause[orderings] ( ',' orderByClause[orderings] )* )?
@@ -294,7 +304,8 @@ selectStatement returns [SelectStatement.RawStatement expr]
       {
           SelectStatement.Parameters params = new SelectStatement.Parameters(orderings,
                                                                              isDistinct,
-                                                                             allowFiltering);
+                                                                             allowFiltering,
+                                                                             isJson);
           $expr = new SelectStatement.RawStatement(cf, params, sclause, wclause, limit);
       }
     ;
@@ -353,27 +364,47 @@ orderByClause[Map<ColumnIdentifier.Raw, Boolean> orderings]
  * USING TIMESTAMP <long>;
  *
  */
-insertStatement returns [UpdateStatement.ParsedInsert expr]
+insertStatement returns [ModificationStatement.Parsed expr]
+    : K_INSERT K_INTO cf=columnFamilyName
+        ( st1=normalInsertStatement[cf] { $expr = st1; }
+        | K_JSON st2=jsonInsertStatement[cf] { $expr = st2; })
+    ;
+
+normalInsertStatement [CFName cf] returns [UpdateStatement.ParsedInsert expr]
     @init {
         Attributes.Raw attrs = new Attributes.Raw();
         List<ColumnIdentifier.Raw> columnNames  = new ArrayList<ColumnIdentifier.Raw>();
         List<Term.Raw> values = new ArrayList<Term.Raw>();
         boolean ifNotExists = false;
     }
-    : K_INSERT K_INTO cf=columnFamilyName
-          '(' c1=cident { columnNames.add(c1); }  ( ',' cn=cident { columnNames.add(cn); } )* ')'
-        K_VALUES
-          '(' v1=term { values.add(v1); } ( ',' vn=term { values.add(vn); } )* ')'
-
-        ( K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
-        ( usingClause[attrs] )?
+    : '(' c1=cident { columnNames.add(c1); }  ( ',' cn=cident { columnNames.add(cn); } )* ')'
+      K_VALUES
+      '(' v1=term { values.add(v1); } ( ',' vn=term { values.add(vn); } )* ')'
+      ( K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
+      ( usingClause[attrs] )?
       {
-          $expr = new UpdateStatement.ParsedInsert(cf,
-                                                   attrs,
-                                                   columnNames,
-                                                   values,
-                                                   ifNotExists);
+          $expr = new UpdateStatement.ParsedInsert(cf, attrs, columnNames, values, ifNotExists);
       }
+    ;
+
+jsonInsertStatement [CFName cf] returns [UpdateStatement.ParsedInsertJson expr]
+    @init {
+        Attributes.Raw attrs = new Attributes.Raw();
+        boolean ifNotExists = false;
+    }
+    : val=jsonValue
+      ( K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
+      ( usingClause[attrs] )?
+      {
+          $expr = new UpdateStatement.ParsedInsertJson(cf, attrs, val, ifNotExists);
+      }
+    ;
+
+jsonValue returns [Json.Raw value]
+    :
+    | s=STRING_LITERAL { $value = new Json.Literal($s.text); }
+    | ':' id=ident     { $value = newJsonBindVariables(id); }
+    | QMARK            { $value = newJsonBindVariables(null); }
     ;
 
 usingClause[Attributes.Raw attrs]
@@ -390,6 +421,7 @@ usingClauseObjective[Attributes.Raw attrs]
  * USING TIMESTAMP <long>
  * SET name1 = value1, name2 = value2
  * WHERE key = value;
+ * [IF (EXISTS | name = value, ...)];
  */
 updateStatement returns [UpdateStatement.ParsedUpdate expr]
     @init {
@@ -881,7 +913,7 @@ listPermissionsStatement returns [ListPermissionsStatement stmt]
     ;
 
 permission returns [Permission perm]
-    : p=(K_CREATE | K_ALTER | K_DROP | K_SELECT | K_MODIFY | K_AUTHORIZE | K_DESCRIBE)
+    : p=(K_CREATE | K_ALTER | K_DROP | K_SELECT | K_MODIFY | K_AUTHORIZE | K_DESCRIBE | K_EXECUTE)
     { $perm = Permission.valueOf($p.text.toUpperCase()); }
     ;
 
@@ -893,6 +925,7 @@ permissionOrAll returns [Set<Permission> perms]
 resource returns [IResource res]
     : d=dataResource { $res = $d.res; }
     | r=roleResource { $res = $r.res; }
+    | f=functionResource { $res = $f.res; }
     ;
 
 dataResource returns [DataResource res]
@@ -902,9 +935,28 @@ dataResource returns [DataResource res]
       { $res = DataResource.table($cf.name.getKeyspace(), $cf.name.getColumnFamily()); }
     ;
 
-roleResource  returns [RoleResource res]
+roleResource returns [RoleResource res]
     : K_ALL K_ROLES { $res = RoleResource.root(); }
     | K_ROLE role = userOrRoleName { $res = RoleResource.role($role.name.getName()); }
+    ;
+
+functionResource returns [FunctionResource res]
+    @init {
+        List<CQL3Type.Raw> argsTypes = new ArrayList<>();
+    }
+    : K_ALL K_FUNCTIONS { $res = FunctionResource.root(); }
+    | K_ALL K_FUNCTIONS K_IN K_KEYSPACE ks = keyspaceName { $res = FunctionResource.keyspace($ks.id); }
+    // Arg types are mandatory for DCL statements on Functions
+    | K_FUNCTION fn=functionName
+      (
+        '('
+          (
+            v=comparatorType { argsTypes.add(v); }
+            ( ',' v=comparatorType { argsTypes.add(v); } )*
+          )?
+        ')'
+      )
+      { $res = FunctionResource.functionFromCql($fn.s.keyspace, $fn.s.name, argsTypes); }
     ;
 
 /**
@@ -913,15 +965,15 @@ roleResource  returns [RoleResource res]
 createUserStatement returns [CreateRoleStatement stmt]
     @init {
         RoleOptions opts = new RoleOptions();
-        opts.put(IRoleManager.Option.LOGIN.name(), true);
+        opts.setOption(IRoleManager.Option.LOGIN, true);
         boolean superuser = false;
         boolean ifNotExists = false;
         RoleName name = new RoleName();
     }
     : K_CREATE K_USER (K_IF K_NOT K_EXISTS { ifNotExists = true; })? u=username { name.setName($u.text, false); }
-      ( K_WITH roleOptions[opts] )?
+      ( K_WITH userPassword[opts] )?
       ( K_SUPERUSER { superuser = true; } | K_NOSUPERUSER { superuser = false; } )?
-      { opts.put(IRoleManager.Option.SUPERUSER.name(), superuser);
+      { opts.setOption(IRoleManager.Option.SUPERUSER, superuser);
         $stmt = new CreateRoleStatement(name, opts, ifNotExists); }
     ;
 
@@ -934,9 +986,9 @@ alterUserStatement returns [AlterRoleStatement stmt]
         RoleName name = new RoleName();
     }
     : K_ALTER K_USER u=username { name.setName($u.text, false); }
-      ( K_WITH roleOptions[opts] )?
-      ( K_SUPERUSER { opts.put(IRoleManager.Option.SUPERUSER.name(), true); }
-        | K_NOSUPERUSER { opts.put(IRoleManager.Option.SUPERUSER.name(), false); } ) ?
+      ( K_WITH userPassword[opts] )?
+      ( K_SUPERUSER { opts.setOption(IRoleManager.Option.SUPERUSER, true); }
+        | K_NOSUPERUSER { opts.setOption(IRoleManager.Option.SUPERUSER, false); } ) ?
       {  $stmt = new AlterRoleStatement(name, opts); }
     ;
 
@@ -959,26 +1011,43 @@ listUsersStatement returns [ListRolesStatement stmt]
     ;
 
 /**
- * CREATE ROLE [IF NOT EXISTS] <rolename> [WITH PASSWORD <password>] [SUPERUSER|NOSUPERUSER] [LOGIN|NOLOGIN]
+ * CREATE ROLE [IF NOT EXISTS] <rolename> [ [WITH] option [ [AND] option ]* ]
+ *
+ * where option can be:
+ *  PASSWORD = '<password>'
+ *  SUPERUSER = (true|false)
+ *  LOGIN = (true|false)
+ *  OPTIONS = { 'k1':'v1', 'k2':'v2'}
  */
 createRoleStatement returns [CreateRoleStatement stmt]
     @init {
         RoleOptions opts = new RoleOptions();
-        boolean superuser = false;
-        boolean login = false;
         boolean ifNotExists = false;
     }
     : K_CREATE K_ROLE (K_IF K_NOT K_EXISTS { ifNotExists = true; })? name=userOrRoleName
       ( K_WITH roleOptions[opts] )?
-      ( K_SUPERUSER { superuser = true; } | K_NOSUPERUSER { superuser = false; } )?
-      ( K_LOGIN { login = true; } | K_NOLOGIN { login = false; } )?
-      { opts.put(IRoleManager.Option.SUPERUSER.name(), superuser);
-        opts.put(IRoleManager.Option.LOGIN.name(), login);
-        $stmt = new CreateRoleStatement(name, opts, ifNotExists); }
+      {
+        // set defaults if they weren't explictly supplied
+        if (!opts.getLogin().isPresent())
+        {
+            opts.setOption(IRoleManager.Option.LOGIN, false);
+        }
+        if (!opts.getSuperuser().isPresent())
+        {
+            opts.setOption(IRoleManager.Option.SUPERUSER, false);
+        }
+        $stmt = new CreateRoleStatement(name, opts, ifNotExists);
+      }
     ;
 
 /**
- * ALTER ROLE <rolename> [WITH PASSWORD <password>] [SUPERUSER|NOSUPERUSER]
+ * ALTER ROLE <rolename> [ [WITH] option [ [AND] option ]* ]
+ *
+ * where option can be:
+ *  PASSWORD = '<password>'
+ *  SUPERUSER = (true|false)
+ *  LOGIN = (true|false)
+ *  OPTIONS = { 'k1':'v1', 'k2':'v2'}
  */
 alterRoleStatement returns [AlterRoleStatement stmt]
     @init {
@@ -986,10 +1055,6 @@ alterRoleStatement returns [AlterRoleStatement stmt]
     }
     : K_ALTER K_ROLE name=userOrRoleName
       ( K_WITH roleOptions[opts] )?
-      ( K_SUPERUSER { opts.put(IRoleManager.Option.SUPERUSER.name(), true); }
-        | K_NOSUPERUSER { opts.put(IRoleManager.Option.SUPERUSER.name(), false); } ) ?
-      ( K_LOGIN { opts.put(IRoleManager.Option.LOGIN.name(), true); }
-        | K_NOLOGIN { opts.put(IRoleManager.Option.LOGIN.name(), false); } )?
       {  $stmt = new AlterRoleStatement(name, opts); }
     ;
 
@@ -1023,8 +1088,15 @@ roleOptions[RoleOptions opts]
     ;
 
 roleOption[RoleOptions opts]
-    :  k=K_PASSWORD '='? v=STRING_LITERAL { opts.put($k.text, $v.text); }
-    |  k=K_OPTIONS '='? m=mapLiteral { opts.put(IRoleManager.Option.OPTIONS.name(), convertPropertyMap(m)); }
+    :  K_PASSWORD '=' v=STRING_LITERAL { opts.setOption(IRoleManager.Option.PASSWORD, $v.text); }
+    |  K_OPTIONS '=' m=mapLiteral { opts.setOption(IRoleManager.Option.OPTIONS, convertPropertyMap(m)); }
+    |  K_SUPERUSER '=' b=BOOLEAN { opts.setOption(IRoleManager.Option.SUPERUSER, Boolean.valueOf($b.text)); }
+    |  K_LOGIN '=' b=BOOLEAN { opts.setOption(IRoleManager.Option.LOGIN, Boolean.valueOf($b.text)); }
+    ;
+
+// for backwards compatibility in CREATE/ALTER USER, this has no '='
+userPassword[RoleOptions opts]
+    :  K_PASSWORD v=STRING_LITERAL { opts.setOption(IRoleManager.Option.PASSWORD, $v.text); }
     ;
 
 /** DEFINITIONS **/
@@ -1389,6 +1461,8 @@ native_type returns [CQL3Type t]
     | K_VARCHAR   { $t = CQL3Type.Native.VARCHAR; }
     | K_VARINT    { $t = CQL3Type.Native.VARINT; }
     | K_TIMEUUID  { $t = CQL3Type.Native.TIMEUUID; }
+    | K_DATE      { $t = CQL3Type.Native.DATE; }
+    | K_TIME      { $t = CQL3Type.Native.TIME; }
     ;
 
 collection_type returns [CQL3Type.Raw pt]
@@ -1465,7 +1539,10 @@ basic_unreserved_keyword returns [String str]
         | K_DISTINCT
         | K_CONTAINS
         | K_STATIC
+        | K_FROZEN
+        | K_TUPLE
         | K_FUNCTION
+        | K_FUNCTIONS
         | K_AGGREGATE
         | K_SFUNC
         | K_STYPE
@@ -1475,6 +1552,7 @@ basic_unreserved_keyword returns [String str]
         | K_LANGUAGE
         | K_NON
         | K_DETERMINISTIC
+        | K_JSON
         ) { $str = $k.text; }
     ;
 
@@ -1544,6 +1622,7 @@ K_REVOKE:      R E V O K E;
 K_MODIFY:      M O D I F Y;
 K_AUTHORIZE:   A U T H O R I Z E;
 K_DESCRIBE:    D E S C R I B E;
+K_EXECUTE:     E X E C U T E;
 K_NORECURSIVE: N O R E C U R S I V E;
 
 K_USER:        U S E R;
@@ -1575,6 +1654,8 @@ K_VARINT:      V A R I N T;
 K_TIMEUUID:    T I M E U U I D;
 K_TOKEN:       T O K E N;
 K_WRITETIME:   W R I T E T I M E;
+K_DATE:        D A T E;
+K_TIME:        T I M E;
 
 K_NULL:        N U L L;
 K_NOT:         N O T;
@@ -1591,6 +1672,7 @@ K_STATIC:      S T A T I C;
 K_FROZEN:      F R O Z E N;
 
 K_FUNCTION:    F U N C T I O N;
+K_FUNCTIONS:   F U N C T I O N S;
 K_AGGREGATE:   A G G R E G A T E;
 K_SFUNC:       S F U N C;
 K_STYPE:       S T Y P E;
@@ -1602,6 +1684,8 @@ K_NON:         N O N;
 K_OR:          O R;
 K_REPLACE:     R E P L A C E;
 K_DETERMINISTIC: D E T E R M I N I S T I C;
+
+K_JSON:        J S O N;
 
 // Case-insensitive alpha characters
 fragment A: ('a'|'A');

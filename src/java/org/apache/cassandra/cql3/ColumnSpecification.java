@@ -20,7 +20,10 @@ package org.apache.cassandra.cql3;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.ReversedType;
 
-public class ColumnSpecification //有一个子类: org.apache.cassandra.config.ColumnDefinition
+import java.util.Collection;
+import java.util.Iterator;
+
+public class ColumnSpecification //有一个子类: org.apache.cassandra.config.ColumnDefinition73880
 {
     public final String ksName;
     public final String cfName;
@@ -45,9 +48,41 @@ public class ColumnSpecification //有一个子类: org.apache.cassandra.config.
     {
         return new ColumnSpecification(ksName, cfName, alias, type);
     }
-    
+
     public boolean isReversedType()
     {
         return type instanceof ReversedType;
+    }
+
+    /**
+     * Returns true if all ColumnSpecifications are in the same table, false otherwise.
+     */
+    public static boolean allInSameTable(Collection<ColumnSpecification> names)
+    {
+        if (names == null || names.isEmpty())
+            return false;
+
+        Iterator<ColumnSpecification> iter = names.iterator();
+        ColumnSpecification first = iter.next();
+        while (iter.hasNext())
+        {
+            ColumnSpecification name = iter.next();
+            if (!name.ksName.equals(first.ksName) || !name.cfName.equals(first.cfName))
+                return false;
+        }
+        return true;
+    }
+
+    @Override
+    public boolean equals(Object other)
+    {
+        if (!(other instanceof ColumnSpecification))
+            return false;
+
+        ColumnSpecification that = (ColumnSpecification) other;
+        return this.ksName.equals(that.ksName) &&
+               this.cfName.equals(that.cfName) &&
+               this.name.equals(that.name) &&
+               this.type.equals(that.type);
     }
 }

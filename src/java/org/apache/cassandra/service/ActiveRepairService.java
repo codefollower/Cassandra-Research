@@ -57,7 +57,6 @@ import org.apache.cassandra.repair.messages.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
 import org.apache.cassandra.utils.concurrent.Ref;
-import org.apache.cassandra.utils.concurrent.RefCounted;
 
 import org.apache.cassandra.utils.concurrent.Refs;
 
@@ -82,11 +81,6 @@ public class ActiveRepairService
     public static final ActiveRepairService instance = new ActiveRepairService(FailureDetector.instance, Gossiper.instance);
 
     public static final long UNREPAIRED_SSTABLE = 0;
-
-    public static enum Status
-    {
-        STARTED, SESSION_SUCCESS, SESSION_FAILED, FINISHED, RUNNING
-    }
 
     /**
      * A map of active coordinator session.
@@ -238,9 +232,8 @@ public class ActiveRepairService
         return neighbors;
     }
 
-    public synchronized UUID prepareForRepair(Set<InetAddress> endpoints, RepairOption options, List<ColumnFamilyStore> columnFamilyStores)
+    public synchronized UUID prepareForRepair(UUID parentRepairSession, Set<InetAddress> endpoints, RepairOption options, List<ColumnFamilyStore> columnFamilyStores)
     {
-        UUID parentRepairSession = UUIDGen.getTimeUUID();
         registerParentRepairSession(parentRepairSession, columnFamilyStores, options.getRanges(), options.isIncremental());
         final CountDownLatch prepareLatch = new CountDownLatch(endpoints.size());
         final AtomicBoolean status = new AtomicBoolean(true);
@@ -430,15 +423,6 @@ public class ActiveRepairService
                 }
             }
             return new Refs<>(references.build());
-        }
-
-        public synchronized Refs<SSTableReader> getAndReferenceSSTablesInRange(UUID cfId, Range<Token> range)
-        {
-            Refs<SSTableReader> sstables = getAndReferenceSSTables(cfId);
-            for (SSTableReader sstable : ImmutableList.copyOf(sstables))
-                if (!new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(Arrays.asList(range)))
-                    sstables.release(sstable);
-            return sstables;
         }
 
         @Override

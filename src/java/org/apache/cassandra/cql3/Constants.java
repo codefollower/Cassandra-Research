@@ -44,27 +44,11 @@ public abstract class Constants
 
     public enum Type
     {
-        STRING, INTEGER, UUID, FLOAT, BOOLEAN, HEX;
+        STRING, INTEGER, UUID, FLOAT, DATE, TIME, BOOLEAN, HEX;
     }
 
     public static final Term.Raw NULL_LITERAL = new Term.Raw()
     {
-        private final Term.Terminal NULL_VALUE = new Value(null)
-        {
-            @Override
-            public Terminal bind(QueryOptions options)
-            {
-                // We return null because that makes life easier for collections
-                return null;
-            }
-
-            @Override
-            public String toString()
-            {
-                return "null";
-            }
-        };
-
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
             if (!testAssignment(keyspace, receiver).isAssignable())
@@ -87,7 +71,25 @@ public abstract class Constants
         }
     };
 
-    //非prepared语句的情况
+//<<<<<<< HEAD
+//    //非prepared语句的情况
+//=======
+    public static final Term.Terminal NULL_VALUE = new Value(null)
+    {
+        @Override
+        public Terminal bind(QueryOptions options)
+        {
+            // We return null because that makes life easier for collections
+            return null;
+        }
+
+        @Override
+        public String toString()
+        {
+            return "null";
+        }
+    };
+
     public static class Literal implements Term.Raw
     {
         private final Type type;
@@ -182,6 +184,8 @@ public abstract class Constants
                         case TEXT:
                         case INET:
                         case VARCHAR:
+                        case DATE:
+                        case TIME:
                         case TIMESTAMP:
                             return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
                     }
@@ -191,6 +195,7 @@ public abstract class Constants
                     {
                         case BIGINT:
                         case COUNTER:
+                        case DATE:
                         case DECIMAL:
                         case DOUBLE:
                         case FLOAT:
@@ -254,7 +259,7 @@ public abstract class Constants
             this.bytes = bytes;
         }
 
-        public ByteBuffer get(QueryOptions options)
+        public ByteBuffer get(int protocolVersion)
         {
             return bytes;
         }

@@ -83,15 +83,21 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
     public List<InetAddress> calculateNaturalEndpoints(Token searchToken, TokenMetadata tokenMetadata)
     {
         // we want to preserve insertion order so that the first added endpoint becomes primary
-        Set<InetAddress> replicas = new LinkedHashSet<InetAddress>();
+        Set<InetAddress> replicas = new LinkedHashSet<>();
         // replicas we have found in each DC
-        Map<String, Set<InetAddress>> dcReplicas = new HashMap<String, Set<InetAddress>>(datacenters.size())
-        {{
-            for (Map.Entry<String, Integer> dc : datacenters.entrySet())
-                //dc.getValue()是复制的份数，此时充当HashSet初始大小
-                //dc.getValue()也可以看成是多少个InetAddress
-                put(dc.getKey(), new HashSet<InetAddress>(dc.getValue()));
-        }};
+//<<<<<<< HEAD
+//        Map<String, Set<InetAddress>> dcReplicas = new HashMap<String, Set<InetAddress>>(datacenters.size())
+//        {{
+//            for (Map.Entry<String, Integer> dc : datacenters.entrySet())
+//                //dc.getValue()是复制的份数，此时充当HashSet初始大小
+//                //dc.getValue()也可以看成是多少个InetAddress
+//                put(dc.getKey(), new HashSet<InetAddress>(dc.getValue()));
+//        }};
+//=======
+        Map<String, Set<InetAddress>> dcReplicas = new HashMap<>(datacenters.size());
+        for (Map.Entry<String, Integer> dc : datacenters.entrySet())
+            dcReplicas.put(dc.getKey(), new HashSet<InetAddress>(dc.getValue()));
+
         Topology topology = tokenMetadata.getTopology();
         // all endpoints in each DC, so we can check when we have exhausted all the members of a DC
         Multimap<String, InetAddress> allEndpoints = topology.getDatacenterEndpoints();
@@ -100,18 +106,16 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
         assert !allEndpoints.isEmpty() && !racks.isEmpty() : "not aware of any cluster members";
 
         // tracks the racks we have already placed replicas in
-        Map<String, Set<String>> seenRacks = new HashMap<String, Set<String>>(datacenters.size())
-        {{
-            for (Map.Entry<String, Integer> dc : datacenters.entrySet())
-                put(dc.getKey(), new HashSet<String>());
-        }};
+        Map<String, Set<String>> seenRacks = new HashMap<>(datacenters.size());
+        for (Map.Entry<String, Integer> dc : datacenters.entrySet())
+            seenRacks.put(dc.getKey(), new HashSet<String>());
+
         // tracks the endpoints that we skipped over while looking for unique racks
         // when we relax the rack uniqueness we can append this to the current result so we don't have to wind back the iterator
-        Map<String, Set<InetAddress>> skippedDcEndpoints = new HashMap<String, Set<InetAddress>>(datacenters.size())
-        {{
-            for (Map.Entry<String, Integer> dc : datacenters.entrySet())
-                put(dc.getKey(), new LinkedHashSet<InetAddress>());
-        }};
+        Map<String, Set<InetAddress>> skippedDcEndpoints = new HashMap<>(datacenters.size());
+        for (Map.Entry<String, Integer> dc : datacenters.entrySet())
+            skippedDcEndpoints.put(dc.getKey(), new LinkedHashSet<InetAddress>());
+
         Iterator<Token> tokenIter = TokenMetadata.ringIterator(tokenMetadata.sortedTokens(), searchToken, false);
         while (tokenIter.hasNext() && !hasSufficientReplicas(dcReplicas, allEndpoints))
         {

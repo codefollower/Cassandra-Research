@@ -21,18 +21,14 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.base.Joiner;
+import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.cql3.QueryOptions;
-import org.apache.cassandra.cql3.Relation;
-import org.apache.cassandra.cql3.VariableSpecifications;
+import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.Bound;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.IndexExpression;
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.RowPosition;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.dht.*;
@@ -68,7 +64,7 @@ public final class StatementRestrictions
     /**
      * Restriction on non-primary key columns (i.e. secondary index restrictions)
      */
-    private SingleColumnRestrictions nonPrimaryKeyRestrictions;
+    private RestrictionSet nonPrimaryKeyRestrictions;
 
     /**
      * The restrictions used to build the index expressions
@@ -99,9 +95,9 @@ public final class StatementRestrictions
     private StatementRestrictions(CFMetaData cfm)
     {
         this.cfm = cfm;
-        this.partitionKeyRestrictions = new SingleColumnPrimaryKeyRestrictions(cfm.getKeyValidatorAsCType());
-        this.clusteringColumnsRestrictions = new SingleColumnPrimaryKeyRestrictions(cfm.comparator);
-        this.nonPrimaryKeyRestrictions = new SingleColumnRestrictions();
+        this.partitionKeyRestrictions = new PrimaryKeyRestrictionSet(cfm.getKeyValidatorAsCType());
+        this.clusteringColumnsRestrictions = new PrimaryKeyRestrictionSet(cfm.comparator);
+        this.nonPrimaryKeyRestrictions = new RestrictionSet();
     }
 
     public StatementRestrictions(CFMetaData cfm,
@@ -111,9 +107,9 @@ public final class StatementRestrictions
             boolean selectACollection) throws InvalidRequestException
     {
         this.cfm = cfm;
-        this.partitionKeyRestrictions = new SingleColumnPrimaryKeyRestrictions(cfm.getKeyValidatorAsCType());
-        this.clusteringColumnsRestrictions = new SingleColumnPrimaryKeyRestrictions(cfm.comparator);
-        this.nonPrimaryKeyRestrictions = new SingleColumnRestrictions();
+        this.partitionKeyRestrictions = new PrimaryKeyRestrictionSet(cfm.getKeyValidatorAsCType());
+        this.clusteringColumnsRestrictions = new PrimaryKeyRestrictionSet(cfm.comparator);
+        this.nonPrimaryKeyRestrictions = new RestrictionSet();
 
         /*
          * WHERE clause. For a given entity, rules are: - EQ relation conflicts with anything else (including a 2nd EQ)
@@ -184,9 +180,16 @@ public final class StatementRestrictions
                 || nonPrimaryKeyRestrictions.usesFunction(ksName, functionName);
     }
 
+    public Iterable<Function> getFunctions()
+    {
+        return Iterables.concat(partitionKeyRestrictions.getFunctions(),
+                                clusteringColumnsRestrictions.getFunctions(),
+                                nonPrimaryKeyRestrictions.getFunctions());
+    }
+
     private void addSingleColumnRestriction(SingleColumnRestriction restriction) throws InvalidRequestException
     {
-        ColumnDefinition def = restriction.getColumnDef();
+        ColumnDefinition def = restriction.columnDef;
         if (def.isPartitionKey())
             partitionKeyRestrictions = partitionKeyRestrictions.mergeWith(restriction);
         else if (def.isClusteringColumn())
