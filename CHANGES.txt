@@ -1,4 +1,5 @@
 3.0
+ * Distinguish between null and unset in protocol v4 (CASSANDRA-7304)
  * Add user/role permissions for user-defined functions (CASSANDRA-7557)
  * Allow cassandra config to be updated to restart daemon without unloading classes (CASSANDRA-9046)
  * Don't initialize compaction writer before checking if iter is empty (CASSANDRA-9117)
@@ -93,6 +94,7 @@
  * Resumable bootstrap streaming (CASSANDRA-8838, CASSANDRA-8942)
  * Allow scrub for secondary index (CASSANDRA-5174)
  * Save repair data to system table (CASSANDRA-5839)
+ * fix nodetool names that reference column families (CASSANDRA-8872)
 
 2.1.5
  * Make anticompaction visible in compactionstats (CASSANDRA-9098)
