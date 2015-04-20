@@ -1,7 +1,0 @@
-usr/share/cassandra
-usr/share/cassandra/lib
-usr/sbin
-usr/bin
-etc/cassandra
-var/lib/cassandra
-var/log/cassandra

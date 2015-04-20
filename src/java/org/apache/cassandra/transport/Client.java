@@ -70,6 +70,12 @@ public class Client extends SimpleClient
             if (line == null) {
                 break;
             }
+            else if (line.equalsIgnoreCase("QUIT")) //我加上的
+            {
+                close();
+                break;
+            }
+            
             Message.Request req = parseLine(line.trim());
             if (req == null)
             {
