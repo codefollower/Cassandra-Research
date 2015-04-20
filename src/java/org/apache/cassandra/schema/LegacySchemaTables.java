@@ -62,6 +62,7 @@ public class LegacySchemaTables
 {
     private static final Logger logger = LoggerFactory.getLogger(LegacySchemaTables.class);
 
+    //7个schema表
     public static final String KEYSPACES = "schema_keyspaces";
     public static final String COLUMNFAMILIES = "schema_columnfamilies";
     public static final String COLUMNS = "schema_columns";
@@ -100,7 +101,7 @@ public class LegacySchemaTables
                 + "default_time_to_live int,"
                 + "default_validator text,"
                 + "dropped_columns map<text, bigint>,"
-                + "gc_grace_seconds int,"
+                + "gc_grace_seconds int," //grace是宽限的意思
                 + "is_dense boolean,"
                 + "key_validator text,"
                 + "local_read_repair_chance double,"
@@ -285,6 +286,10 @@ public class LegacySchemaTables
      * @param schemaTableName The name of the table responsible for part of the schema.
      * @return low-level schema representation
      */
+    //相当于查询schemaTableName对应的ColumnFamilyStore中的所有记录
+    //schemaTableName其实就是表名，这里只是在本地查找而已，并不会通过网络查此表，
+    //因为SystemKeyspace这个类主要就是用来操作system这个keyspace中的表，这些表全是元数据表，
+    //每张表的记录在所有节点上都是一样的，所以不用像普通表那样通过网络找最新的记录。
     private static List<Row> getSchemaPartitionsForTable(String schemaTableName)
     {
         Token minToken = StorageService.getPartitioner().getMinimumToken();
@@ -337,7 +342,7 @@ public class LegacySchemaTables
         return schema;
     }
 
-    private static ByteBuffer getSchemaKSKey(String ksName)
+    private static ByteBuffer getSchemaKSKey(String ksName) //以US-ASCII编码把String类型的ksName转成ByteBuffer
     {
         return AsciiType.instance.fromString(ksName);
     }
@@ -696,6 +701,8 @@ public class LegacySchemaTables
 
     private static Mutation makeCreateKeyspaceMutation(KSMetaData keyspace, long timestamp, boolean withTablesAndTypesAndFunctions)
     {
+        //新建的Keyspace会对应system.schema_keyspaces表中的一条记录，Keyspace.name为system.schema_keyspaces表的主键
+        //Mutation就代表一条即将存入的记录
         Mutation mutation = new Mutation(SystemKeyspace.NAME, getSchemaKSKey(keyspace.name));
         ColumnFamily cells = mutation.addOrGet(Keyspaces);
         CFRowAdder adder = new CFRowAdder(cells, Keyspaces.comparator.builder().build(), timestamp);

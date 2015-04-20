@@ -930,22 +930,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         if (!isSurveyMode)
         {
-//<<<<<<< HEAD
-//            // start participating in the ring.
-//            //更新local表的bootstrapped字段(key=local)
-//            SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.COMPLETED);
-//            setTokens(bootstrapTokens);
-//            // remove the existing info about the replaced node.
-//            if (!current.isEmpty())
-//                for (InetAddress existing : current)
-//                    Gossiper.instance.replacedEndpoint(existing);
-//            assert tokenMetadata.sortedTokens().size() > 0;
-//
-//            doAuthSetup();
-//=======
             if (dataAvailable)
             {
                 // start participating in the ring.
+                //更新local表的bootstrapped字段(key=local)
                 SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.COMPLETED);
                 setTokens(bootstrapTokens);
                 // remove the existing info about the replaced node.
