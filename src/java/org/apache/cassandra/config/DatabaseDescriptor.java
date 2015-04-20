@@ -92,15 +92,6 @@ public class DatabaseDescriptor
 
     private static long keyCacheSizeInMB;
     private static long counterCacheSizeInMB;
-//<<<<<<< HEAD
-//    //实现类有:
-//    //org.apache.cassandra.io.util.NativeAllocator
-//    //org.apache.cassandra.io.util.JEMallocAllocator
-//    //默认是NativeAllocator
-//    //用来实现off-heap(离线堆)
-//    private static IAllocator memoryAllocator;
-//=======
-//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
     private static long indexSummaryCapacityInMB;
 
     private static String localDC;
@@ -274,14 +265,16 @@ public class DatabaseDescriptor
     {
         conf = config;
 
-        if (conf.commitlog_sync == null) //必须配置commitlog_sync参数
+        //必须配置commitlog_sync参数, 取值是batch或periodic，
+        //如果是batch必需设置commitlog_sync_batch_window_in_ms且不能设置commitlog_sync_period_in_ms;
+        //如果是periodic必需设置commitlog_sync_period_in_ms且不能设置commitlog_sync_batch_window_in_ms;
+        if (conf.commitlog_sync == null)
         {
             throw new ConfigurationException("Missing required directive CommitLogSync", false);
         }
 
         if (conf.commitlog_sync == Config.CommitLogSync.batch)
         {
-            //commitlog_sync_batch_window_in_ms与commitlog_sync_period_in_ms二选一
             if (conf.commitlog_sync_batch_window_in_ms == null)
             {
                 throw new ConfigurationException("Missing value for commitlog_sync_batch_window_in_ms: Double expected.", false);
@@ -306,7 +299,7 @@ public class DatabaseDescriptor
         }
 
         if (conf.commitlog_total_space_in_mb == null)
-            conf.commitlog_total_space_in_mb = 8192;
+            conf.commitlog_total_space_in_mb = 8192; //提交日志总空间大小默认是8G
 
         // Always force standard mode access on Windows - CASSANDRA-6993. Windows won't allow deletion of hard-links to files that
         // are memory-mapped which causes trouble with snapshots.
@@ -338,7 +331,7 @@ public class DatabaseDescriptor
             }
         }
 
-        /* Authentication, authorization and role management backend, implementing IAuthenticator, IAuthorizer & IRoleMapper*/
+        /* Authentication, authorization and role management backend, implementing IAuthenticator, IAuthorizer & IRoleManager*/
         if (conf.authenticator != null) //认证(client到server的认证)
             authenticator = FBUtilities.newAuthenticator(conf.authenticator);
 
@@ -359,7 +352,7 @@ public class DatabaseDescriptor
         else
             internodeAuthenticator = new AllowAllInternodeAuthenticator();
 
-        //Cassandra自带的几个实现在下面三个validateConfiguration中都没做什么事
+        //Cassandra自带的几个实现在下面4个validateConfiguration中都没做什么事
         authenticator.validateConfiguration();
         authorizer.validateConfiguration();
         roleManager.validateConfiguration();

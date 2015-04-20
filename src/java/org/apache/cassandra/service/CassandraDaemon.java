@@ -173,7 +173,6 @@ public class CassandraDaemon
             throw new IllegalStateException(msg);
         }
 
-        //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
         // log warnings for different kinds of sub-optimal JVMs.  tldr use 64-bit Oracle >= 1.6u32
         if (!DatabaseDescriptor.hasLargeAddressSpace())
             logger.info("32bit JVM detected.  It is recommended to run Cassandra on a 64bit JVM for better performance.");
@@ -210,7 +209,10 @@ public class CassandraDaemon
             }
         }
      */
-        logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
+        //logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
+        //我加上的
+        logger.info("Heap size: {}m/{}m", Runtime.getRuntime().totalMemory() / 1024 / 1024,
+                Runtime.getRuntime().maxMemory() / 1024 / 1024);
         for(MemoryPoolMXBean pool: ManagementFactory.getMemoryPoolMXBeans())
             logger.info("{} {}: {}", pool.getName(), pool.getType(), pool.getPeakUsage());
         logger.info("Classpath: {}", System.getProperty("java.class.path"));
@@ -563,7 +565,7 @@ public class CassandraDaemon
             }
 
             try {
-                DatabaseDescriptor.forceStaticInitialization();
+                DatabaseDescriptor.forceStaticInitialization(); //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
             } catch (ExceptionInInitializerError e) {
                 throw e.getCause();
             }
