@@ -35,6 +35,9 @@ abstract class KeyspaceElementName
      * @param ks the keyspace name
      * @param keepCase <code>true</code> if the case must be kept, <code>false</code> otherwise.
      */
+    //在CqlParser中调用，如果Keyspace名加了引号，那么keepCase为true
+    //在org.apache.cassandra.cql3.statements.CFStatement.prepareKeyspace(ClientState)中也调用了
+    //如果未指定Keyspace名，那么必须使用USE来指明，这时就会触发
     public final void setKeyspace(String ks, boolean keepCase)
     {
         ksName = toInternalName(ks, keepCase);

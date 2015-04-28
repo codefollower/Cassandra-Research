@@ -788,7 +788,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         boolean dataAvailable = true; // make this to false when bootstrap streaming failed
-        if (shouldBootstrap())//非seed节点进入这个代码分枝
+        if (shouldBootstrap())//非seed节点如果没有引导完成就进入这个代码分枝
         {
             if (SystemKeyspace.bootstrapInProgress())
                 logger.warn("Detected previous bootstrap failure; retrying");
