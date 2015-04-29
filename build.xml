@@ -333,9 +333,9 @@
           <dependency groupId="org.antlr" artifactId="antlr-runtime" version="3.5.2">
             <exclusion groupId="org.antlr" artifactId="stringtemplate"/>
           </dependency>
-          <dependency groupId="org.slf4j" artifactId="slf4j-api" version="1.7.2"/>
-          <dependency groupId="org.slf4j" artifactId="log4j-over-slf4j" version="1.7.2"/>
-          <dependency groupId="org.slf4j" artifactId="jcl-over-slf4j" version="1.7.2" />
+          <dependency groupId="org.slf4j" artifactId="slf4j-api" version="1.7.7"/>
+          <dependency groupId="org.slf4j" artifactId="log4j-over-slf4j" version="1.7.7"/>
+          <dependency groupId="org.slf4j" artifactId="jcl-over-slf4j" version="1.7.7" />
           <dependency groupId="ch.qos.logback" artifactId="logback-core" version="1.1.2"/>
           <dependency groupId="ch.qos.logback" artifactId="logback-classic" version="1.1.2"/>
           <dependency groupId="org.codehaus.jackson" artifactId="jackson-core-asl" version="1.9.2"/>
@@ -1191,7 +1191,7 @@
         <pathelement location="${build.dir}/${ant.project.name}-clientutil-${version}.jar" />
         <pathelement location="${build.dir}/${ant.project.name}-thrift-${version}.jar" />
         <pathelement location="${build.lib}/libthrift-0.9.0.jar" />
-        <pathelement location="${build.lib}/slf4j-api-1.7.2.jar" />
+        <pathelement location="${build.lib}/slf4j-api-1.7.7.jar" />
         <pathelement location="${build.lib}/log4j-over-slf4j.jar" />
         <pathelement location="${build.lib}/logback-core-1.1.2.jar" />
         <pathelement location="${build.lib}/logback-classic-1.1.2.jar" />
@@ -1207,6 +1207,7 @@
   <target name="testold" depends="build-test" description="Execute unit tests">
     <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
+      <jvmarg value="-Dinvalid-legacy-sstable-root=${test.data}/invalid-legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
@@ -1221,6 +1222,7 @@
   <target name="testlist">
     <testmacro suitename="${testlist.name}" inputdir="${test.unit.src}" filelist="${test.file.list}" poffset="${testlist.offset}" exclude="**/*.java" timeout="${test.timeout}">
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
+      <jvmarg value="-Dinvalid-legacy-sstable-root=${test.data}/invalid-legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
@@ -1248,6 +1250,7 @@
     <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
       <test name="${test.name}" methods="${test.methods}"/>
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
+      <jvmarg value="-Dinvalid-legacy-sstable-root=${test.data}/invalid-legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
@@ -1264,6 +1267,7 @@
     <echo>Compressed config: ${compressed_yaml}</echo>
     <testmacro suitename="unit" inputdir="${test.unit.src}" exclude="**/pig/*.java" timeout="${test.timeout}">
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
+      <jvmarg value="-Dinvalid-legacy-sstable-root=${test.data}/invalid-legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.test.compression=true"/>

@@ -1,4 +1,5 @@
 3.0
+ * Add pre-startup checks to detect potential incompatibilities (CASSANDRA-8049)
  * Distinguish between null and unset in protocol v4 (CASSANDRA-7304)
  * Add user/role permissions for user-defined functions (CASSANDRA-7557)
  * Allow cassandra config to be updated to restart daemon without unloading classes (CASSANDRA-9046)
@@ -18,7 +19,7 @@
  * Delay "node up" and "node added" notifications until native protocol server is started (CASSANDRA-8236)
  * Compressed Commit Log (CASSANDRA-6809)
  * Optimise IntervalTree (CASSANDRA-8988)
- * Add a key-value payload for third party usage (CASSANDRA-8553)
+ * Add a key-value payload for third party usage (CASSANDRA-8553, 9212)
  * Bump metrics-reporter-config dependency for metrics 3.0 (CASSANDRA-8149)
  * Partition intra-cluster message streams by size, not type (CASSANDRA-8789)
  * Add WriteFailureException to native protocol, notify coordinator of
@@ -97,6 +98,10 @@
  * fix nodetool names that reference column families (CASSANDRA-8872)
 
 2.1.5
+ * Fix deleting from an empty list (CASSANDRA-9198)
+ * Update tuple and collection types that use a user-defined type when that UDT
+   is modified (CASSANDRA-9148, CASSANDRA-9192)
+ * Re-add deprecated cold_reads_to_omit param for backwards compat (CASSANDRA-9203)
  * Make anticompaction visible in compactionstats (CASSANDRA-9098)
  * Improve nodetool getendpoints documentation about the partition
    key parameter (CASSANDRA-6458)
@@ -175,6 +180,10 @@
  * Use stdout for progress and stats in sstableloader (CASSANDRA-8982)
  * Correctly identify 2i datadir from older versions (CASSANDRA-9116)
 Merged from 2.0:
+ * Ignore gossip SYNs after shutdown (CASSANDRA-9238)
+ * Avoid overflow when calculating max sstable size in LCS (CASSANDRA-9235)
+ * Make sstable blacklisting work with compression (CASSANDRA-9138)
+ * Do not attempt to rebuild indexes if no index accepts any column (CASSANDRA-9196)
  * Don't initiate snitch reconnection for dead states (CASSANDRA-7292)
  * Fix ArrayIndexOutOfBoundsException in CQLSSTableWriter (CASSANDRA-8978)
  * Add shutdown gossip state to prevent timeouts during rolling restarts (CASSANDRA-8336)

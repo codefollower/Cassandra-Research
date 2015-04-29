@@ -264,7 +264,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
             case OPTS:
                 //在CqlParser中传进来的不会为null，也不可能是empty
                 if (cfProps == null)
-                    throw new InvalidRequestException(String.format("ALTER TABLE WITH invoked, but no parameters found"));
+                    throw new InvalidRequestException("ALTER TABLE WITH invoked, but no parameters found");
 
                 cfProps.validate();
 

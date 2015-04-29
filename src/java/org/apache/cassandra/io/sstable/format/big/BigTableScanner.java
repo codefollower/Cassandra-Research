@@ -306,7 +306,7 @@ public class BigTableScanner implements ISSTableScanner
                 });
 
             }
-            catch (IOException e)
+            catch (CorruptSSTableException | IOException e)
             {
                 sstable.markSuspect();
                 throw new CorruptSSTableException(e, sstable.getFilename());

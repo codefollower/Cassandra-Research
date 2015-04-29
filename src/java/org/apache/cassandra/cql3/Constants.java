@@ -323,8 +323,11 @@ public abstract class Constants
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
         {
-            //对于COMPACT_VALUE列，cname为null
-            CellName cname = cf.getComparator().create(prefix, column);
+//<<<<<<< HEAD
+//            //对于COMPACT_VALUE列，cname为null
+//            CellName cname = cf.getComparator().create(prefix, column);
+//=======
+//>>>>>>> 194bad22f71da3007a7f9ab5561d6f211d140c45
             ByteBuffer value = t.bindAndGet(params.options);
 //<<<<<<< HEAD
 //            //生成一个org.apache.cassandra.db.Column或其子类的实例
@@ -332,7 +335,10 @@ public abstract class Constants
 //            //cf.toString(); //我加上的
 //=======
             if (value != ByteBufferUtil.UNSET_BYTE_BUFFER) // use reference equality and not object equality
+            {
+                CellName cname = cf.getComparator().create(prefix, column);
                 cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
+            }
         }
     }
 

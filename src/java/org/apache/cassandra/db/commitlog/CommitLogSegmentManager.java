@@ -89,7 +89,7 @@ public class CommitLogSegmentManager
      * New segment creation is initially disabled because we'll typically get some "free" segments
      * recycled after log replay.
      */
-    private volatile boolean createReserveSegments = false;
+    volatile boolean createReserveSegments = false;
 
     private Thread managerThread;
     private volatile boolean run = true;
@@ -466,6 +466,7 @@ public class CommitLogSegmentManager
     public void stopUnsafe(boolean deleteSegments)
     {
         logger.debug("CLSM closing and clearing existing commit log segments...");
+        createReserveSegments = false;
 
         while (!segmentManagementTasks.isEmpty())
             Thread.yield();
@@ -509,7 +510,7 @@ public class CommitLogSegmentManager
         }
         catch (AssertionError ignored)
         {
-            // segment file does not exit
+            // segment file does not exist
         }
     }
 
@@ -519,7 +520,6 @@ public class CommitLogSegmentManager
     public void startUnsafe()
     {
         start();
-        wakeManager();
     }
 
     /**
