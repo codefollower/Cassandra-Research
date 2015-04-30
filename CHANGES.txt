@@ -1,4 +1,5 @@
 3.0
+ * Disable memory mapping of hsperfdata file for JVM statistics (CASSANDRA-9242)
  * Add pre-startup checks to detect potential incompatibilities (CASSANDRA-8049)
  * Distinguish between null and unset in protocol v4 (CASSANDRA-7304)
  * Add user/role permissions for user-defined functions (CASSANDRA-7557)
@@ -97,10 +98,16 @@
  * Save repair data to system table (CASSANDRA-5839)
  * fix nodetool names that reference column families (CASSANDRA-8872)
 
-2.1.5
+2.1.6
+ * GCInspector logs very different times (CASSANDRA-9124)
  * Fix deleting from an empty list (CASSANDRA-9198)
  * Update tuple and collection types that use a user-defined type when that UDT
    is modified (CASSANDRA-9148, CASSANDRA-9192)
+Merged from 2.0:
+ * IncomingTcpConnection thread is not named (CASSANDRA-9262)
+ * Close incoming connections when MessagingService is stopped (CASSANDRA-9238)
+
+2.1.5
  * Re-add deprecated cold_reads_to_omit param for backwards compat (CASSANDRA-9203)
  * Make anticompaction visible in compactionstats (CASSANDRA-9098)
  * Improve nodetool getendpoints documentation about the partition
