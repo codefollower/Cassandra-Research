@@ -41,6 +41,10 @@ import static org.apache.cassandra.io.compress.CompressionMetadata.Writer.OpenTy
 
 public class CompressedSequentialWriter extends SequentialWriter
 {
+    //写CRC.db和Digest.sha1文件, ChecksumWriter内部也是用SequentialWriter来写这两个文件，
+    //但是因为没调用setDataIntegrityWriter，所以metadata字段是null，
+    //这样就不会再为CRC.db和Digest.sha1文件本身又生成CRC.db和Digest.sha1文件了，
+    //只有Data.db才需要，STableWriter类的构造函数就就调用了setDataIntegrityWriter方法
     private final DataIntegrityMetadata.ChecksumWriter crcMetadata;
 
     // holds offset in the file where current chunk should be written
@@ -117,13 +121,9 @@ public class CompressedSequentialWriter extends SequentialWriter
         try
         {
             // compressing data with buffer re-use
-//<<<<<<< HEAD
-//            //把buffer字节数组从0开始的validBufferBytes个字节进行压缩，
-//            //然后从0开始的位置放到compressed数组中
-//            compressedLength = compressor.compress(buffer, 0, validBufferBytes, compressed, 0);
-//=======
             buffer.flip();
             compressed.buffer.clear();
+            //buffer是输入，压缩后放到compressed中
             compressedLength = compressor.compress(buffer, compressed);
 
             // Compressors don't modify sentinels in our BB - we rely on buffer.position() for bufferOffset adjustment
@@ -137,15 +137,6 @@ public class CompressedSequentialWriter extends SequentialWriter
         uncompressedSize += buffer.position();
         compressedSize += compressedLength;
 
-//<<<<<<< HEAD
-//        // update checksum
-//        //CRC.db用的是java.util.zip.Adler32.Adler32()
-//        //而不使用压缩时，用的是org.apache.cassandra.utils.PureJavaCrc32
-//        //这里的CRC是直接写到压缩文件中的，而不使用压缩时是放到独立的CRC.db文件中
-//        checksum.update(compressed.buffer, 0, compressedLength);
-//
-//=======
-//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
         try
         {
             // write an offset of the newly written chunk to the index file
@@ -322,6 +313,7 @@ public class CompressedSequentialWriter extends SequentialWriter
     @Override
     public void writeFullChecksum(Descriptor descriptor)
     {
+        //写Digest.adler32文件，用的是java.util.zip.Adler32.Adler32()
         crcMetadata.writeFullChecksum(descriptor);
     }
 

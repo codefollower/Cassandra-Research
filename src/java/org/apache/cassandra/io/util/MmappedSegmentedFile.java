@@ -88,10 +88,7 @@ public class MmappedSegmentedFile extends SegmentedFile
             return new ByteBufferDataInput(segment.right, path(), segment.left, (int) (position - segment.left));
         }
 
-//<<<<<<< HEAD
-//        //超过2G的情况，见Builder.createSegments(String)中的注释
-//        // not mmap'd: open a braf covering the segment
-//=======
+        //超过2G的情况，见Builder.createSegments(String)中的注释
         // we can have single cells or partitions larger than 2Gb, which is our maximum addressable range in a single segment;
         // in this case we open as a normal random access reader
         // FIXME: brafs are unbounded, so this segment will cover the rest of the file, rather than just the row
@@ -198,28 +195,10 @@ public class MmappedSegmentedFile extends SegmentedFile
 
         private Segment[] createSegments(ChannelProxy channel, long length)
         {
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////            int segcount = boundaries.size() - 1; //因为get(0)是开始位置，当要计算片段个数时必须减1
-////            Segment[] segments = new Segment[segcount];
-////=======
-////>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
-//            RandomAccessFile raf;
-//            try
-//            {
-//                raf = new RandomAccessFile(path, "r");
-//            }
-//            catch (IOException e)
-//            {
-//                throw new RuntimeException(e);
-//            }
-//
-//=======
-//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
             // if we're early finishing a range that doesn't span multiple segments, but the finished file now does,
             // we remove these from the end (we loop incase somehow this spans multiple segments, but that would
             // be a loco dataset
-            while (length < boundaries.get(boundaries.size() - 1))
+            while (length < boundaries.get(boundaries.size() - 1)) //因为get(0)是开始位置，当要计算片段个数时必须减1
                 boundaries.remove(boundaries.size() -1);
 
             // add a sentinel value == length
@@ -229,33 +208,13 @@ public class MmappedSegmentedFile extends SegmentedFile
 
             int segcount = boundaries.size() - 1;
             Segment[] segments = new Segment[segcount];
-//<<<<<<< HEAD
-//
-//            try
-//            {
-//                for (int i = 0; i < segcount; i++)
-//                {
-//                    long start = boundaries.get(i);
-//                    long size = boundaries.get(i + 1) - start;
-//                    MappedByteBuffer segment = size <= MAX_SEGMENT_SIZE
-//                                               ? raf.getChannel().map(FileChannel.MapMode.READ_ONLY, start, size)
-//                                               : null; //超过2G的之后在getSegment时直接用RandomAccessReader读
-//                    segments[i] = new Segment(start, segment);
-//                }
-//            }
-//            catch (IOException e)
-//            {
-//                throw new FSReadError(e, path);
-//            }
-//            finally
-//=======
             for (int i = 0; i < segcount; i++)
             {
                 long start = boundaries.get(i);
                 long size = boundaries.get(i + 1) - start;
                 MappedByteBuffer segment = size <= MAX_SEGMENT_SIZE
                                            ? channel.map(FileChannel.MapMode.READ_ONLY, start, size)
-                                           : null;
+                                           : null; //超过2G的之后在getSegment时直接用RandomAccessReader读
                 segments[i] = new Segment(start, segment);
             }
             return segments;

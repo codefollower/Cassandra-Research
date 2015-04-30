@@ -17,14 +17,8 @@
  */
 package org.apache.cassandra.io.util;
 
-//<<<<<<< HEAD
-//import java.io.File;
-//import org.apache.cassandra.io.sstable.format.SSTableWriter;
-//
-////在SSTableReader.openForBatch中使用
-////每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
-//=======
-//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
+//在SSTableReader.openForBatch中使用
+//每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
 public class BufferedSegmentedFile extends SegmentedFile
 {
     public BufferedSegmentedFile(ChannelProxy channel, long length)

@@ -113,11 +113,7 @@ public class Component
     /**
      * {@code
      * Filename of the form "<ksname>/<cfname>-[tmp-][<version>-]<gen>-<component>",
-<<<<<<< HEAD
-     * 
-=======
      * }
->>>>>>> 223d0e755ee0480316f90621ac6389e942c23d97
      * @return A Descriptor for the SSTable, and a Component for this particular file.
      * TODO move descriptor into Component field
      */

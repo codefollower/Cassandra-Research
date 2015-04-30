@@ -123,7 +123,7 @@ public abstract class SSTableWriter extends SSTable
 
     private static Set<Component> components(CFMetaData metadata)
     {
-        //9个Component类型，要么选COMPRESSION_INFO要么选DIGEST和CRC
+        //9个Component类型，要么选COMPRESSION_INFO要么选CRC
         Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,
                 Component.PRIMARY_INDEX,
                 Component.STATS,

@@ -92,10 +92,7 @@ public class Memory implements AutoCloseable
         if (bytes <= 0)
             throw new AssertionError();
         size = bytes;
-//<<<<<<< HEAD
-//        peer = allocator.allocate(size); //peer是allocate返回的本地内存地址
-//=======
-        peer = MemoryUtil.allocate(size);
+        peer = MemoryUtil.allocate(size); //peer是allocate返回的本地内存地址
         // we permit a 0 peer iff size is zero, since such an allocation makes no sense, and an allocator would be
         // justified in returning a null pointer (and permitted to do so: http://www.cplusplus.com/reference/cstdlib/malloc)
         if (peer == 0)

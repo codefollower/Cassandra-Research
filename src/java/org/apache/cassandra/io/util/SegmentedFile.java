@@ -19,13 +19,11 @@ package org.apache.cassandra.io.util;
 
 import java.io.DataInput;
 import java.io.DataOutput;
-import java.io.File;
 import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.RateLimiter;
 
 import org.apache.cassandra.config.Config;
@@ -62,16 +60,12 @@ import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
 //子类要实现的抽象方法有两个: getSegment、cleanup
 public abstract class SegmentedFile extends SharedCloseableImpl
 {
-//<<<<<<< HEAD
-//    public final String path; //要读的文件
-//    public final long length; //未压缩的长度，length与onDiskLength只有在未压缩时才相等
-//=======
     public final ChannelProxy channel;
     public final long length;
 
     // This differs from length for compressed files (but we still need length for
     // SegmentIterator because offsets in the file are relative to the uncompressed size)
-    public final long onDiskLength;
+    public final long onDiskLength; //未压缩的长度，length与onDiskLength只有在未压缩时才相等
 
     /**
      * Use getBuilder to get a Builder to construct a SegmentedFile.
@@ -134,6 +128,8 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         return ThrottledReader.open(channel, length, limiter);
     }
 
+    //注意并不是返回Segment类的实例，而是FileDataInput
+    //方法名起得并不那么直观
     public FileDataInput getSegment(long position)
     {
         RandomAccessReader reader = createReader();
@@ -161,13 +157,6 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         return new CompressedPoolingSegmentedFile.Builder(writer);
     }
 
-//<<<<<<< HEAD
-//    //注意并不是返回Segment类的实例，而是FileDataInput
-//    //方法名起得并不那么直观
-//    public abstract FileDataInput getSegment(long position);
-//
-//=======
-//>>>>>>> 2c15d8212020022f0cf9e101772169b5dc541ae4
     /**
      * @return An Iterator over segments, beginning with the segment containing the given position: each segment must be closed after use.
      */

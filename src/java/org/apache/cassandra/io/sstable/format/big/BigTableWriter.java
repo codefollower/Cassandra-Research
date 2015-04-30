@@ -149,6 +149,7 @@ public class BigTableWriter extends SSTableWriter
         }
     }
 
+    //Memtable进行Flush时调用，最常规的情况
     public void append(DecoratedKey decoratedKey, ColumnFamily cf)
     {
         if (decoratedKey.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
@@ -191,6 +192,7 @@ public class BigTableWriter extends SSTableWriter
      * @throws IOException if a read from the DataInput fails
      * @throws FSWriteError if a write to the dataFile fails
      */
+    //在org.apache.cassandra.streaming.StreamReader中调用
     public long appendFromStream(DecoratedKey key, CFMetaData metadata, DataInput in, Version version) throws IOException
     {
         long currentPosition = beforeAppend(key);
@@ -396,19 +398,13 @@ public class BigTableWriter extends SSTableWriter
                                                            finishType.openReason);
         sstable.first = getMinimalKey(first);
         sstable.last = getMinimalKey(last);
-//<<<<<<< HEAD
-//        // try to save the summaries to disk
-//        sstable.saveSummary(iwriter.builder, dbuilder); //在这一步才生成Summary.db文件
-//        iwriter = null;
-//        dbuilder = null;
-//=======
 
         if (finishType.isFinal)
         {
             iwriter.bf.close();
             iwriter.summary.close();
             // try to save the summaries to disk
-            sstable.saveSummary(iwriter.builder, dbuilder);
+            sstable.saveSummary(iwriter.builder, dbuilder); //在这一步才生成Summary.db文件
             iwriter.builder.close();
             iwriter = null;
             dbuilder.close();
@@ -439,26 +435,6 @@ public class BigTableWriter extends SSTableWriter
                 iwriter.bf.close();
         }
 
-//<<<<<<< HEAD
-//        // index and filter
-//        iwriter.close();
-//        // main data, close will truncate if necessary
-//        dataFile.close();
-//        dataFile.writeFullChecksum(descriptor); //在这一步生成Digest.sha1文件
-//        // write sstable statistics
-//        Map<MetadataType, MetadataComponent> metadataComponents = metadataCollector.finalizeMetadata(
-//                                                                                    partitioner.getClass().getCanonicalName(),
-//                                                                                    metadata.getBloomFilterFpChance(),
-//                                                                                    repairedAt);
-//        writeMetadata(descriptor, metadataComponents); //在这一步生成Statistics.db文件
-//
-//        // save the table of components
-//        SSTable.appendTOC(descriptor, components); //在这一步生成TOC.txt文件
-//
-//        // remove the 'tmp' marker from all components
-//        //前面生成的文件名都是有tmp前缀的，在这里把它去掉，重命名。
-//        return Pair.create(SSTableWriter.rename(descriptor, components), (StatsMetadata) metadataComponents.get(MetadataType.STATS));
-//=======
         // write sstable statistics
         Map<MetadataType, MetadataComponent> metadataComponents;
         metadataComponents = metadataCollector
@@ -469,11 +445,11 @@ public class BigTableWriter extends SSTableWriter
         Descriptor descriptor = this.descriptor;
         if (type.isFinal)
         {
-            dataFile.writeFullChecksum(descriptor);
-            writeMetadata(descriptor, metadataComponents);
+            dataFile.writeFullChecksum(descriptor); //在这一步生成Digest.adler32文件
+            writeMetadata(descriptor, metadataComponents); //在这一步生成Statistics.db文件
             // save the table of components
-            SSTable.appendTOC(descriptor, components);
-            descriptor = rename(descriptor, components);
+            SSTable.appendTOC(descriptor, components); //在这一步生成TOC.txt文件
+            descriptor = rename(descriptor, components); //前面生成的文件名都是有tmp前缀的，在这里把它去掉，重命名。
         }
 
         return Pair.create(descriptor, (StatsMetadata) metadataComponents.get(MetadataType.STATS));

@@ -17,13 +17,7 @@
 */
 package org.apache.cassandra.io.util;
 
-//<<<<<<< HEAD
-//import java.io.File;
-//import org.apache.cassandra.io.sstable.format.SSTableWriter;
-//
-////与BufferedSegmentedFile类似，只不过有缓存
-//=======
-//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
+//与BufferedSegmentedFile类似，只不过有缓存
 public class BufferedPoolingSegmentedFile extends PoolingSegmentedFile
 {
     public BufferedPoolingSegmentedFile(ChannelProxy channel, long length)

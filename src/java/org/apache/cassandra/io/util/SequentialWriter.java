@@ -57,20 +57,10 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     // directory should be synced only after first file sync, in other words, only once per file
     private boolean directorySynced = false;
 
-//<<<<<<< HEAD
-//    //bufferOffset是递增的，并不是byte[] buffer中的某个位置，因为byte[] buffer会指向不同的byte[]数组，
-//    //所以bufferOffset是指这些过往的不同byte[]数组的相对位置，
-//    //而current呢，也是指在这些byte[]数组中的累加位置，并且是当前位置
-//    //如果写满byte[] buffer时，bufferOffset就指向current, bufferOffset总是小于current
-//    protected long current = 0, bufferOffset;
-//    protected int validBufferBytes;
-//
-//    protected final RandomAccessFile out; //这才是真写到文件
-//=======
     // Offset for start of buffer relative to underlying file
-    protected long bufferOffset;
+    protected long bufferOffset; //bufferOffset是递增的
 
-    protected final FileChannel channel;
+    protected final FileChannel channel; //这才是真写到文件
 
     // whether to do trickling fsync() to avoid sudden bursts of dirty buffer flushing by kernel causing read
     // latency spikes
@@ -78,17 +68,7 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     private int trickleFsyncByteInterval;
     private int bytesSinceTrickleFsync = 0;
 
-//<<<<<<< HEAD
-//    public final DataOutputStream stream; //只是写到buffer
-//
-//    //写CRC.db和Digest.sha1文件, ChecksumWriter内部也是用SequentialWriter来写这两个文件，
-//    //但是因为没调用setDataIntegrityWriter，所以metadata字段是null，
-//    //这样就不会再为CRC.db和Digest.sha1文件本身又生成CRC.db和Digest.sha1文件了，
-//    //只有Data.db才需要，STableWriter类的构造函数就就调用了setDataIntegrityWriter方法
-//    private DataIntegrityMetadata.ChecksumWriter metadata;
-//    
-//=======
-    public final DataOutputPlus stream;
+    public final DataOutputPlus stream; //只是写到buffer
     protected long lastFlushOffset;
 
     protected Runnable runPostFlush;
@@ -109,12 +89,12 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
         filePath = file.getAbsolutePath();
 
-//<<<<<<< HEAD
-//        buffer = new byte[bufferSize]; //默认64K
-//=======
         // Allow children to allocate buffer as direct (snappy compression) if necessary
-        buffer = offheap ? ByteBuffer.allocateDirect(bufferSize) : ByteBuffer.allocate(bufferSize);
+        //只有org.apache.cassandra.io.compress.SnappyCompressor.useDirectOutputByteBuffers()返回true
+        //所以在子类CompressedSequentialWriter的构造函数中当使用SnappyCompressor时offheap为true
+        buffer = offheap ? ByteBuffer.allocateDirect(bufferSize) : ByteBuffer.allocate(bufferSize); //默认64K
 
+        //默认是false
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
         this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024; //默认是10M
 
@@ -194,69 +174,6 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
         return length;
     }
 
-//<<<<<<< HEAD
-//    /*
-//     * Write at most "length" bytes from "data" starting at position "offset", and
-//     * return the number of bytes written. caller is responsible for setting
-//     * isDirty.
-//     */
-//    private int writeAtMost(ByteBuffer data, int offset, int length)
-//    {
-//        if (current >= bufferOffset + buffer.length)
-//            reBuffer();
-//
-//        assert current < bufferOffset + buffer.length
-//        : String.format("File (%s) offset %d, buffer offset %d.", getPath(), current, bufferOffset);
-//
-//
-//        int toCopy = Math.min(length, buffer.length - bufferCursor());
-//
-//        // copy bytes from external buffer
-//        ByteBufferUtil.arrayCopy(data, offset, buffer, bufferCursor(), toCopy);
-//
-//        assert current <= bufferOffset + buffer.length
-//        : String.format("File (%s) offset %d, buffer offset %d.", getPath(), current, bufferOffset);
-//
-//        validBufferBytes = Math.max(validBufferBytes, bufferCursor() + toCopy);
-//        current += toCopy;
-//
-//        return toCopy;
-//    }
-//
-//    /*
-//     * Write at most "length" bytes from "data" starting at position "offset", and
-//     * return the number of bytes written. caller is responsible for setting
-//     * isDirty.
-//     */
-//    private int writeAtMost(byte[] data, int offset, int length)
-//    {
-//        //相当于 current-bufferOffset >= buffer.length
-//        //也就是bufferCursor() >= buffer.length
-//        //bufferCursor()总是代表当前buffer中已填充的字节数
-//        //这个if就是判断buffer是否写满
-//        if (current >= bufferOffset + buffer.length) //写满buffer时会触发一次内部flush(reBuffer=>flushInternal)
-//            reBuffer();
-//
-//        assert current < bufferOffset + buffer.length
-//                : String.format("File (%s) offset %d, buffer offset %d.", getPath(), current, bufferOffset);
-//
-//
-//        int toCopy = Math.min(length, buffer.length - bufferCursor());
-//
-//        // copy bytes from external buffer
-//        System.arraycopy(data, offset, buffer, bufferCursor(), toCopy);
-//
-//        assert current <= bufferOffset + buffer.length
-//                : String.format("File (%s) offset %d, buffer offset %d.", getPath(), current, bufferOffset);
-//
-//        validBufferBytes = Math.max(validBufferBytes, bufferCursor() + toCopy);
-//        current += toCopy;
-//
-//        return toCopy;
-//    }
-//
-//=======
-//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
     /**
      * Synchronize file contents with disk.
      */
@@ -281,7 +198,7 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     {
         if (syncNeeded)
         {
-            flushInternal(); //默认情况下，当期用trickleFsync并且写够10M时，flushInternal内部也会调用syncDataOnlyInternal
+            flushInternal(); //默认情况下，当启用trickleFsync并且写够10M时，flushInternal内部也会调用syncDataOnlyInternal
             syncDataOnlyInternal();
 
             if (!directorySynced) //只可能调用一次，directorySynced初始时为false，除这里之外，没有在其他地方改变过
@@ -315,42 +232,16 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
             if (trickleFsync)
             {
-//<<<<<<< HEAD
-//                bytesSinceTrickleFsync += validBufferBytes;
-//                if (bytesSinceTrickleFsync >= trickleFsyncByteInterval) //默认每隔10M调用一次sync
-//=======
                 bytesSinceTrickleFsync += buffer.position();
-                if (bytesSinceTrickleFsync >= trickleFsyncByteInterval)
+                if (bytesSinceTrickleFsync >= trickleFsyncByteInterval) //默认每隔10M调用一次sync
                 {
                     syncDataOnlyInternal();
                     bytesSinceTrickleFsync = 0;
                 }
             }
 
-//<<<<<<< HEAD
-//            if (skipIOCache)
-//            {
-//                // we don't know when the data reaches disk since we aren't
-//                // calling flush
-//                // so we continue to clear pages we don't need from the first
-//                // offset we see
-//                // periodically we update this starting offset
-//                bytesSinceCacheFlush += validBufferBytes;
-//
-//                //默认128M
-//                if (bytesSinceCacheFlush >= RandomAccessReader.CACHE_FLUSH_INTERVAL_IN_BYTES)
-//                {
-//                    //只对Linux有效
-//                    CLibrary.trySkipCache(this.fd, ioCacheStartOffset, 0);
-//                    ioCacheStartOffset = bufferOffset;
-//                    bytesSinceCacheFlush = 0;
-//                }
-//            }
-//
-//=======
-//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
             // Remember that we wrote, so we don't write it again on next flush().
-            resetBuffer(); //把validBufferBytes置0，说明flush过了
+            resetBuffer();
 
             isDirty = false;
         }
@@ -430,9 +321,6 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
         buffer.clear();
     }
 
-//<<<<<<< HEAD
-//    private int bufferCursor() //bufferCursor()总是代表当前buffer中已填充的字节数
-//=======
     protected long current()
     {
         return bufferOffset + (buffer == null ? 0 : buffer.position());
