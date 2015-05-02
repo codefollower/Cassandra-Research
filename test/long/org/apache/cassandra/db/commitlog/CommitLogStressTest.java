@@ -362,19 +362,18 @@ public class CommitLogStressTest
         }
     }
     
-    class Replayer extends CommitLogReplayer {
-
+    class Replayer extends CommitLogReplayer
+    {
         Replayer()
         {
-            super(discardedPos, null);
+            super(discardedPos, null, ReplayFilter.create());
         }
 
         int hash = 0;
         int cells = 0;
 
         @Override
-        void replayMutation(byte[] inputBuffer, int size,
-                final long entryLocation, final CommitLogDescriptor desc, final ReplayFilter replayFilter)
+        void replayMutation(byte[] inputBuffer, int size, final long entryLocation, final CommitLogDescriptor desc)
         {
             if (desc.id < discardedPos.segment) {
                 System.out.format("Mutation from discarded segment, segment %d pos %d\n", desc.id, entryLocation);

@@ -5,7 +5,6 @@
  * Add user/role permissions for user-defined functions (CASSANDRA-7557)
  * Allow cassandra config to be updated to restart daemon without unloading classes (CASSANDRA-9046)
  * Don't initialize compaction writer before checking if iter is empty (CASSANDRA-9117)
- * Remove line number generation from default logback.xml
  * Don't execute any functions at prepare-time (CASSANDRA-9037)
  * Share file handles between all instances of a SegmentedFile (CASSANDRA-8893)
  * Make it possible to major compact LCS (CASSANDRA-7272)
@@ -99,13 +98,24 @@
  * fix nodetool names that reference column families (CASSANDRA-8872)
 
 2.1.6
+ * Reduce runWithCompactionsDisabled poll interval to 1ms (CASSANDRA-9271)
+ * Fix PITR commitlog replay (CASSANDRA-9195)
  * GCInspector logs very different times (CASSANDRA-9124)
  * Fix deleting from an empty list (CASSANDRA-9198)
  * Update tuple and collection types that use a user-defined type when that UDT
    is modified (CASSANDRA-9148, CASSANDRA-9192)
+ * Use higher timeout for prepair and snapshot in repair (CASSANDRA-9261)
+ * Fix anticompaction blocking ANTI_ENTROPY stage (CASSANDRA-9151)
 Merged from 2.0:
+ * Fix index selection during rebuild with certain table layouts (CASSANDRA-9281)
+ * Fix partition-level-delete-only workload accounting (CASSANDRA-9194)
+ * Allow scrub to handle corrupted compressed chunks (CASSANDRA-9140)
+ * Fix assertion error when resetlocalschema is run during repair (CASSANDRA-9249)
+ * Disable single sstable tombstone compactions for DTCS by default (CASSANDRA-9234)
  * IncomingTcpConnection thread is not named (CASSANDRA-9262)
  * Close incoming connections when MessagingService is stopped (CASSANDRA-9238)
+ * Fix streaming hang when retrying (CASSANDRA-9132)
+
 
 2.1.5
  * Re-add deprecated cold_reads_to_omit param for backwards compat (CASSANDRA-9203)
@@ -252,8 +262,10 @@ Merged from 2.0:
  * Ensure SSTableSimpleUnsortedWriter.close() terminates if
    disk writer has crashed (CASSANDRA-8807)
 
+
 2.1.4
  * Bind JMX to localhost unless explicitly configured otherwise (CASSANDRA-9085)
+
 
 2.1.3
  * Fix HSHA/offheap_objects corruption (CASSANDRA-8719)
@@ -405,6 +417,7 @@ Merged from 2.0:
  * Add DC-aware sequential repair (CASSANDRA-8193)
  * Use live sstables in snapshot repair if possible (CASSANDRA-8312)
  * Fix hints serialized size calculation (CASSANDRA-8587)
+
 
 2.1.2
  * (cqlsh) parse_for_table_meta errors out on queries with undefined

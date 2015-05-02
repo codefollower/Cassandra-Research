@@ -204,6 +204,7 @@ public class Memtable
 //>>>>>>> 3a609c20c947910116ec1447e2dd1227b616b2e8
         AtomicBTreeColumns previous = rows.get(key);
 
+        long initialSize = 0;
         if (previous == null)
         {
             AtomicBTreeColumns empty = cf.cloneMeShallow(AtomicBTreeColumns.factory, false);
@@ -217,6 +218,7 @@ public class Memtable
                 // means we can overshoot our declared limit.
                 int overhead = (int) (key.getToken().getHeapSize() + ROW_OVERHEAD_HEAP_SIZE);
                 allocator.onHeap().allocate(overhead, opGroup);
+                initialSize = 8;
             }
             else
             {
@@ -225,7 +227,7 @@ public class Memtable
         }
 
         final Pair<Long, Long> pair = previous.addAllWithSizeDelta(cf, allocator, opGroup, indexer);
-        liveDataSize.addAndGet(pair.left);
+        liveDataSize.addAndGet(initialSize + pair.left);
         currentOperations.addAndGet(cf.getColumnCount() + (cf.isMarkedForDelete() ? 1 : 0) + cf.deletionInfo().rangeCount());
         return pair.right;
     }
