@@ -1,4 +1,7 @@
+写相关:
 
+org.apache.cassandra.db.Memtable.FlushRunnable.writeSortedContents
+  ->BigTableWriter -> SSTableWriter -> SSTable
 
 
 以下是3.0之前的格式

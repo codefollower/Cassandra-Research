@@ -57,7 +57,7 @@ import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
 //在cassandra.yaml中配置disk_access_mode为mmap时使用MmappedSegmentedFile，其他的使用BufferedPoolingSegmentedFile，
 //如果使用了压缩，那么使用CompressedPoolingSegmentedFile(通过调用getCompressedBuilder()，而不管disk_access_mode参数)
 
-//子类要实现的抽象方法有两个: getSegment、cleanup
+//子类要实现的抽象方法有两个: getSegment、sharedCopy
 public abstract class SegmentedFile extends SharedCloseableImpl
 {
     public final ChannelProxy channel;

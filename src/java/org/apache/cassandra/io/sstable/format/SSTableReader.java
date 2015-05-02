@@ -190,10 +190,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     // technically isCompacted is not necessary since it should never be unreferenced unless it is also compacted,
     // but it seems like a good extra layer of protection against reference counting bugs to not delete data based on that alone
-//<<<<<<< HEAD
-//    protected final AtomicBoolean isCompacted = new AtomicBoolean(false);
-//    protected final AtomicBoolean isSuspect = new AtomicBoolean(false); //捕获到异常时设为true
-//=======
     protected final AtomicBoolean isSuspect = new AtomicBoolean(false); //捕获到异常时设为true
 
     // not final since we need to be able to change level on a file.
@@ -659,14 +655,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      */
     private void load(boolean recreateBloomFilter, boolean saveSummaryIfCreated) throws IOException
     {
-//<<<<<<< HEAD
-//        //索引构建器
-//        SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
-//        //数据构建器
-//        SegmentedFile.Builder dbuilder = compression
-//                ? SegmentedFile.getCompressedBuilder()
-//                : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
-//=======
         try(SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
             SegmentedFile.Builder dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), compression))
         {
