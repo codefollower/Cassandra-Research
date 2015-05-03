@@ -22,7 +22,6 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -397,7 +396,7 @@ public class CommitLogReplayer
      *
      * @return Whether replay should continue with the next section.
      */
-    private boolean replaySyncSection(FileDataInput reader, int end, CommitLogDescriptor desc) throws IOException, FileNotFoundException
+    private boolean replaySyncSection(FileDataInput reader, int end, CommitLogDescriptor desc) throws IOException
     {
          /* read the logs populate Mutation and apply */
         while (reader.getFilePointer() < end && !reader.isEOF())
@@ -468,8 +467,7 @@ public class CommitLogReplayer
      * Deserializes and replays a commit log entry.
      */
     void replayMutation(byte[] inputBuffer, int size,
-            final long entryLocation, final CommitLogDescriptor desc) throws IOException,
-            FileNotFoundException
+            final long entryLocation, final CommitLogDescriptor desc) throws IOException
     {
         FastByteArrayInputStream bufIn = new FastByteArrayInputStream(inputBuffer, 0, size);
         final Mutation mutation;
