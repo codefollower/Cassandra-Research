@@ -29,22 +29,6 @@ public class ByteBufferDataInput extends AbstractDataInput implements FileDataIn
     private final long segmentOffset;
     private int position;
 
-//<<<<<<< HEAD:src/java/org/apache/cassandra/io/util/MappedFileDataInput.java
-////<<<<<<< HEAD
-////    //未使用
-////    public MappedFileDataInput(FileInputStream stream, String filename, long segmentOffset, int position) throws IOException
-////    {
-////        FileChannel channel = stream.getChannel();
-////        buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, channel.size());
-////        this.filename = filename;
-////        this.segmentOffset = segmentOffset;
-////        this.position = position;
-////    }
-////
-////=======
-////>>>>>>> 2c15d8212020022f0cf9e101772169b5dc541ae4
-//    public MappedFileDataInput(MappedByteBuffer buffer, String filename, long segmentOffset, int position)
-//=======
     public ByteBufferDataInput(ByteBuffer buffer, String filename, long segmentOffset, int position)
     {
         assert buffer != null;

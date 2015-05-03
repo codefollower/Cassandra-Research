@@ -218,30 +218,6 @@ public class IndexSummaryBuilder implements AutoCloseable
     // multiple invocations of this build method
     public IndexSummary build(IPartitioner partitioner, ReadableBoundary boundary)
     {
-//<<<<<<< HEAD
-//        assert keys.size() > 0;
-//        assert keys.size() == positions.size();
-//
-//        int length;
-//        if (lastIntervalKey == null)
-//            length = keys.size();
-//        else // since it's an inclusive upper bound, this should never match exactly
-//            length = -1 -Collections.binarySearch(keys, lastIntervalKey);
-//
-//        assert length > 0;
-//
-//        long offheapSize = this.offheapSize;
-//        if (length < keys.size())
-//            for (int i = length ; i < keys.size() ; i++)
-//                offheapSize -= keys.get(i).getKey().remaining() + TypeSizes.NATIVE.sizeof(positions.get(i));
-//
-//        // first we write out the position in the *summary* for each key in the summary,
-//        // then we write out (key, actual index position) pairs
-//        Memory memory = Memory.allocate(offheapSize + (length * 4));
-//        int idxPosition = 0;
-//        int keyPosition = length * 4; //keyPosition经过for循环后的值就是(offheapSize + (keys.size() * 4))
-//        for (int i = 0; i < length; i++)
-//=======
         assert entries.length() > 0;
 
         int count = (int) (offsets.length() / 4);

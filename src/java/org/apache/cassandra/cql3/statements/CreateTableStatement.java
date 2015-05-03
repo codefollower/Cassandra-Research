@@ -121,29 +121,14 @@ public class CreateTableStatement extends SchemaAlteringStatement
         this.ifNotExists = ifNotExists;
         this.staticColumns = staticColumns;
 
-//<<<<<<< HEAD
-//        try
-//        {
-//            //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
-//            if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
-//                //注意compression属性对应的是一个Map不是一个字符串
-//                this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
-//                                            new HashMap<String, String>()
-//                                            {{
-//                                                put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
-//                                            }});
-//        }
-//        catch (SyntaxException e)
-//        {
-//            throw new AssertionError(e);
-//        }
-//=======
-        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
-            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
-                                        new HashMap<String, String>()
-                                        {{
-                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
-                                        }});
+        //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
+        //注意compression属性对应的是一个Map不是一个字符串
+//        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
+//            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
+//                                        new HashMap<String, String>()
+//                                        {{
+//                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
+//                                        }});
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException

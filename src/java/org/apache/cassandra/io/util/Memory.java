@@ -33,27 +33,19 @@ import sun.nio.ch.DirectBuffer;
  */
 public class Memory implements AutoCloseable
 {
-//<<<<<<< HEAD
-//    private static final Unsafe unsafe = NativeAllocator.unsafe;
-////<<<<<<< HEAD
-////    //默认是NativeAllocator
-////    private static final IAllocator allocator = DatabaseDescriptor.getoffHeapMemoryAllocator();
-////    
-////    //这是sun.misc.Unsafe中的注释
-////    //    /**
-////    //     * Report the offset of the first element in the storage allocation of a
-////    //     * given array class.  If {@link #arrayIndexScale} returns a non-zero value
-////    //     * for the same class, you may use that scale factor, together with this
-////    //     * base offset, to form new offsets to access elements of arrays of the
-////    //     * given class.
-////    //     *
-////    //     * @see #getInt(Object, long)
-////    //     * @see #putInt(Object, long, int)
-////    //     */
-////    //    public native int arrayBaseOffset(Class arrayClass);
-////=======
-//    static final IAllocator allocator = DatabaseDescriptor.getoffHeapMemoryAllocator();
-//=======
+    //这是sun.misc.Unsafe中的注释
+    //    /**
+    //     * Report the offset of the first element in the storage allocation of a
+    //     * given array class.  If {@link #arrayIndexScale} returns a non-zero value
+    //     * for the same class, you may use that scale factor, together with this
+    //     * base offset, to form new offsets to access elements of arrays of the
+    //     * given class.
+    //     *
+    //     * @see #getInt(Object, long)
+    //     * @see #putInt(Object, long, int)
+    //     */
+    //    public native int arrayBaseOffset(Class arrayClass);
+    
     private static final Unsafe unsafe;
     static
     {
@@ -267,14 +259,6 @@ public class Memory implements AutoCloseable
         else if (count == 0)
             return;
 
-//<<<<<<< HEAD
-//        long end = memoryOffset + count;
-////<<<<<<< HEAD
-////        checkPosition(end - 1);
-////        //peer相当于off-heap的起始地址
-////=======
-//        checkBounds(memoryOffset, end);
-//=======
         checkBounds(memoryOffset, memoryOffset + count);
         unsafe.copyMemory(buffer, BYTE_ARRAY_BASE_OFFSET + bufferOffset, null, peer + memoryOffset, count);
     }
