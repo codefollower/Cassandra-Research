@@ -569,7 +569,7 @@ public abstract class ModificationStatement implements CQLStatement
             StorageProxy.mutateWithTriggers(mutations, cl, false);
 
         //我加上的，用于测试，触发memtable的flush
-        if(queryState.getClientState().count > 6) {
+        if(queryState.getClientState().count > 200) {
             Keyspace.open(cfm.ksName).getColumnFamilyStore(cfm.cfName).forceBlockingFlush();
             queryState.getClientState().count = 0;
         }

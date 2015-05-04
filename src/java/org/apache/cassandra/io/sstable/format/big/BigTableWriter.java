@@ -51,7 +51,7 @@ import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.StreamingHistogram;
 
 //总共9个Component类型对应9种不同的文件。
-//SSTableWriter构造函数负责:DATA、COMPRESSION_INFO、CRC、DIGEST，其中的CRC、DIGEST在DataIntegrityMetadata.ChecksumWriter
+//BigTableWriter构造函数负责:DATA、COMPRESSION_INFO、CRC、DIGEST，其中DIGEST在DataIntegrityMetadata.ChecksumWriter
 //IndexWriter里负责: INDEX、SUMMARY、FILTER
 //closeAndOpenReader里负责:STATS、TOC
 public class BigTableWriter extends SSTableWriter
@@ -81,6 +81,7 @@ public class BigTableWriter extends SSTableWriter
         }
         else
         {
+            //这一步生成Data.db、CRC.db文件
             dataFile = SequentialWriter.open(new File(getFilename()), new File(descriptor.filenameFor(Component.CRC)));
             dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), false);
         }
@@ -495,7 +496,7 @@ public class BigTableWriter extends SSTableWriter
 
         IndexWriter(long keyCount, final SequentialWriter dataFile)
         {
-            indexFile = SequentialWriter.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)));
+            indexFile = SequentialWriter.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX))); //这一步生成Index.db文件
             builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
             summary = new IndexSummaryBuilder(keyCount, metadata.getMinIndexInterval(), Downsampling.BASE_SAMPLING_LEVEL);
             bf = FilterFactory.getFilter(keyCount, metadata.getBloomFilterFpChance(), true);
