@@ -132,7 +132,7 @@ public final class Ref<T> implements RefCounted<T>, AutoCloseable
     {
         final Debug debug = DEBUG_ENABLED ? new Debug() : null;
         final GlobalState globalState;
-        private volatile int released;
+        private volatile int released; //1表示释放了，0表示没释放
 
         private static final AtomicIntegerFieldUpdater<State> releasedUpdater = AtomicIntegerFieldUpdater.newUpdater(State.class, "released");
 
@@ -162,7 +162,7 @@ public final class Ref<T> implements RefCounted<T>, AutoCloseable
 
         void release(boolean leak)
         {
-            if (!releasedUpdater.compareAndSet(this, 0, 1))
+            if (!releasedUpdater.compareAndSet(this, 0, 1)) //如果果返回false表示释放了两次
             {
                 if (!leak)
                 {

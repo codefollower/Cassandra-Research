@@ -123,12 +123,12 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
         //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
         //注意compression属性对应的是一个Map不是一个字符串
-//        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
-//            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
-//                                        new HashMap<String, String>()
-//                                        {{
-//                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
-//                                        }});
+        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
+            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
+                                        new HashMap<String, String>()
+                                        {{
+                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
+                                        }});
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -223,42 +223,18 @@ public class CreateTableStatement extends SchemaAlteringStatement
             .addAllColumnDefinitions(getColumns(cfmd))
             .isDense(isDense);
 
-//<<<<<<< HEAD
-//        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
-//        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
-//        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
-//        cfmd.addColumnMetadataFromAliases(keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
-//        cfmd.addColumnMetadataFromAliases(columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
-//        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
-//=======
+        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
+        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
+        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
         addColumnMetadataFromAliases(cfmd, keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
         addColumnMetadataFromAliases(cfmd, columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
+        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
         if (valueAlias != null)
             addColumnMetadataFromAliases(cfmd, Collections.singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
 
         properties.applyToCFMetadata(cfmd);
     }
-//<<<<<<< HEAD
-//    /*
-//          对于这样的CQL:
-//    CREATE TABLE test (
-//       table_name text,
-//       index_name text,
-//       index_name2 text,
-//       PRIMARY KEY (table_name, index_name)
-//    )WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) 
-//     AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
-//
-//    keyAliases是table_name
-//    columnAliases是index_name
-//    definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
-//    useCompactStorage是true
-//    properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
-//    
-//          如果PRIMARY KEY是PRIMARY KEY ((table_name,index_name2), index_name)
-//          则keyAliases是(table_name,index_name2)
-//    */
-//=======
+
 
     private void addColumnMetadataFromAliases(CFMetaData cfm, List<ByteBuffer> aliases, AbstractType<?> comparator, ColumnDefinition.Kind kind)
     {
@@ -277,10 +253,29 @@ public class CreateTableStatement extends SchemaAlteringStatement
         }
     }
 
+    /*
+            对于这样的CQL:
+      CREATE TABLE test (
+         table_name text,
+         index_name text,
+         index_name2 text,
+         PRIMARY KEY (table_name, index_name)
+      )WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) 
+       AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+    
+      keyAliases是table_name
+      columnAliases是index_name
+      definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
+      useCompactStorage是true
+      properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
+      
+            如果PRIMARY KEY是 ((table_name,index_name2), index_name)
+            则keyAliases是(table_name,index_name2)
+    */
     public static class RawStatement extends CFStatement
     {
-        //在org.apache.cassandra.cql3.CqlParser.cfamProperty(RawStatement)中把属性解析后放到properties字段中
         private final Map<ColumnIdentifier, CQL3Type.Raw> definitions = new HashMap<>();
+        //在org.apache.cassandra.cql3.CqlParser.cfamProperty(RawStatement)中把属性解析后放到properties字段中
         public final CFPropDefs properties = new CFPropDefs();
         //如CREATE TABLE IF NOT EXISTS Cats0 ( block_id uuid PRIMARY KEY, breed text, color text, short_hair boolean,"
         //+ "PRIMARY KEY ((block_id, breed), color, short_hair))

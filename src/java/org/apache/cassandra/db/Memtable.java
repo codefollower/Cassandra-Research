@@ -184,24 +184,6 @@ public class Memtable
      */
     long put(DecoratedKey key, ColumnFamily cf, SecondaryIndexManager.Updater indexer, OpOrder.Group opGroup)
     {
-//<<<<<<< HEAD
-//        //会触发DecoratedKey的compareTo方法
-//        if (replayPosition != null && writeBarrier != null)
-//        {
-//            // if the writeBarrier is set, we want to maintain lastReplayPosition; this is an optimisation to avoid
-//            // casing it for every write, but still ensure it is correct when writeBarrier.await() completes.
-//            while (true)
-//            {
-//                ReplayPosition last = lastReplayPosition.get();
-//                if (last.compareTo(replayPosition) >= 0)
-//                    break;
-//                if (lastReplayPosition.compareAndSet(last, replayPosition))
-//                    break;
-//            }
-//        }
-//
-//=======
-//>>>>>>> 3a609c20c947910116ec1447e2dd1227b616b2e8
         AtomicBTreeColumns previous = rows.get(key);
 
         long initialSize = 0;
