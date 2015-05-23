@@ -647,7 +647,7 @@ public class CassandraServer implements Cassandra.Iface
             throw new org.apache.cassandra.exceptions.InvalidRequestException("missing mandatory super column name for super CF " + column_parent.column_family);
         }
         ThriftValidation.validateColumnNames(metadata, column_parent, Arrays.asList(column.name));
-        ThriftValidation.validateColumnData(metadata, column_parent.super_column, column);
+        ThriftValidation.validateColumnData(metadata, key, column_parent.super_column, column);
 
         org.apache.cassandra.db.Mutation mutation;
         try
@@ -740,7 +740,7 @@ public class CassandraServer implements Cassandra.Iface
             });
             ThriftValidation.validateColumnNames(metadata, new ColumnParent(column_family), names);
             for (Column column : updates)
-                ThriftValidation.validateColumnData(metadata, null, column);
+                ThriftValidation.validateColumnData(metadata, key, null, column);
 
             CFMetaData cfm = Schema.instance.getCFMetaData(cState.getKeyspace(), column_family);
             ColumnFamily cfUpdates = ArrayBackedSortedColumns.factory.create(cfm);
@@ -832,7 +832,7 @@ public class CassandraServer implements Cassandra.Iface
 
                 for (Mutation m : columnFamilyMutations.getValue())
                 {
-                    ThriftValidation.validateMutation(metadata, m);
+                    ThriftValidation.validateMutation(metadata, key, m);
 
                     if (m.deletion != null)
                     {
@@ -1869,7 +1869,7 @@ public class CassandraServer implements Cassandra.Iface
 
     public CqlResult execute_cql_query(ByteBuffer query, Compression compression) throws TException
     {
-        throw new InvalidRequestException("CQL2 has been removed in Cassandra 3.0. Please use CQL3 instead");
+        throw new InvalidRequestException("CQL2 has been removed in Cassandra 2.2. Please use CQL3 instead");
     }
 
     public CqlResult execute_cql3_query(ByteBuffer query, Compression compression, ConsistencyLevel cLevel) throws TException
@@ -1909,7 +1909,7 @@ public class CassandraServer implements Cassandra.Iface
 
     public CqlPreparedResult prepare_cql_query(ByteBuffer query, Compression compression) throws TException
     {
-        throw new InvalidRequestException("CQL2 has been removed in Cassandra 3.0. Please use CQL3 instead");
+        throw new InvalidRequestException("CQL2 has been removed in Cassandra 2.2. Please use CQL3 instead");
     }
 
     public CqlPreparedResult prepare_cql3_query(ByteBuffer query, Compression compression) throws TException
@@ -1934,7 +1934,7 @@ public class CassandraServer implements Cassandra.Iface
 
     public CqlResult execute_prepared_cql_query(int itemId, List<ByteBuffer> bindVariables) throws TException
     {
-        throw new InvalidRequestException("CQL2 has been removed in Cassandra 3.0. Please use CQL3 instead");
+        throw new InvalidRequestException("CQL2 has been removed in Cassandra 2.2. Please use CQL3 instead");
     }
 
     public CqlResult execute_prepared_cql3_query(int itemId, List<ByteBuffer> bindVariables, ConsistencyLevel cLevel) throws TException
@@ -2053,7 +2053,7 @@ public class CassandraServer implements Cassandra.Iface
     }
 
     /*
-     * No-op since 3.0.
+     * No-op since 2.2.
      */
     public void set_cql_version(String version)
     {

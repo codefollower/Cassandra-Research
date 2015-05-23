@@ -64,7 +64,7 @@ public class StreamTransferTaskTest
         String cf = "Standard1";
 
         InetAddress peer = FBUtilities.getBroadcastAddress();
-        StreamSession session = new StreamSession(peer, peer, null, 0, true);
+        StreamSession session = new StreamSession(peer, peer, null, 0, true, false);
         ColumnFamilyStore cfs = Keyspace.open(ks).getColumnFamilyStore(cf);
 
         // create two sstables
@@ -80,7 +80,7 @@ public class StreamTransferTaskTest
         {
             List<Range<Token>> ranges = new ArrayList<>();
             ranges.add(new Range<>(sstable.first.getToken(), sstable.last.getToken()));
-            task.addTransferFile(sstable, sstable.selfRef(), 1, sstable.getPositionsForRanges(ranges), 0);
+            task.addTransferFile(sstable.selfRef(), 1, sstable.getPositionsForRanges(ranges), 0);
         }
         assertEquals(2, task.getTotalNumberOfFiles());
 

@@ -18,8 +18,6 @@
 package org.apache.cassandra.db.compaction.writers;
 
 import java.io.File;
-import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -28,11 +26,10 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
-import org.apache.cassandra.db.compaction.CompactionTask;
 import org.apache.cassandra.db.compaction.LeveledManifest;
 import org.apache.cassandra.db.compaction.OperationType;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.sstable.SSTableRewriter;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
@@ -40,7 +37,6 @@ import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 public class MajorLeveledCompactionWriter extends CompactionAwareWriter
 {
     private static final Logger logger = LoggerFactory.getLogger(MajorLeveledCompactionWriter.class);
-    private final SSTableRewriter rewriter;
     private final long maxSSTableSize;
     private final long expectedWriteSize;
     private final Set<SSTableReader> allSSTables;
@@ -51,12 +47,11 @@ public class MajorLeveledCompactionWriter extends CompactionAwareWriter
     private int sstablesWritten = 0;
     private final boolean skipAncestors;
 
-    public MajorLeveledCompactionWriter(ColumnFamilyStore cfs, Set<SSTableReader> allSSTables, Set<SSTableReader> nonExpiredSSTables, long maxSSTableSize, boolean offline, OperationType compactionType)
+    public MajorLeveledCompactionWriter(ColumnFamilyStore cfs, LifecycleTransaction txn, Set<SSTableReader> nonExpiredSSTables, long maxSSTableSize, boolean offline, OperationType compactionType)
     {
-        super(cfs, nonExpiredSSTables);
+        super(cfs, txn, nonExpiredSSTables, offline);
         this.maxSSTableSize = maxSSTableSize;
-        this.allSSTables = allSSTables;
-        rewriter = new SSTableRewriter(cfs, allSSTables, CompactionTask.getMaxDataAge(nonExpiredSSTables), offline);
+        this.allSSTables = txn.originals();
         expectedWriteSize = Math.min(maxSSTableSize, cfs.getExpectedCompactedFileSize(nonExpiredSSTables, compactionType));
         long estimatedSSTables = Math.max(1, SSTableReader.getTotalBytes(nonExpiredSSTables) / maxSSTableSize);
         long keysPerSSTable = estimatedTotalKeys / estimatedSSTables;
@@ -72,17 +67,17 @@ public class MajorLeveledCompactionWriter extends CompactionAwareWriter
                                                     cfs.metadata,
                                                     cfs.partitioner,
                                                     new MetadataCollector(allSSTables, cfs.metadata.comparator, currentLevel, skipAncestors));
-        rewriter.switchWriter(writer);
+        sstableWriter.switchWriter(writer);
     }
 
     @Override
     public boolean append(AbstractCompactedRow row)
     {
-        long posBefore = rewriter.currentWriter().getOnDiskFilePointer();
-        RowIndexEntry rie = rewriter.append(row);
-        totalWrittenInLevel += rewriter.currentWriter().getOnDiskFilePointer() - posBefore;
+        long posBefore = sstableWriter.currentWriter().getOnDiskFilePointer();
+        RowIndexEntry rie = sstableWriter.append(row);
+        totalWrittenInLevel += sstableWriter.currentWriter().getOnDiskFilePointer() - posBefore;
         partitionsWritten++;
-        if (rewriter.currentWriter().getOnDiskFilePointer() > maxSSTableSize)
+        if (sstableWriter.currentWriter().getOnDiskFilePointer() > maxSSTableSize)
         {
             if (totalWrittenInLevel > LeveledManifest.maxBytesForLevel(currentLevel, maxSSTableSize))
             {
@@ -98,23 +93,11 @@ public class MajorLeveledCompactionWriter extends CompactionAwareWriter
                                                         cfs.metadata,
                                                         cfs.partitioner,
                                                         new MetadataCollector(allSSTables, cfs.metadata.comparator, currentLevel, skipAncestors));
-            rewriter.switchWriter(writer);
+            sstableWriter.switchWriter(writer);
             partitionsWritten = 0;
             sstablesWritten++;
         }
         return rie != null;
 
-    }
-
-    @Override
-    public void abort()
-    {
-        rewriter.abort();
-    }
-
-    @Override
-    public List<SSTableReader> finish()
-    {
-        return rewriter.finish();
     }
 }

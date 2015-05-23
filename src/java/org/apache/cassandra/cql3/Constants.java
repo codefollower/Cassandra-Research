@@ -201,7 +201,9 @@ public abstract class Constants
                         case DOUBLE:
                         case FLOAT:
                         case INT:
+                        case SMALLINT:
                         case TIMESTAMP:
+                        case TINYINT:
                         case VARINT:
                             return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
                     }

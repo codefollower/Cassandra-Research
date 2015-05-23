@@ -56,7 +56,6 @@ options {
     public static final Set<String> reservedTypeNames = new HashSet<String>()
     {{
         add("byte");
-        add("smallint");
         add("complex");
         add("enum");
         add("date");
@@ -556,10 +555,10 @@ createAggregateStatement returns [CreateAggregateStatement expr]
           ( ',' v=comparatorType { argsTypes.add(v); } )*
         )?
       ')'
-      K_SFUNC sfunc = allowedFunctionName
+      K_SFUNC sfunc = functionName
       K_STYPE stype = comparatorType
       (
-        K_FINALFUNC ffunc = allowedFunctionName
+        K_FINALFUNC ffunc = functionName
       )?
       (
         K_INITCOND ival = term
@@ -593,12 +592,11 @@ createFunctionStatement returns [CreateFunctionStatement expr]
         boolean orReplace = false;
         boolean ifNotExists = false;
 
-        boolean deterministic = true;
         List<ColumnIdentifier> argsNames = new ArrayList<>();
         List<CQL3Type.Raw> argsTypes = new ArrayList<>();
+        boolean calledOnNullInput = false;
     }
     : K_CREATE (K_OR K_REPLACE { orReplace = true; })?
-      ((K_NON { deterministic = false; })? K_DETERMINISTIC)?
       K_FUNCTION
       (K_IF K_NOT K_EXISTS { ifNotExists = true; })?
       fn=functionName
@@ -608,10 +606,12 @@ createFunctionStatement returns [CreateFunctionStatement expr]
           ( ',' k=ident v=comparatorType { argsNames.add(k); argsTypes.add(v); } )*
         )?
       ')'
+      ( (K_RETURNS K_NULL) | (K_CALLED { calledOnNullInput=true; })) K_ON K_NULL K_INPUT
       K_RETURNS rt = comparatorType
       K_LANGUAGE language = IDENT
       K_AS body = STRING_LITERAL
-      { $expr = new CreateFunctionStatement(fn, $language.text.toLowerCase(), $body.text, deterministic, argsNames, argsTypes, rt, orReplace, ifNotExists); }
+      { $expr = new CreateFunctionStatement(fn, $language.text.toLowerCase(), $body.text,
+                                            argsNames, argsTypes, rt, calledOnNullInput, orReplace, ifNotExists); }
     ;
 
 dropFunctionStatement returns [DropFunctionStatement expr]
@@ -1455,8 +1455,10 @@ native_type returns [CQL3Type t]
     | K_FLOAT     { $t = CQL3Type.Native.FLOAT; }
     | K_INET      { $t = CQL3Type.Native.INET;}
     | K_INT       { $t = CQL3Type.Native.INT; }
+    | K_SMALLINT  { $t = CQL3Type.Native.SMALLINT; }
     | K_TEXT      { $t = CQL3Type.Native.TEXT; }
     | K_TIMESTAMP { $t = CQL3Type.Native.TIMESTAMP; }
+    | K_TINYINT   { $t = CQL3Type.Native.TINYINT; }
     | K_UUID      { $t = CQL3Type.Native.UUID; }
     | K_VARCHAR   { $t = CQL3Type.Native.VARCHAR; }
     | K_VARINT    { $t = CQL3Type.Native.VARINT; }
@@ -1550,9 +1552,9 @@ basic_unreserved_keyword returns [String str]
         | K_INITCOND
         | K_RETURNS
         | K_LANGUAGE
-        | K_NON
-        | K_DETERMINISTIC
         | K_JSON
+        | K_CALLED
+        | K_INPUT
         ) { $str = $k.text; }
     ;
 
@@ -1647,6 +1649,8 @@ K_DOUBLE:      D O U B L E;
 K_FLOAT:       F L O A T;
 K_INET:        I N E T;
 K_INT:         I N T;
+K_SMALLINT:    S M A L L I N T;
+K_TINYINT:     T I N Y I N T;
 K_TEXT:        T E X T;
 K_UUID:        U U I D;
 K_VARCHAR:     V A R C H A R;
@@ -1679,11 +1683,11 @@ K_STYPE:       S T Y P E;
 K_FINALFUNC:   F I N A L F U N C;
 K_INITCOND:    I N I T C O N D;
 K_RETURNS:     R E T U R N S;
+K_CALLED:      C A L L E D;
+K_INPUT:       I N P U T;
 K_LANGUAGE:    L A N G U A G E;
-K_NON:         N O N;
 K_OR:          O R;
 K_REPLACE:     R E P L A C E;
-K_DETERMINISTIC: D E T E R M I N I S T I C;
 
 K_JSON:        J S O N;
 

@@ -82,8 +82,8 @@ public final class MessagingService implements MessagingServiceMBean
     public static final int VERSION_12 = 6;
     public static final int VERSION_20 = 7;
     public static final int VERSION_21 = 8;
-    public static final int VERSION_30 = 9;
-    public static final int current_version = VERSION_30;
+    public static final int VERSION_22 = 9;
+    public static final int current_version = VERSION_22;
 
     public static final String FAILURE_CALLBACK_PARAM = "CAL_BAC";
     public static final byte[] ONE_BYTE = new byte[1];
@@ -93,8 +93,6 @@ public final class MessagingService implements MessagingServiceMBean
      * we preface every message with this number so the recipient can validate the sender is sane
      */
     public static final int PROTOCOL_MAGIC = 0xCA552DFA;
-
-    private boolean allNodesAtLeast21 = true;
 
     /* All verb handler identifiers */
     public enum Verb
@@ -803,47 +801,20 @@ public final class MessagingService implements MessagingServiceMBean
         return packed >>> (start + 1) - count & ~(-1 << count);
     }
 
-    public boolean areAllNodesAtLeast21()
-    {
-        return allNodesAtLeast21;
-    }
-
     /**
      * @return the last version associated with address, or @param version if this is the first such version
      */
     public int setVersion(InetAddress endpoint, int version)
     {
         logger.debug("Setting version {} for {}", version, endpoint);
-        if (version < VERSION_21)
-            allNodesAtLeast21 = false;
         Integer v = versions.put(endpoint, version);
-
-        // if the version was increased to 2.0 or later, see if all nodes are >= 2.0 now
-        if (v != null && v < VERSION_21 && version >= VERSION_21)
-            refreshAllNodesAtLeast21();
-
         return v == null ? version : v;
     }
 
     public void resetVersion(InetAddress endpoint)
     {
         logger.debug("Resetting version for {}", endpoint);
-        Integer removed = versions.remove(endpoint);
-        if (removed != null && removed <= VERSION_21)
-            refreshAllNodesAtLeast21();
-    }
-
-    private void refreshAllNodesAtLeast21()
-    {
-        for (Integer version: versions.values())
-        {
-            if (version < VERSION_21)
-            {
-                allNodesAtLeast21 = false;
-                return;
-            }
-        }
-        allNodesAtLeast21 = true;
+        versions.remove(endpoint);
     }
 
     public int getVersion(InetAddress endpoint)

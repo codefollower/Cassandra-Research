@@ -92,7 +92,7 @@ public class SSTableLoader implements StreamEventHandler
                     return false;
                 }
 
-                CFMetaData metadata = client.getCFMetaData(keyspace, desc.cfname);
+                CFMetaData metadata = client.getTableMetadata(desc.cfname);
                 if (metadata == null)
                 {
                     outputHandler.output(String.format("Skipping file %s: table %s.%s doesn't exist", name, keyspace, desc.cfname));
@@ -129,7 +129,7 @@ public class SSTableLoader implements StreamEventHandler
                         Ref ref = sstable.tryRef();
                         if (ref == null)
                             throw new IllegalStateException("Could not acquire ref for "+sstable);
-                        StreamSession.SSTableStreamingSections details = new StreamSession.SSTableStreamingSections(sstable, ref, sstableSections, estimatedKeys, ActiveRepairService.UNREPAIRED_SSTABLE);
+                        StreamSession.SSTableStreamingSections details = new StreamSession.SSTableStreamingSections(ref, sstableSections, estimatedKeys, ActiveRepairService.UNREPAIRED_SSTABLE);
                         streamingDetails.put(endpoint, details);
                     }
 
@@ -156,7 +156,7 @@ public class SSTableLoader implements StreamEventHandler
         client.init(keyspace);
         outputHandler.output("Established connection to initial hosts");
 
-        StreamPlan plan = new StreamPlan("Bulk Load", 0, connectionsPerHost, false).connectionFactory(client.getConnectionFactory());
+        StreamPlan plan = new StreamPlan("Bulk Load", 0, connectionsPerHost, false, false).connectionFactory(client.getConnectionFactory());
 
         Map<InetAddress, Collection<Range<Token>>> endpointToRanges = client.getEndpointToRangesMap();
         openSSTables(endpointToRanges);
@@ -251,7 +251,9 @@ public class SSTableLoader implements StreamEventHandler
         /**
          * Stop the client.
          */
-        public void stop() {}
+        public void stop()
+        {
+        }
 
         /**
          * Provides connection factory.
@@ -268,7 +270,12 @@ public class SSTableLoader implements StreamEventHandler
          * Validate that {@code keyspace} is an existing keyspace and {@code
          * cfName} one of its existing column family.
          */
-        public abstract CFMetaData getCFMetaData(String keyspace, String cfName);
+        public abstract CFMetaData getTableMetadata(String tableName);
+
+        public void setTableMetadata(CFMetaData cfm)
+        {
+            throw new RuntimeException();
+        }
 
         public Map<InetAddress, Collection<Range<Token>>> getEndpointToRangesMap()
         {

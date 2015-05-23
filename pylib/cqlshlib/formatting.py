@@ -17,8 +17,8 @@
 import calendar
 import math
 import re
-import time
 import sys
+import time
 from collections import defaultdict
 from . import wcwidth
 from .displaying import colorme, FormattedValue, DEFAULT_VALUE_COLORS
@@ -155,6 +155,13 @@ def format_floating_point_type(val, colormap, float_precision, **_):
     elif math.isinf(val):
         bval = 'Infinity'
     else:
+        exponent = int(math.log10(abs(val))) if abs(val) > sys.float_info.epsilon else -sys.maxint -1
+        if -4 <= exponent < float_precision:
+            # when this is true %g will not use scientific notation,
+            # increasing precision should not change this decision
+            # so we increase the precision to take into account the
+            # digits to the left of the decimal point
+            float_precision = float_precision + exponent + 1
         bval = '%.*g' % (float_precision, val)
     return colorme(bval, colormap, 'float')
 
@@ -192,8 +199,8 @@ def strftime(time_format, seconds):
     hours, minutes = divmod(abs(offset) / 60, 60)
     return formatted[:-5] + sign + '{0:0=2}{1:0=2}'.format(hours, minutes)
 
-@formatter_for('date')
-def format_value_uuid(val, colormap, **_):
+@formatter_for('Date')
+def format_value_date(val, colormap, **_):
     return format_python_formatted_type(val, colormap, 'date')
 
 @formatter_for('Time')

@@ -161,9 +161,9 @@ public class LegacySchemaTables
                 + "argument_names list<text>,"
                 + "argument_types list<text>,"
                 + "body text,"
-                + "is_deterministic boolean,"
                 + "language text,"
                 + "return_type text,"
+                + "called_on_null_input boolean,"
                 + "PRIMARY KEY ((keyspace_name), function_name, signature))");
 
     private static final CFMetaData Aggregates =
@@ -1291,9 +1291,9 @@ public class LegacySchemaTables
         }
 
         adder.add("body", function.body());
-        adder.add("is_deterministic", function.isDeterministic());
         adder.add("language", function.language());
         adder.add("return_type", function.returnType().toString());
+        adder.add("called_on_null_input", function.isCalledOnNullInput());
     }
 
     public static Mutation makeDropFunctionMutation(KSMetaData keyspace, UDFunction function, long timestamp)
@@ -1340,18 +1340,18 @@ public class LegacySchemaTables
 
         AbstractType<?> returnType = parseType(row.getString("return_type"));
 
-        boolean isDeterministic = row.getBoolean("is_deterministic");
         String language = row.getString("language");
         String body = row.getString("body");
+        boolean calledOnNullInput = row.getBoolean("called_on_null_input");
 
         try
         {
-            return UDFunction.create(name, argNames, argTypes, returnType, language, body, isDeterministic);
+            return UDFunction.create(name, argNames, argTypes, returnType, calledOnNullInput, language, body);
         }
         catch (InvalidRequestException e)
         {
             logger.error(String.format("Cannot load function '%s' from schema: this function won't be available (on this node)", name), e);
-            return UDFunction.createBrokenFunction(name, argNames, argTypes, returnType, language, body, e);
+            return UDFunction.createBrokenFunction(name, argNames, argTypes, returnType, calledOnNullInput, language, body, e);
         }
     }
 

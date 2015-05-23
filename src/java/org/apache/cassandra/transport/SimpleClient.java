@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.transport;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -61,7 +62,7 @@ import io.netty.handler.ssl.SslHandler;
 import static org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 
 //如果不想用正式的java-driver，可以通过这类个做些简单的测试，
-public class SimpleClient
+public class SimpleClient implements Closeable
 {
     static
     {

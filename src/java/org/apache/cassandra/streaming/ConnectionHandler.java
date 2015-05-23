@@ -183,7 +183,8 @@ public class ConnectionHandler
                     session.planId(),
                     session.description(),
                     isForOutgoing,
-                    session.keepSSTableLevel());
+                    session.keepSSTableLevel(),
+                    session.isIncremental());
             ByteBuffer messageBuf = message.createMessage(false, protocolVersion);
             DataOutputStreamPlus out = getWriteChannel(socket);
             out.write(messageBuf);
@@ -221,7 +222,12 @@ public class ConnectionHandler
             {
                 socket.close();
             }
-            catch (IOException ignore) {}
+            catch (IOException e)
+            {
+                // Erroring out while closing shouldn't happen but is not really a big deal, so just log
+                // it at DEBUG and ignore otherwise.
+                logger.debug("Unexpected error while closing streaming connection", e);
+            }
         }
     }
 

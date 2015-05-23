@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.ProtocolVersion;
 import com.datastax.driver.core.UserType;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.*;
@@ -46,21 +47,21 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
 
     protected final String language;
     protected final String body;
-    protected final boolean isDeterministic;
 
     protected final DataType[] argDataTypes;
     protected final DataType returnDataType;
+    protected final boolean calledOnNullInput;
 
     protected UDFunction(FunctionName name,
                          List<ColumnIdentifier> argNames,
                          List<AbstractType<?>> argTypes,
                          AbstractType<?> returnType,
+                         boolean calledOnNullInput,
                          String language,
-                         String body,
-                         boolean isDeterministic)
+                         String body)
     {
         this(name, argNames, argTypes, UDHelper.driverTypes(argTypes), returnType,
-             UDHelper.driverType(returnType), language, body, isDeterministic);
+             UDHelper.driverType(returnType), calledOnNullInput, language, body);
     }
 
     protected UDFunction(FunctionName name,
@@ -69,33 +70,36 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
                          DataType[] argDataTypes,
                          AbstractType<?> returnType,
                          DataType returnDataType,
+                         boolean calledOnNullInput,
                          String language,
-                         String body,
-                         boolean isDeterministic)
+                         String body)
     {
         super(name, argTypes, returnType);
         assert new HashSet<>(argNames).size() == argNames.size() : "duplicate argument names";
         this.argNames = argNames;
         this.language = language;
         this.body = body;
-        this.isDeterministic = isDeterministic;
         this.argDataTypes = argDataTypes;
         this.returnDataType = returnDataType;
+        this.calledOnNullInput = calledOnNullInput;
     }
 
     public static UDFunction create(FunctionName name,
                                     List<ColumnIdentifier> argNames,
                                     List<AbstractType<?>> argTypes,
                                     AbstractType<?> returnType,
+                                    boolean calledOnNullInput,
                                     String language,
-                                    String body,
-                                    boolean isDeterministic)
+                                    String body)
     throws InvalidRequestException
     {
+        if (!DatabaseDescriptor.enableUserDefinedFunctions())
+            throw new InvalidRequestException("User-defined-functions are disabled in cassandra.yaml - set enable_user_defined_functions=true to enable if you are aware of the security risks");
+
         switch (language)
         {
-            case "java": return JavaSourceUDFFactory.buildUDF(name, argNames, argTypes, returnType, body, isDeterministic);
-            default: return new ScriptBasedUDF(name, argNames, argTypes, returnType, language, body, isDeterministic);
+            case "java": return JavaSourceUDFFactory.buildUDF(name, argNames, argTypes, returnType, calledOnNullInput, body);
+            default: return new ScriptBasedUDF(name, argNames, argTypes, returnType, calledOnNullInput, language, body);
         }
     }
 
@@ -112,13 +116,14 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
                                                   List<ColumnIdentifier> argNames,
                                                   List<AbstractType<?>> argTypes,
                                                   AbstractType<?> returnType,
+                                                  boolean calledOnNullInput,
                                                   String language,
                                                   String body,
                                                   final InvalidRequestException reason)
     {
-        return new UDFunction(name, argNames, argTypes, returnType, language, body, true)
+        return new UDFunction(name, argNames, argTypes, returnType, calledOnNullInput, language, body)
         {
-            public ByteBuffer execute(int protocolVersion, List<ByteBuffer> parameters) throws InvalidRequestException
+            public ByteBuffer executeUserDefined(int protocolVersion, List<ByteBuffer> parameters) throws InvalidRequestException
             {
                 throw new InvalidRequestException(String.format("Function '%s' exists but hasn't been loaded successfully "
                                                                 + "for the following reason: %s. Please see the server log for details",
@@ -128,15 +133,30 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
         };
     }
 
+    public final ByteBuffer execute(int protocolVersion, List<ByteBuffer> parameters) throws InvalidRequestException
+    {
+        if (!DatabaseDescriptor.enableUserDefinedFunctions())
+            throw new InvalidRequestException("User-defined-functions are disabled in cassandra.yaml - set enable_user_defined_functions=true to enable if you are aware of the security risks");
+
+        if (!isCallableWrtNullable(parameters))
+            return null;
+        return executeUserDefined(protocolVersion, parameters);
+    }
+
+    public boolean isCallableWrtNullable(List<ByteBuffer> parameters)
+    {
+        if (!calledOnNullInput)
+            for (ByteBuffer parameter : parameters)
+                if (parameter == null || parameter.remaining() == 0)
+                    return false;
+        return true;
+    }
+
+    protected abstract ByteBuffer executeUserDefined(int protocolVersion, List<ByteBuffer> parameters) throws InvalidRequestException;
 
     public boolean isAggregate()
     {
         return false;
-    }
-
-    public boolean isPure()
-    {
-        return isDeterministic;
     }
 
     public boolean isNative()
@@ -144,14 +164,14 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
         return false;
     }
 
+    public boolean isCalledOnNullInput()
+    {
+        return calledOnNullInput;
+    }
+
     public List<ColumnIdentifier> argNames()
     {
         return argNames;
-    }
-
-    public boolean isDeterministic()
-    {
-        return isDeterministic;
     }
 
     public String body()
@@ -175,6 +195,36 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
     protected Object compose(int protocolVersion, int argIndex, ByteBuffer value)
     {
         return value == null ? null : argDataTypes[argIndex].deserialize(value, ProtocolVersion.fromInt(protocolVersion));
+    }
+
+    // do not remove - used by generated Java UDFs
+    protected float compose_float(int protocolVersion, int argIndex, ByteBuffer value)
+    {
+        return value == null ? 0f : (float)DataType.cfloat().deserialize(value, ProtocolVersion.fromInt(protocolVersion));
+    }
+
+    // do not remove - used by generated Java UDFs
+    protected double compose_double(int protocolVersion, int argIndex, ByteBuffer value)
+    {
+        return value == null ? 0d : (double)DataType.cdouble().deserialize(value, ProtocolVersion.fromInt(protocolVersion));
+    }
+
+    // do not remove - used by generated Java UDFs
+    protected int compose_int(int protocolVersion, int argIndex, ByteBuffer value)
+    {
+        return value == null ? 0 : (int)DataType.cint().deserialize(value, ProtocolVersion.fromInt(protocolVersion));
+    }
+
+    // do not remove - used by generated Java UDFs
+    protected long compose_long(int protocolVersion, int argIndex, ByteBuffer value)
+    {
+        return value == null ? 0L : (long)DataType.bigint().deserialize(value, ProtocolVersion.fromInt(protocolVersion));
+    }
+
+    // do not remove - used by generated Java UDFs
+    protected boolean compose_boolean(int protocolVersion, int argIndex, ByteBuffer value)
+    {
+        return value != null && (boolean) DataType.cboolean().deserialize(value, ProtocolVersion.fromInt(protocolVersion));
     }
 
     /**
@@ -201,14 +251,13 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
             && Functions.typeEquals(argTypes, that.argTypes)
             && Functions.typeEquals(returnType, that.returnType)
             && Objects.equal(language, that.language)
-            && Objects.equal(body, that.body)
-            && Objects.equal(isDeterministic, that.isDeterministic);
+            && Objects.equal(body, that.body);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(name, argNames, argTypes, returnType, language, body, isDeterministic);
+        return Objects.hashCode(name, argNames, argTypes, returnType, language, body);
     }
 
     public void userTypeUpdated(String ksName, String typeName)

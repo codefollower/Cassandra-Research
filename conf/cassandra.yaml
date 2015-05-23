@@ -290,7 +290,8 @@ commitlog_sync_period_in_ms: 10000
 commitlog_segment_size_in_mb: 32
 
 # Compression to apply to the commit log. If omitted, the commit log
-# will be written uncompressed.
+# will be written uncompressed.  LZ4, Snappy, and Deflate compressors
+# are supported.
 #commitlog_compression:
 #   - class_name: LZ4Compressor
 #     parameters:
@@ -457,7 +458,7 @@ native_transport_port: 9042
 # native_transport_max_concurrent_connections_per_ip: -1
 
 # Whether to start the thrift rpc server.
-start_rpc: true
+start_rpc: false
 
 # The address or interface to bind the Thrift RPC service and native transport
 # server to.
@@ -842,3 +843,8 @@ inter_dc_tcp_nodelay: false
 # TTL for different trace types used during logging of the repair process.
 tracetype_query_ttl: 86400
 tracetype_repair_ttl: 604800
+
+# UDFs (user defined functions) are disabled by default.
+# As of Cassandra 2.2-beta1, there is no security manager or anything else in place that
+# prevents execution of evil code. CASSANDRA-9402 will fix this issue for Cassandra 2.2-rc1.
+enable_user_defined_functions: false

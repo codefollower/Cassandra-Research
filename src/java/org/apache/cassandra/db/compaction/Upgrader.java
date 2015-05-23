@@ -20,22 +20,22 @@ package org.apache.cassandra.db.compaction;
 import java.io.File;
 import java.util.*;
 
-import com.google.common.base.Throwables;
-import com.google.common.collect.Sets;
-
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.utils.OutputHandler;
+import org.apache.cassandra.utils.UUIDGen;
 
 public class Upgrader
 {
     private final ColumnFamilyStore cfs;
     private final SSTableReader sstable;
+    private final LifecycleTransaction transaction;
     private final File directory;
 
     private final OperationType compactionType = OperationType.UPGRADE_SSTABLES;
@@ -45,10 +45,11 @@ public class Upgrader
 
     private final OutputHandler outputHandler;
 
-    public Upgrader(ColumnFamilyStore cfs, SSTableReader sstable, OutputHandler outputHandler)
+    public Upgrader(ColumnFamilyStore cfs, LifecycleTransaction txn, OutputHandler outputHandler)
     {
         this.cfs = cfs;
-        this.sstable = sstable;
+        this.transaction = txn;
+        this.sstable = txn.onlyOne();
         this.outputHandler = outputHandler;
 
         this.directory = new File(sstable.getFilename()).getParentFile();
@@ -80,11 +81,11 @@ public class Upgrader
     public void upgrade()
     {
         outputHandler.output("Upgrading " + sstable);
-        Set<SSTableReader> toUpgrade = Sets.newHashSet(sstable);
-        SSTableRewriter writer = new SSTableRewriter(cfs, toUpgrade, CompactionTask.getMaxDataAge(toUpgrade), true);
-        try (AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(toUpgrade))
+
+        try (SSTableRewriter writer = new SSTableRewriter(cfs, transaction, CompactionTask.getMaxDataAge(transaction.originals()), true);
+             AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(transaction.originals()))
         {
-            Iterator<AbstractCompactedRow> iter = new CompactionIterable(compactionType, scanners.scanners, controller, DatabaseDescriptor.getSSTableFormat()).iterator();
+            Iterator<AbstractCompactedRow> iter = new CompactionIterable(compactionType, scanners.scanners, controller, DatabaseDescriptor.getSSTableFormat(), UUIDGen.getTimeUUID()).iterator();
             writer.switchWriter(createCompactionWriter(sstable.getSSTableMetadata().repairedAt));
             while (iter.hasNext())
             {
@@ -94,12 +95,6 @@ public class Upgrader
 
             writer.finish();
             outputHandler.output("Upgrade of " + sstable + " complete.");
-
-        }
-        catch (Throwable t)
-        {
-            writer.abort();
-            throw Throwables.propagate(t);
         }
         finally
         {

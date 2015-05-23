@@ -106,7 +106,7 @@ public class QueryMessage extends Message.Request
 
             if (state.traceNextQuery())
             {
-                state.createTracingSession(connection);
+                state.createTracingSession();
 
                 //builder会构建一个Map，作为system_traces.sessions表parameters字段的值
                 ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();

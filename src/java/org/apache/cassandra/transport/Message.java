@@ -41,6 +41,7 @@ import com.google.common.collect.ImmutableSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.service.ClientWarn;
 import org.apache.cassandra.transport.messages.*;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.utils.JVMStabilityInspector;
@@ -226,6 +227,7 @@ public abstract class Message
     public static abstract class Response extends Message
     {
         protected UUID tracingId;
+        protected List<String> warnings;
 
         protected Response(Type type)
         {
@@ -245,6 +247,17 @@ public abstract class Message
         {
             return tracingId;
         }
+
+        public Message setWarnings(List<String> warnings)
+        {
+            this.warnings = warnings;
+            return this;
+        }
+
+        public List<String> getWarnings()
+        {
+            return warnings;
+        }
     }
 
     //能同时用于server和client端，能同时处理请求和响应
@@ -256,10 +269,12 @@ public abstract class Message
             boolean isRequest = frame.header.type.direction == Direction.REQUEST;
             boolean isTracing = frame.header.flags.contains(Frame.Header.Flag.TRACING);
             boolean isCustomPayload = frame.header.flags.contains(Frame.Header.Flag.CUSTOM_PAYLOAD);
+            boolean hasWarning = frame.header.flags.contains(Frame.Header.Flag.WARNING);
 
             //只有Response并且有Flag.TRACING时才有tracingId
             //tracingId是从server发给client的，所以对Request解码时是没意义的
             UUID tracingId = isRequest || !isTracing ? null : CBUtil.readUUID(frame.body);
+            List<String> warnings = isRequest || !hasWarning ? null : CBUtil.readStringList(frame.body);
             Map<String, byte[]> customPayload = !isCustomPayload ? null : CBUtil.readBytesMap(frame.body);
 
             try
@@ -288,6 +303,8 @@ public abstract class Message
                     assert message instanceof Response;
                     if (isTracing)
                         ((Response)message).setTracingId(tracingId);
+                    if (hasWarning)
+                        ((Response)message).setWarnings(warnings);
                 }
 
                 results.add(message);
@@ -328,6 +345,13 @@ public abstract class Message
                     Map<String, byte[]> customPayload = message.getCustomPayload();
                     if (tracingId != null)
                         messageSize += CBUtil.sizeOfUUID(tracingId);
+                    List<String> warnings = ((Response)message).getWarnings();
+                    if (warnings != null)
+                    {
+                        if (version < Server.VERSION_4)
+                            throw new ProtocolException("Must not send frame with WARNING flag for native protocol version < 4");
+                        messageSize += CBUtil.sizeOfStringList(warnings);
+                    }
                     if (customPayload != null)
                     {
                         if (version < Server.VERSION_4)
@@ -339,6 +363,11 @@ public abstract class Message
                     {
                         CBUtil.writeUUID(tracingId, body);
                         flags.add(Frame.Header.Flag.TRACING);
+                    }
+                    if (warnings != null)
+                    {
+                        CBUtil.writeStringList(warnings, body);
+                        flags.add(Frame.Header.Flag.WARNING);
                     }
                     if (customPayload != null)
                     {
@@ -482,12 +511,15 @@ public abstract class Message
             {
                 assert request.connection() instanceof ServerConnection;
                 connection = (ServerConnection)request.connection();
+                if (connection.getVersion() >= Server.VERSION_4)
+                    ClientWarn.captureWarnings();
+
                 QueryState qstate = connection.validateNewMessage(request.type, connection.getVersion(), request.getStreamId());
 
                 logger.debug("Received: {}, v={}", request, connection.getVersion());
-
                 response = request.execute(qstate);
                 response.setStreamId(request.getStreamId());
+                response.setWarnings(ClientWarn.getWarnings());
                 response.attach(connection);
                 connection.applyStateTransition(request.type, response.type);
             }
@@ -497,6 +529,10 @@ public abstract class Message
                 UnexpectedChannelExceptionHandler handler = new UnexpectedChannelExceptionHandler(ctx.channel(), true);
                 flush(new FlushItem(ctx, ErrorMessage.fromException(t, handler).setStreamId(request.getStreamId()), request.getSourceFrame()));
                 return;
+            }
+            finally
+            {
+                ClientWarn.resetWarnings();
             }
 
             logger.debug("Responding: {}, v={}", response, connection.getVersion());

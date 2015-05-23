@@ -46,6 +46,7 @@ import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.index.SecondaryIndex;
+import org.apache.cassandra.db.lifecycle.Tracker;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.*;
@@ -122,7 +123,7 @@ import static org.apache.cassandra.db.Directories.SECONDARY_INDEX_NAME_SEPARATOR
  * managed as another resource each instance tracks its own Ref instance to, to ensure all of these resources are
  * cleaned up safely and can be debugged otherwise.
  *
- * TODO: fill in details about DataTracker and lifecycle interactions for tools, and for compaction strategies
+ * TODO: fill in details about Tracker and lifecycle interactions for tools, and for compaction strategies
  */
 public abstract class SSTableReader extends SSTable implements SelfRefCounted<SSTableReader>
 {
@@ -140,6 +141,9 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             return (ts1 > ts2 ? -1 : (ts1 == ts2 ? 0 : 1));
         }
     };
+
+    // it's just an object, which we use regular Object equality on; we introduce a special class just for easy recognition
+    public static final class UniqueIdentifier {}
 
     public static final Comparator<SSTableReader> sstableComparator = new Comparator<SSTableReader>()
     {
@@ -170,11 +174,11 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         NORMAL,
         EARLY,
         METADATA_CHANGE,
-        MOVED_START,
-        SHADOWED // => MOVED_START past end
+        MOVED_START
     }
 
     public final OpenReason openReason;
+    public final UniqueIdentifier instanceId = new UniqueIdentifier();
 
     // indexfile and datafile: might be null before a call to load()
     protected SegmentedFile ifile;
@@ -594,9 +598,22 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         return ifile.path();
     }
 
-    public void setTrackedBy(DataTracker tracker)
+    // this is only used for restoring tracker state at delete (and wiring up the keycache) and so
+    // should only be called once it is actually added to the tracker
+    public void setupDeleteNotification(Tracker tracker)
     {
         tidy.type.deletingTask.setTracker(tracker);
+        setupKeyCache();
+    }
+
+    @VisibleForTesting
+    public boolean isDeleteNotificationSetup()
+    {
+        return tidy.type.deletingTask.getTracker() != null;
+    }
+
+    public void setupKeyCache()
+    {
         // under normal operation we can do this at any time, but SSTR is also used outside C* proper,
         // e.g. by BulkLoader, which does not initialize the cache.  As a kludge, we set up the cache
         // here when we know we're being wired into the rest of the server infrastructure.
@@ -865,12 +882,21 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      * @param ibuilder
      * @param dbuilder
      */
+
     public void saveSummary(SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder)
     {
-        saveSummary(ibuilder, dbuilder, indexSummary);
+        saveSummary(this.descriptor, this.first, this.last, ibuilder, dbuilder, indexSummary);
     }
 
-    private void saveSummary(SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder, IndexSummary summary)
+    private void saveSummary(SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder, IndexSummary newSummary)
+    {
+        saveSummary(this.descriptor, this.first, this.last, ibuilder, dbuilder, newSummary);
+    }
+    /**
+     * Save index summary to Summary.db file.
+     */
+    public static void saveSummary(Descriptor descriptor, DecoratedKey first, DecoratedKey last,
+                                   SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder, IndexSummary summary)
     {
         File summariesFile = new File(descriptor.filenameFor(Component.SUMMARY));
         if (summariesFile.exists())
@@ -900,15 +926,38 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         }
     }
 
-    public void setReplacedBy(SSTableReader replacement)
+    public void setReplaced()
     {
         synchronized (tidy.global)
         {
-            assert replacement != null;
             assert !tidy.isReplaced;
-            assert tidy.global.live == this;
             tidy.isReplaced = true;
-            tidy.global.live = replacement;
+        }
+    }
+
+    public boolean isReplaced()
+    {
+        synchronized (tidy.global)
+        {
+            return tidy.isReplaced;
+        }
+    }
+
+    public void runOnClose(final Runnable runOnClose)
+    {
+        synchronized (tidy.global)
+        {
+            final Runnable existing = tidy.runOnClose;
+            tidy.runOnClose = existing == null
+                              ? runOnClose
+                              : new Runnable()
+                                {
+                                    public void run()
+                                    {
+                                        existing.run();
+                                        runOnClose.run();
+                                    }
+                                };
         }
     }
 
@@ -940,32 +989,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
             replacement.first = newStart;
             replacement.last = this.last;
-            setReplacedBy(replacement);
-            return replacement;
-        }
-    }
-
-    public SSTableReader cloneAsShadowed(final Runnable runOnClose)
-    {
-        synchronized (tidy.global)
-        {
-            assert openReason != OpenReason.EARLY;
-            this.tidy.runOnClose = new Runnable()
-            {
-                public void run()
-                {
-                    dfile.dropPageCache(0);
-                    ifile.dropPageCache(0);
-                    runOnClose.run();
-                }
-            };
-
-            SSTableReader replacement = internalOpen(descriptor, components, metadata, partitioner, ifile.sharedCopy(),
-                                                          dfile.sharedCopy(), indexSummary.sharedCopy(), bf.sharedCopy(),
-                                                          maxDataAge, sstableMetadata, OpenReason.SHADOWED);
-            replacement.first = first;
-            replacement.last = last;
-            setReplacedBy(replacement);
             return replacement;
         }
     }
@@ -1028,7 +1051,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                                                      sstableMetadata, OpenReason.METADATA_CHANGE);
             replacement.first = this.first;
             replacement.last = this.last;
-            setReplacedBy(replacement);
             return replacement;
         }
     }
@@ -1512,7 +1534,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      * except for threads holding a reference.
      *
      * @return true if the this is the first time the file was marked obsolete.  Calling this
-     * multiple times is usually buggy (see exceptions in DataTracker.unmarkCompacting and removeOldSSTablesSize).
+     * multiple times is usually buggy (see exceptions in Tracker.unmarkCompacting and removeOldSSTablesSize).
      */
     public boolean markObsolete()
     {
@@ -1628,11 +1650,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     public boolean isRepaired()
     {
         return sstableMetadata.repairedAt != ActiveRepairService.UNREPAIRED_SSTABLE;
-    }
-
-    public SSTableReader getCurrentReplacement()
-    {
-        return tidy.global.live;
     }
 
     /**
@@ -2040,8 +2057,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         static final ConcurrentMap<Descriptor, Ref<GlobalTidy>> lookup = new ConcurrentHashMap<>();
 
         private final Descriptor desc;
-        // a single convenience property for getting the most recent version of an sstable, not related to tidying
-        private SSTableReader live;
         // the readMeter that is shared between all instances of the sstable, and can be overridden in all of them
         // at once also, for testing purposes
         private RestorableMeter readMeter;
@@ -2056,7 +2071,6 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         {
             this.desc = reader.descriptor;
             this.isCompacted = new AtomicBoolean();
-            this.live = reader;
         }
 
         void ensureReadMeter()
@@ -2118,6 +2132,13 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             assert ex == null;
             return refc;
         }
+    }
+
+    @VisibleForTesting
+    public static void resetTidying()
+    {
+        GlobalTidy.lookup.clear();
+        DescriptorTypeTidy.lookup.clear();
     }
 
     public static abstract class Factory

@@ -1692,18 +1692,42 @@ public class StorageProxy implements StorageProxyMBean
             else //根据rowKey(是command.keyRange)取得一个范围，如果没指定rowKey只是按索引字段查，还是会把查询请求发给所有节点的
                 ranges = getRestrictedRanges(command.keyRange);
 
-            // our estimate of how many result rows there will be per-range
-            float resultRowsPerRange = estimateResultRowsPerRange(command, keyspace);
-            // underestimate how many rows we will get per-range in order to increase the likelihood that we'll
-            // fetch enough rows in the first round
-            resultRowsPerRange -= resultRowsPerRange * CONCURRENT_SUBREQUESTS_MARGIN;
-            int concurrencyFactor = resultRowsPerRange == 0.0
+            // determine the number of rows to be fetched and the concurrency factor
+            int rowsToBeFetched = command.limit();
+            int concurrencyFactor;
+            if (command.requiresScanningAllRanges())
+            {
+                // all nodes must be queried
+                rowsToBeFetched *= ranges.size();
+                concurrencyFactor = ranges.size();
+                logger.debug("Requested rows: {}, ranges.size(): {}; concurrent range requests: {}",
+                             command.limit(),
+                             ranges.size(),
+                             concurrencyFactor);
+                Tracing.trace("Submitting range requests on {} ranges with a concurrency of {}",
+                              ranges.size(), concurrencyFactor);
+            }
+            else
+            {
+                // our estimate of how many result rows there will be per-range
+                float resultRowsPerRange = estimateResultRowsPerRange(command, keyspace);
+                // underestimate how many rows we will get per-range in order to increase the likelihood that we'll
+                // fetch enough rows in the first round
+                resultRowsPerRange -= resultRowsPerRange * CONCURRENT_SUBREQUESTS_MARGIN;
+                concurrencyFactor = resultRowsPerRange == 0.0
                                   ? 1
                                   : Math.max(1, Math.min(ranges.size(), (int) Math.ceil(command.limit() / resultRowsPerRange)));
-            logger.debug("Estimated result rows per range: {}; requested rows: {}, ranges.size(): {}; concurrent range requests: {}",
-                         resultRowsPerRange, command.limit(), ranges.size(), concurrencyFactor);
-            Tracing.trace("Submitting range requests on {} ranges with a concurrency of {} ({} rows per range expected)",
-                          ranges.size(), concurrencyFactor, resultRowsPerRange);
+
+                logger.debug("Estimated result rows per range: {}; requested rows: {}, ranges.size(): {}; concurrent range requests: {}",
+                             resultRowsPerRange,
+                             command.limit(),
+                             ranges.size(),
+                             concurrencyFactor);
+                Tracing.trace("Submitting range requests on {} ranges with a concurrency of {} ({} rows per range expected)",
+                              ranges.size(),
+                              concurrencyFactor,
+                              resultRowsPerRange);
+            }
 
             boolean haveSufficientRows = false;
             int i = 0;
@@ -1795,7 +1819,6 @@ public class StorageProxy implements StorageProxyMBean
                 List<AsyncOneResponse> repairResponses = new ArrayList<>();
                 for (Pair<AbstractRangeCommand, ReadCallback<RangeSliceReply, Iterable<Row>>> cmdPairHandler : scanHandlers)
                 {
-                    AbstractRangeCommand nodeCmd = cmdPairHandler.left;
                     ReadCallback<RangeSliceReply, Iterable<Row>> handler = cmdPairHandler.right;
                     RangeSliceResponseResolver resolver = (RangeSliceResponseResolver)handler.resolver;
 
@@ -1838,7 +1861,7 @@ public class StorageProxy implements StorageProxyMBean
 
                     // if we're done, great, otherwise, move to the next range
                     int count = countLiveRows ? liveRowCount : rows.size();
-                    if (count >= nodeCmd.limit())
+                    if (count >= rowsToBeFetched)
                     {
                         haveSufficientRows = true;
                         break;
@@ -1861,14 +1884,14 @@ public class StorageProxy implements StorageProxyMBean
                 }
 
                 if (haveSufficientRows)
-                    return trim(command, rows);
+                    return command.postReconciliationProcessing(rows);
 
                 // we didn't get enough rows in our concurrent fetch; recalculate our concurrency factor
                 // based on the results we've seen so far (as long as we still have ranges left to query)
                 if (i < ranges.size())
                 {
                     float fetchedRows = countLiveRows ? liveRowCount : rows.size();
-                    float remainingRows = command.limit() - fetchedRows;
+                    float remainingRows = rowsToBeFetched - fetchedRows;
                     float actualRowsPerRange;
                     if (fetchedRows == 0.0)
                     {
@@ -1892,16 +1915,7 @@ public class StorageProxy implements StorageProxyMBean
             rangeMetrics.addNano(latency);
             Keyspace.open(command.keyspace).getColumnFamilyStore(command.columnFamily).metric.coordinatorScanLatency.update(latency, TimeUnit.NANOSECONDS);
         }
-        return trim(command, rows);
-    }
-
-    private static List<Row> trim(AbstractRangeCommand command, List<Row> rows)
-    {
-        // for CQL3 queries, let the caller trim the results
-        if (command.countCQL3Rows() || command.ignoredTombstonedPartitions())
-            return rows;
-        else
-            return rows.size() > command.limit() ? rows.subList(0, command.limit()) : rows;
+        return command.postReconciliationProcessing(rows);
     }
 
     public Map<String, List<String>> getSchemaVersions()

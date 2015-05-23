@@ -135,7 +135,7 @@ from cqlshlib.tracing import print_trace_session, print_trace
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 9042
 DEFAULT_CQLVER = '3.2.0'
-DEFAULT_PROTOCOL_VERSION = 3
+DEFAULT_PROTOCOL_VERSION = 4
 
 DEFAULT_FLOAT_PRECISION = 5
 DEFAULT_MAX_TRACE_WAIT = 10
@@ -217,11 +217,13 @@ my_commands_ending_with_newline = (
     'help',
     '?',
     'consistency',
+    'serial',
     'describe',
     'desc',
     'show',
     'source',
     'capture',
+    'login',
     'debug',
     'tracing',
     'expand',
@@ -248,10 +250,12 @@ cqlsh_extra_syntax_rules = r'''
 
 <specialCommand> ::= <describeCommand>
                    | <consistencyCommand>
+                   | <serialConsistencyCommand>
                    | <showCommand>
                    | <sourceCommand>
                    | <captureCommand>
                    | <copyCommand>
+                   | <loginCommand>
                    | <debugCommand>
                    | <helpCommand>
                    | <tracingCommand>
@@ -286,6 +290,13 @@ cqlsh_extra_syntax_rules = r'''
                      | "LOCAL_SERIAL"
                      | "LOCAL_ONE"
                      ;
+
+<serialConsistencyCommand> ::= "SERIAL" "CONSISTENCY" ( level=<serialConsistencyLevel> )?
+                             ;
+
+<serialConsistencyLevel> ::= "SERIAL"
+                           | "LOCAL_SERIAL"
+                           ;
 
 <showCommand> ::= "SHOW" what=( "VERSION" | "HOST" | "SESSION" sessionid=<uuid> )
                 ;
@@ -325,6 +336,9 @@ cqlsh_extra_syntax_rules = r'''
 
 <pagingCommand> ::= "PAGING" ( switch=( "ON" | "OFF" ) )?
                   ;
+
+<loginCommand> ::= "LOGIN" username=<username> (password=<stringLiteral>)?
+                 ;
 
 <exitCommand> ::= "exit" | "quit"
                 ;
@@ -536,7 +550,6 @@ class FrozenType(cassandra.cqltypes._ParameterizedType):
         subtype, = cls.subtypes
         return subtype.to_binary(val, protocol_version)
 
-
 class Shell(cmd.Cmd):
     custom_prompt = os.getenv('CQLSH_PROMPT', '')
     if custom_prompt is not '':
@@ -567,7 +580,8 @@ class Shell(cmd.Cmd):
                  max_trace_wait=DEFAULT_MAX_TRACE_WAIT,
                  ssl=False,
                  single_statement=None,
-                 client_timeout=10):
+                 client_timeout=10,
+                 protocol_version=DEFAULT_PROTOCOL_VERSION):
         cmd.Cmd.__init__(self, completekey=completekey)
         self.hostname = hostname
         self.port = port
@@ -585,7 +599,7 @@ class Shell(cmd.Cmd):
             self.conn = use_conn
         else:
             self.conn = Cluster(contact_points=(self.hostname,), port=self.port, cql_version=cqlver,
-                                protocol_version=DEFAULT_PROTOCOL_VERSION,
+                                protocol_version=protocol_version,
                                 auth_provider=self.auth_provider,
                                 ssl_options=sslhandling.ssl_settings(hostname, CONFIG_FILE) if ssl else None,
                                 load_balancing_policy=WhiteListRoundRobinPolicy([self.hostname]))
@@ -654,6 +668,7 @@ class Shell(cmd.Cmd):
         self.stdin = stdin
         self.query_out = sys.stdout
         self.consistency_level = cassandra.ConsistencyLevel.ONE
+        self.serial_consistency_level = cassandra.ConsistencyLevel.SERIAL;
         # the python driver returns BLOBs as string, but we expect them as bytearrays
         cassandra.cqltypes.BytesType.deserialize = staticmethod(lambda byts, protocol_version: bytearray(byts))
         cassandra.cqltypes.CassandraType.support_empty_values = True
@@ -1032,14 +1047,23 @@ class Shell(cmd.Cmd):
         self.tracing_enabled = tracing_was_enabled
 
     def perform_statement(self, statement):
-        stmt = SimpleStatement(statement, consistency_level=self.consistency_level, fetch_size=self.default_page_size if self.use_paging else None)
-        result = self.perform_simple_statement(stmt)
-        if self.tracing_enabled:
-            if stmt.trace:
-                print_trace(self, stmt.trace)
-            else:
-                msg = "Statement trace did not complete within %d seconds" % (self.session.max_trace_wait)
-                self.writeresult(msg, color=RED)
+        stmt = SimpleStatement(statement, consistency_level=self.consistency_level, serial_consistency_level=self.serial_consistency_level, fetch_size=self.default_page_size if self.use_paging else None)
+        result, future = self.perform_simple_statement(stmt)
+
+        if future:
+            if future.warnings:
+                self.print_warnings(future.warnings)
+
+            if self.tracing_enabled:
+                try:
+                    trace = future.get_query_trace(self.max_trace_wait)
+                    if trace:
+                        print_trace(self, trace)
+                    else:
+                        msg = "Statement trace did not complete within %d seconds" % (self.session.max_trace_wait)
+                        self.writeresult(msg, color=RED)
+                except Exception, err:
+                    self.printerr("Unable to fetch query trace: %s" % (str(err),))
 
         return result
 
@@ -1054,19 +1078,20 @@ class Shell(cmd.Cmd):
 
     def perform_simple_statement(self, statement):
         if not statement:
-            return False
+            return False, None
         rows = None
         while True:
             try:
-                rows = self.session.execute(statement, trace=self.tracing_enabled)
+                future = self.session.execute_async(statement, trace=self.tracing_enabled)
+                rows = future.result(self.session.default_timeout)
                 break
             except CQL_ERRORS, err:
                 self.printerr(str(err.__class__.__name__) + ": " + str(err))
-                return False
+                return False, None
             except Exception, err:
                 import traceback
                 self.printerr(traceback.format_exc())
-                return False
+                return False, None
 
         if statement.query_string[:6].lower() == 'select':
             self.print_result(rows, self.parse_for_table_meta(statement.query_string))
@@ -1079,7 +1104,7 @@ class Shell(cmd.Cmd):
             self.writeresult("")
             self.print_static_result(rows, self.parse_for_table_meta(statement.query_string))
         self.flush_output()
-        return True
+        return True, future
 
     def print_result(self, rows, table_meta):
         self.decoding_errors = []
@@ -1172,6 +1197,16 @@ class Shell(cmd.Cmd):
                 column = formatted_names[field_id].ljust(max_col_width, color=self.color)
                 value = field.ljust(field.displaywidth, color=self.color)
                 self.writeresult(' ' + " | ".join([column, value]))
+            self.writeresult('')
+
+    def print_warnings(self, warnings):
+        if warnings is None or len(warnings) == 0:
+            return;
+
+        self.writeresult('')
+        self.writeresult('Warnings :')
+        for warning in warnings:
+            self.writeresult(warning)
             self.writeresult('')
 
     def emptyline(self):
@@ -1599,7 +1634,7 @@ class Shell(cmd.Cmd):
                 contact_points=(self.hostname,),
                 port=self.port,
                 cql_version=self.conn.cql_version,
-                protocol_version=DEFAULT_PROTOCOL_VERSION,
+                protocol_version=self.conn.protocol_version,
                 auth_provider=self.auth_provider,
                 ssl_options=sslhandling.ssl_settings(self.hostname, CONFIG_FILE) if self.ssl else None,
                 load_balancing_policy=WhiteListRoundRobinPolicy([self.hostname]),
@@ -1688,7 +1723,7 @@ class Shell(cmd.Cmd):
 
                 request_id = conn.get_request_id()
                 binary_message = query_message.to_binary(
-                    stream_id=request_id, protocol_version=DEFAULT_PROTOCOL_VERSION, compression=None)
+                    stream_id=request_id, protocol_version=self.conn.protocol_version, compression=None)
 
                 # add the message directly to the connection's queue
                 with conn.lock:
@@ -1958,7 +1993,9 @@ class Shell(cmd.Cmd):
 
            Valid consistency levels:
 
-           ANY, ONE, TWO, THREE, QUORUM, ALL, LOCAL_ONE, LOCAL_QUORUM and EACH_QUORUM.
+           ANY, ONE, TWO, THREE, QUORUM, ALL, LOCAL_ONE, LOCAL_QUORUM, EACH_QUORUM, SERIAL and LOCAL_SERIAL.
+
+           SERIAL and LOCAL_SERIAL may be used only for SELECTs; will be rejected with updates.
 
         CONSISTENCY
 
@@ -1971,6 +2008,69 @@ class Shell(cmd.Cmd):
 
         self.consistency_level = cassandra.ConsistencyLevel.name_to_value[level.upper()]
         print 'Consistency level set to %s.' % (level.upper(),)
+
+    def do_serial(self, parsed):
+        """
+        SERIAL CONSISTENCY [cqlsh only]
+
+           Overrides serial consistency level (default level is SERIAL).
+
+        SERIAL CONSISTENCY <level>
+
+           Sets consistency level for future conditional updates.
+
+           Valid consistency levels:
+
+           SERIAL, LOCAL_SERIAL.
+
+        SERIAL CONSISTENCY
+
+           SERIAL CONSISTENCY with no arguments shows the current consistency level.
+        """
+        level = parsed.get_binding('level')
+        if level is None:
+            print 'Current serial consistency level is %s.' % (cassandra.ConsistencyLevel.value_to_name[self.serial_consistency_level])
+            return
+
+        self.serial_consistency_level = cassandra.ConsistencyLevel.name_to_value[level.upper()]
+        print 'Serial consistency level set to %s.' % (level.upper(),)
+
+    def do_login(self, parsed):
+        """
+        LOGIN [cqlsh only]
+
+           Changes login information without requiring restart.
+
+        LOGIN <username> (<password>)
+
+           Login using the specified username. If password is specified, it will be used
+           otherwise, you will be prompted to enter.
+        """
+        username = parsed.get_binding('username')
+        password = parsed.get_binding('password')
+        if password is None:
+            password = getpass.getpass()
+        else:
+            password = password[1:-1]
+
+        auth_provider = PlainTextAuthProvider(username=username, password=password)
+
+        conn = Cluster(contact_points=(self.hostname,), port=self.port, cql_version=self.conn.cql_version,
+                       protocol_version=self.conn.protocol_version,
+                       auth_provider=auth_provider,
+                       ssl_options=self.conn.ssl_options,
+                       load_balancing_policy=WhiteListRoundRobinPolicy([self.hostname]))
+
+        if self.current_keyspace:
+            session = conn.connect(self.current_keyspace)
+        else:
+            session = conn.connect()
+
+        # Update after we've connected in case we fail to authenticate
+        self.conn = conn
+        self.auth_provider = auth_provider
+        self.username = username
+        self.session = session
 
     def do_exit(self, parsed=None):
         """

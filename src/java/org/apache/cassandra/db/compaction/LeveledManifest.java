@@ -23,7 +23,6 @@ import java.util.*;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -317,7 +316,7 @@ public class LeveledManifest
                 continue; // mostly this just avoids polluting the debug log with zero scores
             // we want to calculate score excluding compacting ones
             Set<SSTableReader> sstablesInLevel = Sets.newHashSet(sstables);
-            Set<SSTableReader> remaining = Sets.difference(sstablesInLevel, cfs.getDataTracker().getCompacting());
+            Set<SSTableReader> remaining = Sets.difference(sstablesInLevel, cfs.getTracker().getCompacting());
             double score = (double) SSTableReader.getTotalBytes(remaining) / (double)maxBytesForLevel(i, maxSSTableSizeInBytes);
             logger.debug("Compaction score for level {} is {}", i, score);
 
@@ -362,7 +361,7 @@ public class LeveledManifest
 
     private List<SSTableReader> getSSTablesForSTCS(Collection<SSTableReader> sstables)
     {
-        Iterable<SSTableReader> candidates = cfs.getDataTracker().getUncompactingSSTables(sstables);
+        Iterable<SSTableReader> candidates = cfs.getTracker().getUncompacting(sstables);
         List<Pair<SSTableReader,Long>> pairs = SizeTieredCompactionStrategy.createSSTableAndLengthPairs(AbstractCompactionStrategy.filterSuspectSSTables(candidates));
         List<List<SSTableReader>> buckets = SizeTieredCompactionStrategy.getBuckets(pairs,
                                                                                     options.bucketHigh,
@@ -414,7 +413,9 @@ public class LeveledManifest
                         if (max == null || candidate.last.compareTo(max) > 0)
                             max = candidate.last;
                     }
-                    Set<SSTableReader> compacting = cfs.getDataTracker().getCompacting();
+                    if (min == null || max == null || min.equals(max)) // single partition sstables - we cannot include a high level sstable.
+                        return candidates;
+                    Set<SSTableReader> compacting = cfs.getTracker().getCompacting();
                     Range<RowPosition> boundaries = new Range<>(min, max);
                     for (SSTableReader sstable : getLevel(i))
                     {
@@ -541,7 +542,7 @@ public class LeveledManifest
         assert !getLevel(level).isEmpty();
         logger.debug("Choosing candidates for L{}", level);
 
-        final Set<SSTableReader> compacting = cfs.getDataTracker().getCompacting();
+        final Set<SSTableReader> compacting = cfs.getTracker().getCompacting();
 
         if (level == 0)
         {
@@ -649,7 +650,7 @@ public class LeveledManifest
     {
         Set<SSTableReader> sstables = new HashSet<>();
         Set<SSTableReader> levelSSTables = new HashSet<>(getLevel(level));
-        for (SSTableReader sstable : cfs.getDataTracker().getCompacting())
+        for (SSTableReader sstable : cfs.getTracker().getCompacting())
         {
             if (levelSSTables.contains(sstable))
                 sstables.add(sstable);

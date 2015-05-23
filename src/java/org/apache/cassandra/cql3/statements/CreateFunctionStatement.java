@@ -36,7 +36,7 @@ import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.Event;
 
 /**
- * A <code>CREATE FUNCTION</code> statement parsed from a CQL query.
+ * A {@code CREATE FUNCTION} statement parsed from a CQL query.
  */
 public final class CreateFunctionStatement extends SchemaAlteringStatement
 {
@@ -45,11 +45,11 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
     private FunctionName functionName;
     private final String language;
     private final String body;
-    private final boolean deterministic;
 
     private final List<ColumnIdentifier> argNames;
     private final List<CQL3Type.Raw> argRawTypes;
     private final CQL3Type.Raw rawReturnType;
+    private final boolean calledOnNullInput;
 
     private List<AbstractType<?>> argTypes;
     private AbstractType<?> returnType;
@@ -59,20 +59,20 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
     public CreateFunctionStatement(FunctionName functionName,
                                    String language,
                                    String body,
-                                   boolean deterministic,
                                    List<ColumnIdentifier> argNames,
                                    List<CQL3Type.Raw> argRawTypes,
                                    CQL3Type.Raw rawReturnType,
+                                   boolean calledOnNullInput,
                                    boolean orReplace,
                                    boolean ifNotExists)
     {
         this.functionName = functionName;
         this.language = language;
         this.body = body;
-        this.deterministic = deterministic;
         this.argNames = argNames;
         this.argRawTypes = argRawTypes;
         this.rawReturnType = rawReturnType;
+        this.calledOnNullInput = calledOnNullInput;
         this.orReplace = orReplace;
         this.ifNotExists = ifNotExists;
     }
@@ -85,9 +85,9 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
         argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-            argTypes.add(rawType.prepare(typeKeyspace(rawType)).getType());
+            argTypes.add(rawType.prepare(functionName.keyspace).getType());
 
-        returnType = rawReturnType.prepare(typeKeyspace(rawReturnType)).getType();
+        returnType = rawReturnType.prepare(functionName.keyspace).getType();
         return super.prepare();
     }
 
@@ -130,6 +130,9 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws InvalidRequestException
     {
+        if (!DatabaseDescriptor.enableUserDefinedFunctions())
+            throw new InvalidRequestException("User-defined-functions are disabled in cassandra.yaml - set enable_user_defined_functions=true to enable if you are aware of the security risks");
+
         if (ifNotExists && orReplace)
             throw new InvalidRequestException("Cannot use both 'OR REPLACE' and 'IF NOT EXISTS' directives");
 
@@ -155,25 +158,20 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException(String.format("Function %s already exists", old));
             if (!(old instanceof ScalarFunction))
                 throw new InvalidRequestException(String.format("Function %s can only replace a function", old));
+            if (calledOnNullInput != ((ScalarFunction) old).isCalledOnNullInput())
+                throw new InvalidRequestException(String.format("Function %s can only be replaced with %s", old,
+                                                                calledOnNullInput ? "CALLED ON NULL INPUT" : "RETURNS NULL ON NULL INPUT"));
 
             if (!Functions.typeEquals(old.returnType(), returnType))
                 throw new InvalidRequestException(String.format("Cannot replace function %s, the new return type %s is not compatible with the return type %s of existing function",
                                                                 functionName, returnType.asCQL3Type(), old.returnType().asCQL3Type()));
         }
 
-        this.udFunction = UDFunction.create(functionName, argNames, argTypes, returnType, language, body, deterministic);
+        this.udFunction = UDFunction.create(functionName, argNames, argTypes, returnType, calledOnNullInput, language, body);
         this.replaced = old != null;
 
         MigrationManager.announceNewFunction(udFunction, isLocalOnly);
 
         return true;
-    }
-
-    private String typeKeyspace(CQL3Type.Raw rawType)
-    {
-        String ks = rawType.keyspace();
-        if (ks != null)
-            return ks;
-        return functionName.keyspace;
     }
 }

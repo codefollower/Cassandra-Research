@@ -27,10 +27,12 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.commons.cli.*;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.compaction.SSTableSplitter;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Pair;
@@ -42,7 +44,6 @@ public class StandaloneSplitter
     public static final int DEFAULT_SSTABLE_SIZE = 50;
 
     private static final String TOOL_NAME = "sstablessplit";
-    private static final String VERBOSE_OPTION = "verbose";
     private static final String DEBUG_OPTION = "debug";
     private static final String HELP_OPTION = "help";
     private static final String NO_SNAPSHOT_OPTION = "no-snapshot";
@@ -146,12 +147,15 @@ public class StandaloneSplitter
             if (options.snapshot)
                 System.out.println(String.format("Pre-split sstables snapshotted into snapshot %s", snapshotName));
 
-            cfs.getDataTracker().markCompacting(sstables, false, true);
             for (SSTableReader sstable : sstables)
             {
-                try
+                try (LifecycleTransaction transaction = LifecycleTransaction.offline(OperationType.UNKNOWN, sstable))
                 {
-                    new SSTableSplitter(cfs, sstable, options.sizeInMB).split();
+                    new SSTableSplitter(cfs, transaction, options.sizeInMB).split();
+
+                    // Remove the sstable (it's been copied by split and snapshotted)
+                    sstable.markObsolete();
+                    sstable.selfRef().release();
                 }
                 catch (Exception e)
                 {
@@ -185,7 +189,6 @@ public class StandaloneSplitter
         public final List<String> filenames;
 
         public boolean debug;
-        public boolean verbose;
         public boolean snapshot;
         public int sizeInMB;
 
@@ -217,7 +220,6 @@ public class StandaloneSplitter
                 }
                 Options opts = new Options(Arrays.asList(args));
                 opts.debug = cmd.hasOption(DEBUG_OPTION);
-                opts.verbose = cmd.hasOption(VERBOSE_OPTION);
                 opts.snapshot = !cmd.hasOption(NO_SNAPSHOT_OPTION);
                 opts.sizeInMB = DEFAULT_SSTABLE_SIZE;
 
@@ -244,7 +246,6 @@ public class StandaloneSplitter
         {
             CmdLineOptions options = new CmdLineOptions();
             options.addOption(null, DEBUG_OPTION,          "display stack traces");
-            options.addOption("v",  VERBOSE_OPTION,        "verbose output");
             options.addOption("h",  HELP_OPTION,           "display this help message");
             options.addOption(null, NO_SNAPSHOT_OPTION,    "don't snapshot the sstables before splitting");
             options.addOption("s",  SIZE_OPTION, "size",   "maximum size in MB for the output sstables (default: " + DEFAULT_SSTABLE_SIZE + ")");

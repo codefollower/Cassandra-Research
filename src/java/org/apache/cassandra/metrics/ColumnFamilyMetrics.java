@@ -21,17 +21,18 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
 import com.codahale.metrics.*;
 import com.codahale.metrics.Timer;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.Memtable;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.TopKSampler;
-
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 
 import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
 
@@ -62,6 +63,8 @@ public class ColumnFamilyMetrics
     public final Gauge<Double> compressionRatio;
     /** Histogram of estimated row size (in bytes). */
     public final Gauge<long[]> estimatedRowSizeHistogram;
+    /** Approximate number of keys in table. */
+    public final Gauge<Long> estimatedRowCount;
     /** Histogram of estimated number of columns. */
     public final Gauge<long[]> estimatedColumnCountHistogram;
     /** Histogram of the number of sstable data files accessed per read */
@@ -212,28 +215,28 @@ public class ColumnFamilyMetrics
         {
             public Long getValue()
             {
-                return cfs.getDataTracker().getView().getCurrentMemtable().getOperations();
+                return cfs.getTracker().getView().getCurrentMemtable().getOperations();
             }
         });
         memtableOnHeapSize = createColumnFamilyGauge("MemtableOnHeapSize", new Gauge<Long>()
         {
             public Long getValue()
             {
-                return cfs.getDataTracker().getView().getCurrentMemtable().getAllocator().onHeap().owns();
+                return cfs.getTracker().getView().getCurrentMemtable().getAllocator().onHeap().owns();
             }
         });
         memtableOffHeapSize = createColumnFamilyGauge("MemtableOffHeapSize", new Gauge<Long>()
         {
             public Long getValue()
             {
-                return cfs.getDataTracker().getView().getCurrentMemtable().getAllocator().offHeap().owns();
+                return cfs.getTracker().getView().getCurrentMemtable().getAllocator().offHeap().owns();
             }
         });
         memtableLiveDataSize = createColumnFamilyGauge("MemtableLiveDataSize", new Gauge<Long>()
         {
             public Long getValue()
             {
-                return cfs.getDataTracker().getView().getCurrentMemtable().getLiveDataSize();
+                return cfs.getTracker().getView().getCurrentMemtable().getLiveDataSize();
             }
         });
         allMemtablesOnHeapSize = createColumnFamilyGauge("AllMemtablesHeapSize", new Gauge<Long>()
@@ -242,7 +245,7 @@ public class ColumnFamilyMetrics
             {
                 long size = 0;
                 for (ColumnFamilyStore cfs2 : cfs.concatWithIndexes())
-                    size += cfs2.getDataTracker().getView().getCurrentMemtable().getAllocator().onHeap().owns();
+                    size += cfs2.getTracker().getView().getCurrentMemtable().getAllocator().onHeap().owns();
                 return size;
             }
         });
@@ -252,7 +255,7 @@ public class ColumnFamilyMetrics
             {
                 long size = 0;
                 for (ColumnFamilyStore cfs2 : cfs.concatWithIndexes())
-                    size += cfs2.getDataTracker().getView().getCurrentMemtable().getAllocator().offHeap().owns();
+                    size += cfs2.getTracker().getView().getCurrentMemtable().getAllocator().offHeap().owns();
                 return size;
             }
         });
@@ -262,7 +265,7 @@ public class ColumnFamilyMetrics
             {
                 long size = 0;
                 for (ColumnFamilyStore cfs2 : cfs.concatWithIndexes())
-                    size += cfs2.getDataTracker().getView().getCurrentMemtable().getLiveDataSize();
+                    size += cfs2.getTracker().getView().getCurrentMemtable().getLiveDataSize();
                 return size;
             }
         });
@@ -278,6 +281,16 @@ public class ColumnFamilyMetrics
                         return reader.getEstimatedRowSize();
                     }
                 });
+            }
+        });
+        estimatedRowCount = Metrics.register(factory.createMetricName("EstimatedRowCount"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                long memtablePartitions = 0;
+                for (Memtable memtable : cfs.getTracker().getView().getAllMemtables())
+                    memtablePartitions += memtable.partitionCount();
+                return SSTableReader.getApproximateKeyCount(cfs.getSSTables()) + memtablePartitions;
             }
         });
         estimatedColumnCountHistogram = Metrics.register(factory.createMetricName("EstimatedColumnCountHistogram"), new Gauge<long[]>()
@@ -345,7 +358,7 @@ public class ColumnFamilyMetrics
         {
             public Integer getValue()
             {
-                return cfs.getDataTracker().getSSTables().size();
+                return cfs.getTracker().getSSTables().size();
             }
         });
         liveDiskSpaceUsed = createColumnFamilyCounter("LiveDiskSpaceUsed");
@@ -625,6 +638,7 @@ public class ColumnFamilyMetrics
         writeLatency.release();
         rangeLatency.release();
         Metrics.remove(factory.createMetricName("EstimatedRowSizeHistogram"));
+        Metrics.remove(factory.createMetricName("EstimatedRowCount"));
         Metrics.remove(factory.createMetricName("EstimatedColumnCountHistogram"));
         Metrics.remove(factory.createMetricName("KeyCacheHitRate"));
         Metrics.remove(factory.createMetricName("CoordinatorReadLatency"));

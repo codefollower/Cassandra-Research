@@ -60,7 +60,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
                                                              indexedCfMetadata.cfName,
                                                              new LocalPartitioner(getIndexKeyComparator()),
                                                              indexedCfMetadata,
-                                                             baseCfs.getDataTracker().loadsstables);
+                                                             baseCfs.getTracker().loadsstables);
     }
 
     protected AbstractType<?> getIndexKeyComparator()
@@ -152,7 +152,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     {
         Future<?> wait;
         // we synchronise on the baseCfs to make sure we are ordered correctly with other flushes to the base CFS
-        synchronized (baseCfs.getDataTracker())
+        synchronized (baseCfs.getTracker())
         {
             wait = indexCfs.forceFlush();
         }
@@ -188,5 +188,11 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     public long estimateResultRows()
     {
         return getIndexCfs().getMeanColumns();
-    } 
+    }
+
+    public boolean validate(ByteBuffer rowKey, Cell cell)
+    {
+        return getIndexedValue(rowKey, cell).remaining() < FBUtilities.MAX_UNSIGNED_SHORT
+            && makeIndexColumnName(rowKey, cell).toByteBuffer().remaining() < FBUtilities.MAX_UNSIGNED_SHORT;
+    }
 }

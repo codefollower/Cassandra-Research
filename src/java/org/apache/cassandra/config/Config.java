@@ -52,9 +52,9 @@ public class Config
     public volatile int permissions_validity_in_ms = 2000;
     public int permissions_cache_max_entries = 1000;
     public volatile int permissions_update_interval_in_ms = -1;
-    public int roles_validity_in_ms = 2000;
+    public volatile int roles_validity_in_ms = 2000;
     public int roles_cache_max_entries = 1000;
-    public int roles_update_interval_in_ms = -1;
+    public volatile int roles_update_interval_in_ms = -1;
 
     /* Hashing strategy Random or OPHF */
     public String partitioner;
@@ -118,6 +118,8 @@ public class Config
     public String broadcast_address;
     public String internode_authenticator;
 
+    /* intentionally left set to true, despite being set to false in stock 2.2 cassandra.yaml
+       we don't want to surprise Thrift users who have the setting blank in the yaml during 2.1->2.2 upgrade */
     public Boolean start_rpc = true;
     public String rpc_address;
     public String rpc_interface;
@@ -150,8 +152,8 @@ public class Config
 
     /* if the size of columns or super-columns are more than this, indexing will kick in */
     public Integer column_index_size_in_kb = 64;
-    public Integer batch_size_warn_threshold_in_kb = 5;
-    public volatile Integer batch_size_fail_threshold_in_kb = 50;
+    public volatile int batch_size_warn_threshold_in_kb = 5;
+    public volatile int batch_size_fail_threshold_in_kb = 50;
     public Integer concurrent_compactors;
     public volatile Integer compaction_throughput_mb_per_sec = 16;
 
@@ -261,6 +263,8 @@ public class Config
      */
     public static final int otc_coalescing_window_us_default = 200;
     public int otc_coalescing_window_us = otc_coalescing_window_us_default;
+
+    public boolean enable_user_defined_functions = false;
 
     public static boolean getOutboundBindAny()
     {

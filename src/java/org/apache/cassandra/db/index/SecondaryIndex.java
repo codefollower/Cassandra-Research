@@ -314,8 +314,21 @@ public abstract class SecondaryIndex
 
     /**
      * Returns true if the provided cell name is indexed by this secondary index.
+     *
+     * The default implementation checks whether the name is one the columnDef name,
+     * but this should be overriden but subclass if needed.
      */
     public abstract boolean indexes(CellName name);
+
+    /**
+     * Returns true if the provided column definition is indexed by this secondary index.
+     *
+     * The default implementation checks whether it is contained in this index column definitions set.
+     */
+    public boolean indexes(ColumnDefinition cdef)
+    {
+        return columnDefs.contains(cdef);
+    }
 
     /**
      * This is the primary way to create a secondary index instance for a CF column.
@@ -364,7 +377,7 @@ public abstract class SecondaryIndex
         return index;
     }
 
-    public abstract boolean validate(Cell cell); //Thrift才用(列值长度不能大于64K)，但是CQL没有限制
+    public abstract boolean validate(ByteBuffer rowKey, Cell cell); //Thrift才用(列值长度不能大于64K)，但是CQL没有限制
 
     public abstract long estimateResultRows();
 

@@ -28,16 +28,11 @@ import java.util.zip.Adler32;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
-import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.DataIntegrityMetadata;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.utils.FBUtilities;
-
-import static org.apache.cassandra.io.compress.CompressionMetadata.Writer.OpenType.FINAL;
-import static org.apache.cassandra.io.compress.CompressionMetadata.Writer.OpenType.SHARED;
-import static org.apache.cassandra.io.compress.CompressionMetadata.Writer.OpenType.SHARED_FINAL;
 
 public class CompressedSequentialWriter extends SequentialWriter
 {
@@ -98,12 +93,6 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             throw new FSReadError(e, getPath());
         }
-    }
-
-    @Override
-    public void sync()
-    {
-        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -168,13 +157,11 @@ public class CompressedSequentialWriter extends SequentialWriter
             runPostFlush.run();
     }
 
-    public CompressionMetadata open(long overrideLength, boolean isFinal)
+    public CompressionMetadata open(long overrideLength)
     {
         if (overrideLength <= 0)
-            return metadataWriter.open(uncompressedSize, chunkOffset, isFinal ? FINAL : SHARED_FINAL);
-        // we are early opening the file, make sure we open metadata with the correct size
-        assert !isFinal;
-        return metadataWriter.open(overrideLength, chunkOffset, SHARED);
+            overrideLength = uncompressedSize;
+        return metadataWriter.open(overrideLength, chunkOffset);
     }
 
     @Override
@@ -284,37 +271,37 @@ public class CompressedSequentialWriter extends SequentialWriter
         }
     }
 
-    @Override
-    public void close()
+    protected class TransactionalProxy extends SequentialWriter.TransactionalProxy
     {
-        if (buffer == null)
-            return;
-
-        long finalPosition = current();
-
-        super.close();
-        sstableMetadataCollector.addCompressionRatio(compressedSize, uncompressedSize);
-        try
+        @Override
+        protected Throwable doCommit(Throwable accumulate)
         {
-            metadataWriter.close(finalPosition, chunkCount);//在这一步生成CompressionInfo.db文件
+            return metadataWriter.commit(accumulate); //在这一步生成CompressionInfo.db文件
         }
-        catch (IOException e)
+
+        @Override
+        protected Throwable doAbort(Throwable accumulate)
         {
-            throw new FSWriteError(e, getPath());
+            return super.doAbort(metadataWriter.abort(accumulate));
+        }
+
+        @Override
+        protected void doPrepare()
+        {
+            syncInternal();
+            if (descriptor != null)
+                crcMetadata.writeFullChecksum(descriptor);
+            releaseFileHandle();
+            sstableMetadataCollector.addCompressionRatio(compressedSize, uncompressedSize);
+            metadataWriter.finalizeLength(current(), chunkCount).prepareToCommit();
         }
     }
 
-    public void abort()
-    {
-        super.abort();
-        metadataWriter.abort();
-    }
-
     @Override
-    public void writeFullChecksum(Descriptor descriptor)
+    protected SequentialWriter.TransactionalProxy txnProxy()
     {
         //写Digest.adler32文件，用的是java.util.zip.Adler32.Adler32()
-        crcMetadata.writeFullChecksum(descriptor);
+        return new TransactionalProxy();
     }
 
     /**

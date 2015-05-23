@@ -9,6 +9,7 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 
+import static org.apache.cassandra.utils.Throwables.maybeFail;
 import static org.apache.cassandra.utils.Throwables.merge;
 
 /**
@@ -59,7 +60,7 @@ public final class Refs<T extends RefCounted<T>> extends AbstractCollection<T> i
      * @param referenced the object we have a Ref to
      * @return the Ref to said object
      */
-    public Ref get(T referenced)
+    public Ref<T> get(T referenced)
     {
         return references.get(referenced);
     }
@@ -204,7 +205,10 @@ public final class Refs<T extends RefCounted<T>> extends AbstractCollection<T> i
 
     public static void release(Iterable<? extends Ref<?>> refs)
     {
-        Throwable fail = null;
+        maybeFail(release(refs, null));
+    }
+    public static Throwable release(Iterable<? extends Ref<?>> refs, Throwable accumulate)
+    {
         for (Ref ref : refs)
         {
             try
@@ -213,11 +217,10 @@ public final class Refs<T extends RefCounted<T>> extends AbstractCollection<T> i
             }
             catch (Throwable t)
             {
-                fail = merge(fail, t);
+                accumulate = merge(accumulate, t);
             }
         }
-        if (fail != null)
-            throw Throwables.propagate(fail);
+        return accumulate;
     }
 
     public static <T extends SelfRefCounted<T>> Iterable<Ref<T>> selfRefs(Iterable<T> refs)

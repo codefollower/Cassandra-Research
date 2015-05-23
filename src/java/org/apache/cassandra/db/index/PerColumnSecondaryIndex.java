@@ -64,7 +64,11 @@ public abstract class PerColumnSecondaryIndex extends SecondaryIndex
         return getIndexName();
     }
 
-    @Override
+    public boolean validate(ByteBuffer rowKey, Cell cell)
+    {
+        return validate(cell);
+    }
+
     public boolean validate(Cell cell) //Thrift才用(列值长度不能大于64K)，但是CQL没有限制
     {
         return cell.value().remaining() < FBUtilities.MAX_UNSIGNED_SHORT;

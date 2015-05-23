@@ -227,6 +227,9 @@ public class StartupChecks
             {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException
                 {
+                    if (!file.toString().endsWith(".db"))
+                        return FileVisitResult.CONTINUE;
+
                     try
                     {
                         if (!Descriptor.fromFilename(file.toString()).isCompatible())
@@ -277,7 +280,7 @@ public class StartupChecks
             // check the system keyspace to keep user from shooting self in foot by changing partitioner, cluster name, etc.
             // we do a one-off scrub of the system keyspace first; we can't load the list of the rest of the keyspaces,
             // until system keyspace is opened.
-            Keyspace systemKs = Keyspace.open(SystemKeyspace.NAME);
+
             for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(SystemKeyspace.NAME).values())
                 ColumnFamilyStore.scrubDataDirectories(cfm);
 

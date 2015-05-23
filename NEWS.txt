@@ -13,7 +13,7 @@ restore snapshots created with the previous major version using the
 'sstableloader' tool. You can upgrade the file format of your snapshots
 using the provided 'sstableupgrade' tool.
 
-3.0
+2.2
 ===
 
 New features
@@ -48,6 +48,12 @@ New features
      directory.
    - Support for user-defined functions and user-defined aggregates have
      been added to CQL.
+     ************************************************************************
+     IMPORTANT NOTE: user-defined functions can be used to execute
+     arbitrary and possibly evil code in Cassandra 2.2-beta1.
+     To enable UDFs edit cassandra.yaml and set enable_user_defined_functions
+     to true. CASSANDRA-9402 will add a security manager for UDFs.
+     ************************************************************************
    - Row-cache is now fully off-heap.
    - jemalloc is now automatically preloaded and used on Linux and OS-X if
      installed.
@@ -70,11 +76,20 @@ New features
      In a QUERY request an unset limit is treated as 'unlimited'.
      Unset WHERE clauses with unset partition column, clustering column
      or index column are not allowed.
+   - New `ByteType` (cql tinyint). 1-byte signed integer
+   - New `ShortType` (cql smallint). 2-byte signed integer
+   - New `SimpleDateType` (cql date). 4-byte unsigned integer
+   - New `TimeType` (cql time). 8-byte long
 
 
 Upgrading
 ---------
+   - Thrift rpc is no longer being started by default.
+     Set `start_rpc` parameter to `true` to enable it.
    - Pig's CqlStorage has been removed, use CqlNativeStorage instead
+   - Pig's CassandraStorage has been deprecated. CassandraStorage
+     should only be used against tables created via thrift.
+     Use CqlNativeStorage for all other tables.
    - IAuthenticator been updated to remove responsibility for user/role
      maintenance and is now solely responsible for validating credentials,
      This is primarily done via SASL, though an optional method exists for
@@ -111,11 +126,6 @@ Upgrading
     - The option to omit cold sstables with size tiered compaction has been
       removed - it is almost always better to use date tiered compaction for
       workloads that have cold data. 
-
-New features
-------------
-    - New `SimpleDateType` (cql date). 4-byte unsigned integer w/out timestamp
-    - New `TimeType` (cql time). 8-byte long nano-second resolution timestamp
 
 2.1.4
 =====

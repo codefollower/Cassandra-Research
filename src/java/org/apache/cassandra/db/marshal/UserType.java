@@ -20,6 +20,7 @@ package org.apache.cassandra.db.marshal;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import com.google.common.base.Objects;
@@ -60,7 +61,7 @@ public class UserType extends TupleType
         {
             try
             {
-                stringFieldNames.add(ByteBufferUtil.string(fieldName, Charset.forName("UTF-8")));
+                stringFieldNames.add(ByteBufferUtil.string(fieldName, StandardCharsets.UTF_8));
             }
             catch (CharacterCodingException ex)
             {
@@ -149,6 +150,9 @@ public class UserType extends TupleType
     @Override
     public Term fromJSONObject(Object parsed) throws MarshalException
     {
+        if (parsed instanceof String)
+            parsed = Json.decodeJson((String) parsed);
+
         if (!(parsed instanceof Map))
             throw new MarshalException(String.format(
                     "Expected a map, but got a %s: %s", parsed.getClass().getSimpleName(), parsed));
