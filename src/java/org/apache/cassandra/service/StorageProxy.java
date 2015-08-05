@@ -558,7 +558,7 @@ public class StorageProxy implements StorageProxyMBean
                 responseHandler.get();
             }
         }
-        catch (WriteTimeoutException|WriteFailureException ex)
+        catch (WriteTimeoutException|WriteFailureException ex) //在responseHandler.get()里抛出
         {
             if (consistency_level == ConsistencyLevel.ANY)
             {
@@ -582,13 +582,13 @@ public class StorageProxy implements StorageProxyMBean
                 throw ex;
             }
         }
-        catch (UnavailableException e)
+        catch (UnavailableException e) //在AbstractWriteResponseHandler.assureSufficientLiveNodes()里抛出
         {
             writeMetrics.unavailables.mark();
             Tracing.trace("Unavailable");
             throw e;
         }
-        catch (OverloadedException e)
+        catch (OverloadedException e) //在sendToHintedEndpoints里抛出
         {
             writeMetrics.unavailables.mark();
             Tracing.trace("Overloaded");

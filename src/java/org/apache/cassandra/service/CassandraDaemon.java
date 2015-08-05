@@ -331,27 +331,6 @@ public class CassandraDaemon
 
     private void logSystemInfo()
     {
-//<<<<<<< HEAD
-//        try
-//        {
-//            logger.info("Hostname: {}", InetAddress.getLocalHost().getHostName());
-//        }
-//        catch (UnknownHostException e1)
-//        {
-//            logger.info("Could not resolve local host");
-//        }
-//
-//        logger.info("JVM vendor/version: {}/{}", System.getProperty("java.vm.name"), System.getProperty("java.version"));
-//        //logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
-//        //我加上的
-//        logger.info("Heap size: {}m/{}m", Runtime.getRuntime().totalMemory() / 1024 / 1024,
-//                Runtime.getRuntime().maxMemory() / 1024 / 1024);
-//
-//        for(MemoryPoolMXBean pool: ManagementFactory.getMemoryPoolMXBeans())
-//            logger.info("{} {}: {}", pool.getName(), pool.getType(), pool.getPeakUsage());
-//
-//        logger.info("Classpath: {}", System.getProperty("java.class.path"));
-//=======
     	if (logger.isInfoEnabled())
     	{
 	        try
@@ -364,7 +343,10 @@ public class CassandraDaemon
 	        }
 	
 	        logger.info("JVM vendor/version: {}/{}", System.getProperty("java.vm.name"), System.getProperty("java.version"));
-	        logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
+	        //logger.info("Heap size: {}/{}", Runtime.getRuntime().totalMemory(), Runtime.getRuntime().maxMemory());
+	        //我加上的
+	        logger.info("Heap size: {}m/{}m", Runtime.getRuntime().totalMemory() / 1024 / 1024,
+	                Runtime.getRuntime().maxMemory() / 1024 / 1024);
 	
 	        for(MemoryPoolMXBean pool: ManagementFactory.getMemoryPoolMXBeans())
 	            logger.info("{} {}: {}", pool.getName(), pool.getType(), pool.getPeakUsage());
