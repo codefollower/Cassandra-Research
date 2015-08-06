@@ -24,12 +24,10 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.annotation.Nullable;
-
-import com.google.common.base.Function;
 import com.google.common.collect.*;
 
-import org.apache.cassandra.db.lifecycle.View;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.RowPosition;
+import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -137,7 +135,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     // stream requests to send to the peer
     protected final Set<StreamRequest> requests = Sets.newConcurrentHashSet();
     // streaming tasks are created and managed per ColumnFamily ID
-    private final Map<UUID, StreamTransferTask> transfers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, StreamTransferTask> transfers = new ConcurrentHashMap<>();
     // data receivers, filled after receiving prepare message
     private final Map<UUID, StreamReceiveTask> receivers = new ConcurrentHashMap<>();
     private final StreamingMetrics metrics;
@@ -209,6 +207,12 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         return isIncremental;
     }
 
+
+    public LifecycleTransaction getTransaction(UUID cfId)
+    {
+        assert receivers.containsKey(cfId);
+        return receivers.get(cfId).txn;
+    }
 
     /**
      * Bind this session to report to specific {@link StreamResultFuture} and
@@ -316,31 +320,23 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         {
             for (ColumnFamilyStore cfStore : stores)
             {
-                final List<AbstractBounds<RowPosition>> rowBoundsList = new ArrayList<>(ranges.size());
+                final List<AbstractBounds<PartitionPosition>> rowBoundsList = new ArrayList<>(ranges.size());
                 for (Range<Token> range : ranges)
                     rowBoundsList.add(Range.makeRowRange(range));
-                refs.addAll(cfStore.selectAndReference(new Function<View, List<SSTableReader>>()
-                {
-                    public List<SSTableReader> apply(View view)
+                refs.addAll(cfStore.selectAndReference(view -> {
+                    Set<SSTableReader> sstables = Sets.newHashSet();
+                    for (AbstractBounds<PartitionPosition> rowBounds : rowBoundsList)
                     {
-                        List<SSTableReader> filteredSSTables = ColumnFamilyStore.CANONICAL_SSTABLES.apply(view);
-                        Set<SSTableReader> sstables = Sets.newHashSet();
-                        if (filteredSSTables != null)
+                        for (SSTableReader sstable : view.sstablesInBounds(SSTableSet.CANONICAL, rowBounds))
                         {
-                            for (AbstractBounds<RowPosition> rowBounds : rowBoundsList)
-                            {
-                                // sstableInBounds may contain early opened sstables
-                                for (SSTableReader sstable : view.sstablesInBounds(rowBounds))
-                                {
-                                    if (filteredSSTables.contains(sstable) && (!isIncremental || !sstable.isRepaired()))
-                                        sstables.add(sstable);
-                                }
-                            }
+                            if (!isIncremental || !sstable.isRepaired())
+                                sstables.add(sstable);
                         }
-
-                        logger.debug("ViewFilter for {}/{} sstables", sstables.size(), view.sstables.size());
-                        return ImmutableList.copyOf(sstables);
                     }
+
+                    if (logger.isDebugEnabled())
+                        logger.debug("ViewFilter for {}/{} sstables", sstables.size(), Iterables.size(view.sstables(SSTableSet.CANONICAL)));
+                    return sstables;
                 }).refs);
             }
 
@@ -382,8 +378,11 @@ public class StreamSession implements IEndpointStateChangeSubscriber
             StreamTransferTask task = transfers.get(cfId);
             if (task == null)
             {
-                task = new StreamTransferTask(this, cfId);
-                transfers.put(cfId, task);
+                //guarantee atomicity
+                StreamTransferTask newTask = new StreamTransferTask(this, cfId);
+                task = transfers.putIfAbsent(cfId, newTask);
+                if (task == null)
+                    task = newTask;
             }
             task.addTransferFile(details.ref, details.estimatedKeys, details.sections, details.repairedAt);
             iter.remove();

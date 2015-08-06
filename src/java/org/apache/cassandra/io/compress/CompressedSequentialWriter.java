@@ -32,7 +32,7 @@ import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.DataIntegrityMetadata;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.SequentialWriter;
-import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.schema.CompressionParams;
 
 public class CompressedSequentialWriter extends SequentialWriter
 {
@@ -51,7 +51,7 @@ public class CompressedSequentialWriter extends SequentialWriter
     private final ICompressor compressor;
 
     // used to store compressed data
-    private final ICompressor.WrappedByteBuffer compressed;
+    private ByteBuffer compressed;
 
     // holds a number of already written chunks
     private int chunkCount = 0;
@@ -64,16 +64,14 @@ public class CompressedSequentialWriter extends SequentialWriter
 
     public CompressedSequentialWriter(File file,
                                       String offsetsPath,
-                                      CompressionParameters parameters,
+                                      CompressionParams parameters,
                                       MetadataCollector sstableMetadataCollector)
     {
-        super(file, parameters.chunkLength(), parameters.sstableCompressor.useDirectOutputByteBuffers());
-        this.compressor = parameters.sstableCompressor;
+        super(file, parameters.chunkLength(), parameters.getSstableCompressor().preferredBufferType());
+        this.compressor = parameters.getSstableCompressor();
 
         // buffer for compression should be the same size as buffer itself
-        compressed = compressor.useDirectOutputByteBuffers()
-            ? new ICompressor.WrappedByteBuffer(ByteBuffer.allocateDirect(compressor.initialCompressedBufferLength(buffer.capacity())))
-            : new ICompressor.WrappedByteBuffer(ByteBuffer.allocate(compressor.initialCompressedBufferLength(buffer.capacity())));
+        compressed = compressor.preferredBufferType().allocate(compressor.initialCompressedBufferLength(buffer.capacity()));
 
         /* Index File (-CompressionInfo.db component) and it's header */
         metadataWriter = CompressionMetadata.Writer.open(parameters, offsetsPath);
@@ -106,23 +104,27 @@ public class CompressedSequentialWriter extends SequentialWriter
     {
         seekToChunkStart(); // why is this necessary? seems like it should always be at chunk start in normal operation
 
-        int compressedLength;
         try
         {
             // compressing data with buffer re-use
             buffer.flip();
-            compressed.buffer.clear();
-            //buffer是输入，压缩后放到compressed中
-            compressedLength = compressor.compress(buffer, compressed);
-
-            // Compressors don't modify sentinels in our BB - we rely on buffer.position() for bufferOffset adjustment
-            buffer.position(buffer.limit());
+//<<<<<<< HEAD
+//            compressed.buffer.clear();
+//            //buffer是输入，压缩后放到compressed中
+//            compressedLength = compressor.compress(buffer, compressed);
+//
+//            // Compressors don't modify sentinels in our BB - we rely on buffer.position() for bufferOffset adjustment
+//            buffer.position(buffer.limit());
+//=======
+            compressed.clear();
+            compressor.compress(buffer, compressed);
         }
         catch (IOException e)
         {
             throw new RuntimeException("Compression exception", e); // shouldn't happen
         }
 
+        int compressedLength = compressed.position();
         uncompressedSize += buffer.position();
         compressedSize += compressedLength;
 
@@ -132,15 +134,13 @@ public class CompressedSequentialWriter extends SequentialWriter
             metadataWriter.addOffset(chunkOffset);
             chunkCount++;
 
-            assert compressedLength <= compressed.buffer.capacity();
-
             // write out the compressed data
-            compressed.buffer.flip();
-            channel.write(compressed.buffer);
+            compressed.flip();
+            channel.write(compressed);
 
             // write corresponding checksum
-            compressed.buffer.rewind();
-            crcMetadata.appendDirect(compressed.buffer, true);
+            compressed.rewind();
+            crcMetadata.appendDirect(compressed, true);
             lastFlushOffset += compressedLength + 4;
 
             // adjust our bufferOffset to account for the new uncompressed data we've now written out
@@ -194,24 +194,22 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // compressed chunk size (- 4 bytes reserved for checksum)
         int chunkSize = (int) (metadataWriter.chunkOffsetBy(realMark.nextChunkIndex) - chunkOffset - 4);
-        if (compressed.buffer.capacity() < chunkSize)
-            compressed.buffer = compressor.useDirectOutputByteBuffers()
-                    ? ByteBuffer.allocateDirect(chunkSize)
-                    : ByteBuffer.allocate(chunkSize);
+        if (compressed.capacity() < chunkSize)
+            compressed = compressor.preferredBufferType().allocate(chunkSize);
 
         try
         {
-            compressed.buffer.clear();
-            compressed.buffer.limit(chunkSize);
+            compressed.clear();
+            compressed.limit(chunkSize);
             channel.position(chunkOffset);
-            channel.read(compressed.buffer);
+            channel.read(compressed);
 
             try
             {
                 // Repopulate buffer from compressed data
                 buffer.clear();
-                compressed.buffer.flip();
-                compressor.uncompress(compressed.buffer, buffer);
+                compressed.flip();
+                compressor.uncompress(compressed, buffer);
             }
             catch (IOException e)
             {
@@ -219,8 +217,8 @@ public class CompressedSequentialWriter extends SequentialWriter
             }
 
             Adler32 checksum = new Adler32();
-
-            FBUtilities.directCheckSum(checksum, compressed.buffer);
+            compressed.rewind();
+            checksum.update(compressed);
 
             crcCheckBuffer.clear();
             channel.read(crcCheckBuffer);

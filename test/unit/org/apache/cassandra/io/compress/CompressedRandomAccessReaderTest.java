@@ -21,12 +21,11 @@ package org.apache.cassandra.io.compress;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.util.Collections;
 import java.util.Random;
 
 import org.junit.Test;
 
-import org.apache.cassandra.db.composites.SimpleDenseCellNameType;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
@@ -35,6 +34,8 @@ import org.apache.cassandra.io.util.ChannelProxy;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.io.util.SequentialWriter;
+import org.apache.cassandra.schema.CompressionParams;
+import org.apache.cassandra.utils.SyncUtil;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -46,7 +47,7 @@ public class CompressedRandomAccessReaderTest
     {
         // test reset in current buffer or previous one
         testResetAndTruncate(File.createTempFile("normal", "1"), false, 10);
-        testResetAndTruncate(File.createTempFile("normal", "2"), false, CompressionParameters.DEFAULT_CHUNK_LENGTH);
+        testResetAndTruncate(File.createTempFile("normal", "2"), false, CompressionParams.DEFAULT_CHUNK_LENGTH);
     }
 
     @Test
@@ -54,7 +55,7 @@ public class CompressedRandomAccessReaderTest
     {
         // test reset in current buffer or previous one
         testResetAndTruncate(File.createTempFile("compressed", "1"), true, 10);
-        testResetAndTruncate(File.createTempFile("compressed", "2"), true, CompressionParameters.DEFAULT_CHUNK_LENGTH);
+        testResetAndTruncate(File.createTempFile("compressed", "2"), true, CompressionParams.DEFAULT_CHUNK_LENGTH);
     }
 
     @Test
@@ -66,8 +67,8 @@ public class CompressedRandomAccessReaderTest
         try
         {
 
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(new SimpleDenseCellNameType(BytesType.instance));
-            CompressedSequentialWriter writer = new CompressedSequentialWriter(f, filename + ".metadata", new CompressionParameters(SnappyCompressor.instance, 32, Collections.<String, String>emptyMap()), sstableMetadataCollector);
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance));
+            CompressedSequentialWriter writer = new CompressedSequentialWriter(f, filename + ".metadata", CompressionParams.snappy(32), sstableMetadataCollector);
 
             for (int i = 0; i < 20; i++)
                 writer.write("x".getBytes());
@@ -96,8 +97,8 @@ public class CompressedRandomAccessReaderTest
             if (f.exists())
                 f.delete();
             File metadata = new File(filename+ ".metadata");
-                if (metadata.exists())
-                    metadata.delete();
+            if (metadata.exists())
+                metadata.delete();
         }
     }
 
@@ -107,10 +108,10 @@ public class CompressedRandomAccessReaderTest
         ChannelProxy channel = new ChannelProxy(f);
         try
         {
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(new SimpleDenseCellNameType(BytesType.instance)).replayPosition(null);
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance)).replayPosition(null);
             SequentialWriter writer = compressed
-                ? new CompressedSequentialWriter(f, filename + ".metadata", new CompressionParameters(SnappyCompressor.instance), sstableMetadataCollector)
-                : new SequentialWriter(f, CompressionParameters.DEFAULT_CHUNK_LENGTH, false);
+                ? new CompressedSequentialWriter(f, filename + ".metadata", CompressionParams.snappy(), sstableMetadataCollector)
+                : SequentialWriter.open(f);
 
             writer.write("The quick ".getBytes());
             FileMark mark = writer.mark();
@@ -160,8 +161,8 @@ public class CompressedRandomAccessReaderTest
         File metadata = new File(file.getPath() + ".meta");
         metadata.deleteOnExit();
 
-        MetadataCollector sstableMetadataCollector = new MetadataCollector(new SimpleDenseCellNameType(BytesType.instance)).replayPosition(null);
-        try (SequentialWriter writer = new CompressedSequentialWriter(file, metadata.getPath(), new CompressionParameters(SnappyCompressor.instance), sstableMetadataCollector))
+        MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance)).replayPosition(null);
+        try (SequentialWriter writer = new CompressedSequentialWriter(file, metadata.getPath(), CompressionParams.snappy(), sstableMetadataCollector))
         {
             writer.write(CONTENT.getBytes());
             writer.finish();
@@ -196,7 +197,7 @@ public class CompressedRandomAccessReaderTest
             for (int i = 0; i < checksum.length; i++)
             {
                 checksumModifier.write(random.nextInt());
-                checksumModifier.getFD().sync(); // making sure that change was synced with disk
+                SyncUtil.sync(checksumModifier); // making sure that change was synced with disk
 
                 final RandomAccessReader r = CompressedRandomAccessReader.open(channel, meta);
 
@@ -238,6 +239,6 @@ public class CompressedRandomAccessReaderTest
     {
         file.seek(checksumOffset);
         file.write(checksum);
-        file.getFD().sync();
+        SyncUtil.sync(file);
     }
 }

@@ -22,6 +22,7 @@ import java.io.FilenameFilter;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Files;
@@ -31,14 +32,14 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
+import org.apache.cassandra.Util;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.dht.*;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.OutputHandler;
@@ -65,76 +66,79 @@ public class CQLSSTableWriterTest
     @Test
     public void testUnsortedWriter() throws Exception
     {
-        String KS = "cql_keyspace";
-        String TABLE = "table1";
-
-        File tempdir = Files.createTempDir();
-        File dataDir = new File(tempdir.getAbsolutePath() + File.separator + KS + File.separator + TABLE);
-        assert dataDir.mkdirs();
-
-        String schema = "CREATE TABLE cql_keyspace.table1 ("
-                      + "  k int PRIMARY KEY,"
-                      + "  v1 text,"
-                      + "  v2 int"
-                      + ")";
-        String insert = "INSERT INTO cql_keyspace.table1 (k, v1, v2) VALUES (?, ?, ?)";
-        CQLSSTableWriter writer = CQLSSTableWriter.builder()
-                                                  .inDirectory(dataDir)
-                                                  .forTable(schema)
-                                                  .withPartitioner(StorageService.getPartitioner())
-                                                  .using(insert).build();
-
-        writer.addRow(0, "test1", 24);
-        writer.addRow(1, "test2", null);
-        writer.addRow(2, "test3", 42);
-        writer.addRow(ImmutableMap.<String, Object>of("k", 3, "v2", 12));
-        writer.close();
-
-        SSTableLoader loader = new SSTableLoader(dataDir, new SSTableLoader.Client()
+        try (AutoCloseable switcher = Util.switchPartitioner(ByteOrderedPartitioner.instance))
         {
-            private String keyspace;
+            String KS = "cql_keyspace";
+            String TABLE = "table1";
 
-            public void init(String keyspace)
+            File tempdir = Files.createTempDir();
+            File dataDir = new File(tempdir.getAbsolutePath() + File.separator + KS + File.separator + TABLE);
+            assert dataDir.mkdirs();
+
+            String schema = "CREATE TABLE cql_keyspace.table1 ("
+                          + "  k int PRIMARY KEY,"
+                          + "  v1 text,"
+                          + "  v2 int"
+                          + ")";
+            String insert = "INSERT INTO cql_keyspace.table1 (k, v1, v2) VALUES (?, ?, ?)";
+            CQLSSTableWriter writer = CQLSSTableWriter.builder()
+                                                      .inDirectory(dataDir)
+                                                      .forTable(schema)
+                                                      .using(insert).build();
+
+            writer.addRow(0, "test1", 24);
+            writer.addRow(1, "test2", 44);
+            writer.addRow(2, "test3", 42);
+            writer.addRow(ImmutableMap.<String, Object>of("k", 3, "v2", 12));
+
+            writer.close();
+
+            SSTableLoader loader = new SSTableLoader(dataDir, new SSTableLoader.Client()
             {
-                this.keyspace = keyspace;
-                for (Range<Token> range : StorageService.instance.getLocalRanges("cql_keyspace"))
-                    addRangeForEndpoint(range, FBUtilities.getBroadcastAddress());
-                setPartitioner(StorageService.getPartitioner());
-            }
+                private String keyspace;
 
-            public CFMetaData getTableMetadata(String tableName)
-            {
-                return Schema.instance.getCFMetaData(keyspace, tableName);
-            }
-        }, new OutputHandler.SystemOutput(false, false));
+                public void init(String keyspace)
+                {
+                    this.keyspace = keyspace;
+                    for (Range<Token> range : StorageService.instance.getLocalRanges("cql_keyspace"))
+                        addRangeForEndpoint(range, FBUtilities.getBroadcastAddress());
+                }
 
-        loader.stream().get();
+                public CFMetaData getTableMetadata(String cfName)
+                {
+                    return Schema.instance.getCFMetaData(keyspace, cfName);
+                }
+            }, new OutputHandler.SystemOutput(false, false));
 
-        UntypedResultSet rs = QueryProcessor.executeInternal("SELECT * FROM cql_keyspace.table1;");
-        assertEquals(4, rs.size());
+            loader.stream().get();
 
-        Iterator<UntypedResultSet.Row> iter = rs.iterator();
-        UntypedResultSet.Row row;
+            UntypedResultSet rs = QueryProcessor.executeInternal("SELECT * FROM cql_keyspace.table1;");
+            assertEquals(4, rs.size());
 
-        row = iter.next();
-        assertEquals(0, row.getInt("k"));
-        assertEquals("test1", row.getString("v1"));
-        assertEquals(24, row.getInt("v2"));
+            Iterator<UntypedResultSet.Row> iter = rs.iterator();
+            UntypedResultSet.Row row;
 
-        row = iter.next();
-        assertEquals(1, row.getInt("k"));
-        assertEquals("test2", row.getString("v1"));
-        assertFalse(row.has("v2"));
+            row = iter.next();
+            assertEquals(0, row.getInt("k"));
+            assertEquals("test1", row.getString("v1"));
+            assertEquals(24, row.getInt("v2"));
 
-        row = iter.next();
-        assertEquals(2, row.getInt("k"));
-        assertEquals("test3", row.getString("v1"));
-        assertEquals(42, row.getInt("v2"));
+            row = iter.next();
+            assertEquals(1, row.getInt("k"));
+            assertEquals("test2", row.getString("v1"));
+            //assertFalse(row.has("v2"));
+            assertEquals(44, row.getInt("v2"));
 
-        row = iter.next();
-        assertEquals(3, row.getInt("k"));
-        assertEquals(null, row.getBytes("v1")); // Using getBytes because we know it won't NPE
-        assertEquals(12, row.getInt("v2"));
+            row = iter.next();
+            assertEquals(2, row.getInt("k"));
+            assertEquals("test3", row.getString("v1"));
+            assertEquals(42, row.getInt("v2"));
+
+            row = iter.next();
+            assertEquals(3, row.getInt("k"));
+            assertEquals(null, row.getBytes("v1")); // Using getBytes because we know it won't NPE
+            assertEquals(12, row.getInt("v2"));
+        }
     }
 
     @Test
@@ -150,24 +154,21 @@ public class CQLSSTableWriterTest
         File dataDir = new File(tempdir.getAbsolutePath() + File.separator + KS + File.separator + TABLE);
         assert dataDir.mkdirs();
         String schema = "CREATE TABLE ks.test ("
-                      + "  k int,"
-                      + "  c int,"
-                      + "  v blob,"
-                      + "  PRIMARY KEY (k,c)"
+                      + "  k int PRIMARY KEY,"
+                      + "  v blob"
                       + ")";
-        String insert = "INSERT INTO ks.test (k, c, v) VALUES (?, ?, ?)";
+        String insert = "INSERT INTO ks.test (k, v) VALUES (?, ?)";
         CQLSSTableWriter writer = CQLSSTableWriter.builder()
                                                   .inDirectory(dataDir)
                                                   .forTable(schema)
-                                                  .withPartitioner(StorageService.getPartitioner())
                                                   .using(insert)
                                                   .withBufferSizeInMB(1)
                                                   .build();
 
         ByteBuffer val = ByteBuffer.allocate(1024 * 1050);
 
-        writer.addRow(0, 0, val);
-        writer.addRow(0, 1, val);
+        writer.addRow(0, val);
+        writer.addRow(1, val);
         writer.close();
 
         FilenameFilter filterDataFiles = new FilenameFilter()
@@ -179,6 +180,33 @@ public class CQLSSTableWriterTest
         };
         assert dataDir.list(filterDataFiles).length > 1 : Arrays.toString(dataDir.list(filterDataFiles));
     }
+
+
+    @Test
+    public void testSyncNoEmptyRows() throws Exception
+    {
+        // Check that the write does not throw an empty partition error (#9071)
+        File tempdir = Files.createTempDir();
+        String schema = "CREATE TABLE ks.test2 ("
+                        + "  k UUID,"
+                        + "  c int,"
+                        + "  PRIMARY KEY (k)"
+                        + ")";
+        String insert = "INSERT INTO ks.test2 (k, c) VALUES (?, ?)";
+        CQLSSTableWriter writer = CQLSSTableWriter.builder()
+                                                  .inDirectory(tempdir)
+                                                  .forTable(schema)
+                                                  .using(insert)
+                                                  .withBufferSizeInMB(1)
+                                                  .build();
+
+        for (int i = 0 ; i < 50000 ; i++) {
+            writer.addRow(UUID.randomUUID(), 0);
+        }
+        writer.close();
+
+    }
+
 
 
     private static final int NUMBER_WRITES_IN_RUNNABLE = 10;
@@ -206,7 +234,6 @@ public class CQLSSTableWriterTest
             CQLSSTableWriter writer = CQLSSTableWriter.builder()
                     .inDirectory(dataDir)
                     .forTable(schema)
-                    .withPartitioner(StorageService.instance.getPartitioner())
                     .using(insert).build();
 
             try
@@ -261,12 +288,11 @@ public class CQLSSTableWriterTest
                 this.keyspace = keyspace;
                 for (Range<Token> range : StorageService.instance.getLocalRanges(KS))
                     addRangeForEndpoint(range, FBUtilities.getBroadcastAddress());
-                setPartitioner(StorageService.getPartitioner());
             }
 
-            public CFMetaData getTableMetadata(String tableName)
+            public CFMetaData getTableMetadata(String cfName)
             {
-                return Schema.instance.getCFMetaData(keyspace, tableName);
+                return Schema.instance.getCFMetaData(keyspace, cfName);
             }
         }, new OutputHandler.SystemOutput(false, false));
 

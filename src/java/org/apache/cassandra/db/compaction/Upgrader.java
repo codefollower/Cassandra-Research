@@ -20,14 +20,19 @@ package org.apache.cassandra.db.compaction;
 import java.io.File;
 import java.util.*;
 
+import com.google.common.base.Throwables;
+import com.google.common.collect.Sets;
+
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.OutputHandler;
 import org.apache.cassandra.utils.UUIDGen;
 
@@ -38,9 +43,8 @@ public class Upgrader
     private final LifecycleTransaction transaction;
     private final File directory;
 
-    private final OperationType compactionType = OperationType.UPGRADE_SSTABLES;
     private final CompactionController controller;
-    private final AbstractCompactionStrategy strategy;
+    private final CompactionStrategyManager strategyManager;
     private final long estimatedRows;
 
     private final OutputHandler outputHandler;
@@ -56,9 +60,9 @@ public class Upgrader
 
         this.controller = new UpgradeController(cfs);
 
-        this.strategy = cfs.getCompactionStrategy();
-        long estimatedTotalKeys = Math.max(cfs.metadata.getMinIndexInterval(), SSTableReader.getApproximateKeyCount(Arrays.asList(this.sstable)));
-        long estimatedSSTables = Math.max(1, SSTableReader.getTotalBytes(Arrays.asList(this.sstable)) / strategy.getMaxSSTableBytes());
+        this.strategyManager = cfs.getCompactionStrategyManager();
+        long estimatedTotalKeys = Math.max(cfs.metadata.params.minIndexInterval, SSTableReader.getApproximateKeyCount(Arrays.asList(this.sstable)));
+        long estimatedSSTables = Math.max(1, SSTableReader.getTotalBytes(Arrays.asList(this.sstable)) / strategyManager.getMaxSSTableBytes());
         this.estimatedRows = (long) Math.ceil((double) estimatedTotalKeys / estimatedSSTables);
     }
 
@@ -75,26 +79,33 @@ public class Upgrader
                 sstableMetadataCollector.addAncestor(i);
         }
         sstableMetadataCollector.sstableLevel(sstable.getSSTableLevel());
-        return SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(directory)), estimatedRows, repairedAt, cfs.metadata, cfs.partitioner, sstableMetadataCollector);
+        return SSTableWriter.create(Descriptor.fromFilename(cfs.getSSTablePath(directory)),
+                                    estimatedRows,
+                                    repairedAt,
+                                    cfs.metadata,
+                                    sstableMetadataCollector,
+                                    SerializationHeader.make(cfs.metadata, Sets.newHashSet(sstable)),
+                                    transaction);
     }
 
-    public void upgrade()
+    public void upgrade(boolean keepOriginals)
     {
         outputHandler.output("Upgrading " + sstable);
-
-        try (SSTableRewriter writer = new SSTableRewriter(cfs, transaction, CompactionTask.getMaxDataAge(transaction.originals()), true);
-             AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(transaction.originals()))
+        int nowInSec = FBUtilities.nowInSeconds();
+        try (SSTableRewriter writer = new SSTableRewriter(cfs, transaction, CompactionTask.getMaxDataAge(transaction.originals()), true).keepOriginals(keepOriginals);
+             AbstractCompactionStrategy.ScannerList scanners = strategyManager.getScanners(transaction.originals());
+             CompactionIterator iter = new CompactionIterator(transaction.opType(), scanners.scanners, controller, nowInSec, UUIDGen.getTimeUUID()))
         {
-            Iterator<AbstractCompactedRow> iter = new CompactionIterable(compactionType, scanners.scanners, controller, DatabaseDescriptor.getSSTableFormat(), UUIDGen.getTimeUUID()).iterator();
             writer.switchWriter(createCompactionWriter(sstable.getSSTableMetadata().repairedAt));
             while (iter.hasNext())
-            {
-                AbstractCompactedRow row = iter.next();
-                writer.append(row);
-            }
+                writer.append(iter.next());
 
             writer.finish();
             outputHandler.output("Upgrade of " + sstable + " complete.");
+        }
+        catch (Exception e)
+        {
+            Throwables.propagate(e);
         }
         finally
         {

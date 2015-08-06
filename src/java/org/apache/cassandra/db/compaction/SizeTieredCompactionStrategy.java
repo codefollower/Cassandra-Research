@@ -22,19 +22,19 @@ import java.util.Map.Entry;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-
-import org.apache.cassandra.db.compaction.writers.CompactionAwareWriter;
-import org.apache.cassandra.db.compaction.writers.SplittingSizeTieredCompactionWriter;
-import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cql3.statements.CFPropDefs;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.compaction.writers.CompactionAwareWriter;
+import org.apache.cassandra.db.compaction.writers.SplittingSizeTieredCompactionWriter;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.schema.CompactionParams;
 import org.apache.cassandra.utils.Pair;
+
+import static com.google.common.collect.Iterables.filter;
 
 public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 {
@@ -75,15 +75,15 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 
     private List<SSTableReader> getNextBackgroundSSTables(final int gcBefore)
     {
-        if (!isEnabled())
-            return Collections.emptyList();
-
         // make local copies so they can't be changed out from under us mid-method
         int minThreshold = cfs.getMinimumCompactionThreshold(); //默认是4
         int maxThreshold = cfs.getMaximumCompactionThreshold(); //默认是32
 
-        //过滤掉发生过异常的SSTableReader
-        Iterable<SSTableReader> candidates = filterSuspectSSTables(Sets.intersection(cfs.getUncompactingSSTables(), sstables));
+//<<<<<<< HEAD
+//        //过滤掉发生过异常的SSTableReader
+//        Iterable<SSTableReader> candidates = filterSuspectSSTables(Sets.intersection(cfs.getUncompactingSSTables(), sstables));
+//=======
+        Iterable<SSTableReader> candidates = filterSuspectSSTables(filter(cfs.getUncompactingSSTables(), sstables::contains));
 
         List<List<SSTableReader>> buckets = getBuckets(createSSTableAndLengthPairs(candidates), sizeTieredOptions.bucketHigh, sizeTieredOptions.bucketLow, sizeTieredOptions.minSSTableSize);
         logger.debug("Compaction buckets are {}", buckets);
@@ -323,11 +323,9 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         return sstr.getReadMeter() == null ? 0.0 : sstr.getReadMeter().twoHourRate() / sstr.estimatedKeys();
     }
 
+    @SuppressWarnings("resource")
     public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-        if (!isEnabled())
-            return null;
-
         while (true)
         {
             List<SSTableReader> hottestBucket = getNextBackgroundSSTables(gcBefore);
@@ -341,6 +339,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         }
     }
 
+    @SuppressWarnings("resource")
     public Collection<AbstractCompactionTask> getMaximalTask(final int gcBefore, boolean splitOutput)
     {
         Iterable<SSTableReader> filteredSSTables = filterSuspectSSTables(sstables);
@@ -354,6 +353,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         return Arrays.<AbstractCompactionTask>asList(new CompactionTask(cfs, txn, gcBefore, false));
     }
 
+    @SuppressWarnings("resource")
     public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, final int gcBefore)
     {
         assert !sstables.isEmpty(); // checked for by CM.submitUserDefined
@@ -456,9 +456,13 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         //uncheckedOptions只是copy了options的值
         uncheckedOptions = SizeTieredCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
-        //所以这里不会删除options中的值
-        uncheckedOptions.remove(CFPropDefs.KW_MINCOMPACTIONTHRESHOLD);
-        uncheckedOptions.remove(CFPropDefs.KW_MAXCOMPACTIONTHRESHOLD);
+//<<<<<<< HEAD
+//        //所以这里不会删除options中的值
+//        uncheckedOptions.remove(CFPropDefs.KW_MINCOMPACTIONTHRESHOLD);
+//        uncheckedOptions.remove(CFPropDefs.KW_MAXCOMPACTIONTHRESHOLD);
+//=======
+        uncheckedOptions.remove(CompactionParams.Option.MIN_THRESHOLD.toString());
+        uncheckedOptions.remove(CompactionParams.Option.MAX_THRESHOLD.toString());
 
         return uncheckedOptions;
     }
@@ -496,9 +500,11 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         }
 
         @Override
-        public CompactionAwareWriter getCompactionAwareWriter(ColumnFamilyStore cfs, LifecycleTransaction txn, Set<SSTableReader> nonExpiredSSTables)
+        public CompactionAwareWriter getCompactionAwareWriter(ColumnFamilyStore cfs,
+                                                              LifecycleTransaction txn,
+                                                              Set<SSTableReader> nonExpiredSSTables)
         {
-            return new SplittingSizeTieredCompactionWriter(cfs, txn, nonExpiredSSTables, compactionType);
+            return new SplittingSizeTieredCompactionWriter(cfs, txn, nonExpiredSSTables);
         }
     }
 }

@@ -19,6 +19,8 @@ package org.apache.cassandra.db.compaction;
 
 import java.util.*;
 
+import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +29,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.lifecycle.SSTableIntervalTree;
 import org.apache.cassandra.db.lifecycle.Tracker;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.RowPosition;
+import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.utils.AlwaysPresentFilter;
 
 import org.apache.cassandra.utils.OverlapIterator;
@@ -44,7 +46,7 @@ public class CompactionController implements AutoCloseable
 
     public final ColumnFamilyStore cfs;
     private Refs<SSTableReader> overlappingSSTables;
-    private OverlapIterator<RowPosition, SSTableReader> overlapIterator;
+    private OverlapIterator<PartitionPosition, SSTableReader> overlapIterator;
     private final Iterable<SSTableReader> compacting;
 
     public final int gcBefore;
@@ -63,7 +65,7 @@ public class CompactionController implements AutoCloseable
         refreshOverlaps();
     }
 
-    void maybeRefreshOverlaps()
+    public void maybeRefreshOverlaps()
     {
         for (SSTableReader reader : overlappingSSTables)
         {
@@ -83,7 +85,7 @@ public class CompactionController implements AutoCloseable
         if (compacting == null)
             overlappingSSTables = Refs.tryRef(Collections.<SSTableReader>emptyList());
         else
-            overlappingSSTables = cfs.getAndReferenceOverlappingSSTables(compacting);
+            overlappingSSTables = cfs.getAndReferenceOverlappingSSTables(SSTableSet.LIVE, compacting);
         this.overlapIterator = new OverlapIterator<>(buildIntervals(overlappingSSTables));
     }
 
@@ -120,7 +122,12 @@ public class CompactionController implements AutoCloseable
         long minTimestamp = Long.MAX_VALUE;
 
         for (SSTableReader sstable : overlapping)
-            minTimestamp = Math.min(minTimestamp, sstable.getMinTimestamp());
+        {
+            // Overlapping might include fully expired sstables. What we care about here is
+            // the min timestamp of the overlapping sstables that actually contain live data.
+            if (sstable.getSSTableMetadata().maxLocalDeletionTime >= gcBefore)
+                minTimestamp = Math.min(minTimestamp, sstable.getMinTimestamp());
+        }
 
         for (SSTableReader candidate : compacting)
         {
@@ -184,9 +191,9 @@ public class CompactionController implements AutoCloseable
         return min;
     }
 
-    public void invalidateCachedRow(DecoratedKey key)
+    public void invalidateCachedPartition(DecoratedKey key)
     {
-        cfs.invalidateCachedRow(key);
+        cfs.invalidateCachedPartition(key);
     }
 
     public void close()

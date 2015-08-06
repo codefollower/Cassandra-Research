@@ -41,6 +41,11 @@ public class DateType extends AbstractType<Date>
 
     DateType() {} // singleton
 
+    public boolean isEmptyValueMeaningless()
+    {
+        return true;
+    }
+
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
         if (!o1.hasRemaining() || !o2.hasRemaining())
@@ -120,5 +125,11 @@ public class DateType extends AbstractType<Date>
     public TypeSerializer<Date> getSerializer()
     {
         return TimestampSerializer.instance;
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return 8;
     }
 }

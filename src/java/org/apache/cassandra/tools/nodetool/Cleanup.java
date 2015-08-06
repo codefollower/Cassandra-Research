@@ -23,6 +23,7 @@ import io.airlift.command.Command;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
@@ -37,17 +38,18 @@ public class Cleanup extends NodeToolCmd
     public void execute(NodeProbe probe)
     {
         List<String> keyspaces = parseOptionalKeyspace(args, probe);
-        String[] cfnames = parseOptionalColumnFamilies(args);
+        String[] tableNames = parseOptionalTables(args);
 
         for (String keyspace : keyspaces)
         {
-            if (SystemKeyspace.NAME.equals(keyspace))
+            if (Schema.isSystemKeyspace(keyspace))
                 continue;
 
             try
             {
-                probe.forceKeyspaceCleanup(System.out, keyspace, cfnames);
-            } catch (Exception e)
+                probe.forceKeyspaceCleanup(System.out, keyspace, tableNames);
+            }
+            catch (Exception e)
             {
                 throw new RuntimeException("Error occurred during cleanup", e);
             }

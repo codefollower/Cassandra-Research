@@ -27,14 +27,16 @@ import java.nio.file.StandardOpenOption;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.compress.BufferType;
 import org.apache.cassandra.io.compress.CompressedSequentialWriter;
-import org.apache.cassandra.io.compress.CompressionParameters;
+import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.concurrent.Transactional;
 
 import static org.apache.cassandra.utils.Throwables.merge;
+import org.apache.cassandra.utils.SyncUtil;
 
 //先写到一个64K的buffer，然后再同步到硬盘
 //写满buffer时会自动触发一次内部flush(reBuffer=>flushInternal)
@@ -44,14 +46,19 @@ import static org.apache.cassandra.utils.Throwables.merge;
  */
 public class SequentialWriter extends OutputStream implements WritableByteChannel, Transactional
 {
+    private static final int DEFAULT_BUFFER_SIZE = 64 * 1024;
+
     // isDirty - true if this.buffer contains any un-synced bytes
     protected boolean isDirty = false, syncNeeded = false;
 
     // absolute path to the given file
     private final String filePath;
 
-    protected ByteBuffer buffer; //默认64K
-    private final int fd;
+//<<<<<<< HEAD
+//    protected ByteBuffer buffer; //默认64K
+//    private final int fd;
+//=======
+    protected ByteBuffer buffer;
     private int directoryFD;
     // directory should be synced only after first file sync, in other words, only once per file
     private boolean directorySynced = false;
@@ -78,6 +85,8 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     // due to lack of multiple-inheritance, we proxy our transactional implementation
     protected class TransactionalProxy extends AbstractTransactional
     {
+        private boolean deleteFile = true;
+
         @Override
         protected Throwable doPreCleanup(Throwable accumulate)
         {
@@ -117,11 +126,14 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
         protected Throwable doAbort(Throwable accumulate)
         {
-            return FileUtils.deleteWithConfirm(filePath, false, accumulate);
+            if (deleteFile)
+                return FileUtils.deleteWithConfirm(filePath, false, accumulate);
+            else
+                return accumulate;
         }
     }
 
-    public SequentialWriter(File file, int bufferSize, boolean offheap)
+    public SequentialWriter(File file, int bufferSize, BufferType bufferType)
     {
         try
         {
@@ -138,15 +150,16 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
         filePath = file.getAbsolutePath();
 
         // Allow children to allocate buffer as direct (snappy compression) if necessary
-        //只有org.apache.cassandra.io.compress.SnappyCompressor.useDirectOutputByteBuffers()返回true
-        //所以在子类CompressedSequentialWriter的构造函数中当使用SnappyCompressor时offheap为true
-        buffer = offheap ? ByteBuffer.allocateDirect(bufferSize) : ByteBuffer.allocate(bufferSize); //默认64K
+//<<<<<<< HEAD
+//        //只有org.apache.cassandra.io.compress.SnappyCompressor.useDirectOutputByteBuffers()返回true
+//        //所以在子类CompressedSequentialWriter的构造函数中当使用SnappyCompressor时offheap为true
+//        buffer = offheap ? ByteBuffer.allocateDirect(bufferSize) : ByteBuffer.allocate(bufferSize); //默认64K
+//=======
+        buffer = bufferType.allocate(bufferSize);
 
         //默认是false
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
         this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024; //默认是10M
-
-        fd = CLibrary.getfd(channel);
 
         directoryFD = CLibrary.tryOpenDirectory(file.getParent());
         stream = new WrappedDataOutputStreamPlus(this, this);
@@ -157,17 +170,17 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
      */
     public static SequentialWriter open(File file)
     {
-        return new SequentialWriter(file, RandomAccessReader.DEFAULT_BUFFER_SIZE, false);
+        return new SequentialWriter(file, DEFAULT_BUFFER_SIZE, BufferType.ON_HEAP);
     }
 
     public static ChecksummedSequentialWriter open(File file, File crcPath)
     {
-        return new ChecksummedSequentialWriter(file, RandomAccessReader.DEFAULT_BUFFER_SIZE, crcPath);
+        return new ChecksummedSequentialWriter(file, DEFAULT_BUFFER_SIZE, crcPath);
     }
 
     public static CompressedSequentialWriter open(String dataFilePath,
                                                   String offsetsPath,
-                                                  CompressionParameters parameters,
+                                                  CompressionParams parameters,
                                                   MetadataCollector sstableMetadataCollector)
     {
         return new CompressedSequentialWriter(new File(dataFilePath), offsetsPath, parameters, sstableMetadataCollector);
@@ -191,12 +204,30 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
     public void write(byte[] buffer) throws IOException
     {
-        write(ByteBuffer.wrap(buffer, 0, buffer.length));
+        write(buffer, 0, buffer.length);
     }
 
     public void write(byte[] data, int offset, int length) throws IOException
     {
-        write(ByteBuffer.wrap(data, offset, length));
+        if (buffer == null)
+            throw new ClosedChannelException();
+
+        int position = offset;
+        int remaining = length;
+        while (remaining > 0)
+        {
+            if (!buffer.hasRemaining())
+                reBuffer();
+
+            int toCopy = Math.min(remaining, buffer.remaining());
+            buffer.put(data, position, toCopy);
+
+            remaining -= toCopy;
+            position += toCopy;
+
+            isDirty = true;
+            syncNeeded = true;
+        }
     }
 
     public int write(ByteBuffer src) throws IOException
@@ -234,7 +265,7 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     {
         try
         {
-            channel.force(false);
+            SyncUtil.force(channel, false);
         }
         catch (IOException e)
         {
@@ -251,7 +282,7 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
 
             if (!directorySynced) //只可能调用一次，directorySynced初始时为false，除这里之外，没有在其他地方改变过
             {
-                CLibrary.trySync(directoryFD);
+                SyncUtil.trySync(directoryFD);
                 directorySynced = true;
             }
 
@@ -473,6 +504,11 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
     protected TransactionalProxy txnProxy()
     {
         return new TransactionalProxy();
+    }
+
+    public void deleteFile(boolean val)
+    {
+        txnProxy.deleteFile = val;
     }
 
     public void releaseFileHandle()

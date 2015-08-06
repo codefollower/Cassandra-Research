@@ -23,6 +23,7 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.*;
 
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.utils.Throwables;
 
 import static com.google.common.base.Predicates.*;
 import static com.google.common.collect.Iterables.any;
@@ -70,19 +71,10 @@ class Helpers
      * A convenience method for encapsulating this action over multiple SSTableReader with exception-safety
      * @return accumulate if not null (with any thrown exception attached), or any thrown exception otherwise
      */
-    static Throwable setupDeleteNotification(Iterable<SSTableReader> readers, Tracker tracker, Throwable accumulate)
+    static void setupOnline(Iterable<SSTableReader> readers)
     {
-        try
-        {
-            for (SSTableReader reader : readers)
-                reader.setupDeleteNotification(tracker);
-        }
-        catch (Throwable t)
-        {
-            // shouldn't be possible, but in case the contract changes in future and we miss it...
-            accumulate = merge(accumulate, t);
-        }
-        return accumulate;
+        for (SSTableReader reader : readers)
+            reader.setupOnline();
     }
 
     /**
@@ -114,18 +106,51 @@ class Helpers
             assert !reader.isReplaced();
     }
 
-    /**
-     * A convenience method for encapsulating this action over multiple SSTableReader with exception-safety
-     * @return accumulate if not null (with any thrown exception attached), or any thrown exception otherwise
-     */
-    static Throwable markObsolete(Iterable<SSTableReader> readers, Throwable accumulate)
+    static Throwable markObsolete(List<TransactionLogs.Obsoletion> obsoletions, Throwable accumulate)
+    {
+        if (obsoletions == null || obsoletions.isEmpty())
+            return accumulate;
+
+        for (TransactionLogs.Obsoletion obsoletion : obsoletions)
+        {
+            try
+            {
+                obsoletion.reader.markObsolete(obsoletion.tidier);
+            }
+            catch (Throwable t)
+            {
+                accumulate = merge(accumulate, t);
+            }
+        }
+        return accumulate;
+    }
+
+    static Throwable prepareForObsoletion(Iterable<SSTableReader> readers, TransactionLogs txnLogs, List<TransactionLogs.Obsoletion> obsoletions, Throwable accumulate)
     {
         for (SSTableReader reader : readers)
         {
             try
             {
-                boolean firstToCompact = reader.markObsolete();
-                assert firstToCompact : reader + " was already marked compacted";
+                obsoletions.add(new TransactionLogs.Obsoletion(reader, txnLogs.obsoleted(reader)));
+            }
+            catch (Throwable t)
+            {
+                accumulate = Throwables.merge(accumulate, t);
+            }
+        }
+        return accumulate;
+    }
+
+    static Throwable abortObsoletion(List<TransactionLogs.Obsoletion> obsoletions, Throwable accumulate)
+    {
+        if (obsoletions == null || obsoletions.isEmpty())
+            return accumulate;
+
+        for (TransactionLogs.Obsoletion obsoletion : obsoletions)
+        {
+            try
+            {
+                obsoletion.tidier.abort();
             }
             catch (Throwable t)
             {

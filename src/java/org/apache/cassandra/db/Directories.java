@@ -44,36 +44,45 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.*;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
 /**
  * Encapsulate handling of paths to the data files.
  *
- * Since v2.1, the directory layout is the following:
  * <pre> {@code
- *   /<path_to_data_dir>/ks/cf1-cfId/ks-cf1-ka-1-Data.db
- *                         /cf2-cfId/ks-cf2-ka-1-Data.db
+ *   /<path_to_data_dir>/ks/<cf dir>/ks-cf1-jb-1-Data.db
+ *                         /<cf dir>/la-2-Data.db
+ *                         /<cf dir>/.<index name>/ks-cf1.idx-jb-1-Data.db
+ *                         /<cf dir>/.<index name>/la-1-Data.db
  *                         ...
- * } </pre>                      
+ * } </pre>
  *
- * cfId is an hex encoded CFID.
+ * Until v2.0, {@code <cf dir>} is just column family name.
+ * Since v2.1, {@code <cf dir>} has column family ID(cfId) added to its end.
  *
- * For backward compatibility, Directories uses older directory layout if exists.
+ * SSTables from secondary indexes were put in the same directory as their parent.
+ * Since v2.2, they have their own directory under the parent directory whose name is index name.
+ * Upon startup, those secondary index files are moved to new directory when upgrading.
+ *
+ * For backward compatibility, Directories can use directory without cfId if exists.
  *
  * In addition, more that one 'root' data directory can be specified so that
  * {@code <path_to_data_dir>} potentially represents multiple locations.
  * Note that in the case of multiple locations, the manifest for the leveled
  * compaction is only in one of the location.
  *
- * Snapshots (resp. backups) are always created along the sstables thare are
- * snapshoted (resp. backuped) but inside a subdirectory named 'snapshots'
- * (resp. backups) (and snapshots are furter inside a subdirectory of the name
- * of the snapshot).
+ * Snapshots (resp. backups) are always created along the sstables there are
+ * snapshotted (resp. backuped) but inside a subdirectory named 'snapshots'
+ * (resp. backups) (and snapshots are further inside a subdirectory of the name
+ * of the snapshot). For secondary indexes, snapshots (backups) are not created in
+ * their own directory, but are in their parent's snapshot (backup) directory.
  *
  * This class abstracts all those details from the rest of the code.
  */
@@ -83,6 +92,7 @@ public class Directories
 
     public static final String BACKUPS_SUBDIR = "backups";
     public static final String SNAPSHOT_SUBDIR = "snapshots";
+    public static final String TRANSACTIONS_SUBDIR = "transactions";
     public static final String SECONDARY_INDEX_NAME_SEPARATOR = ".";
 
     public static final DataDirectory[] dataDirectories;
@@ -176,30 +186,33 @@ public class Directories
      *
      * @param metadata metadata of ColumnFamily
      */
-    public Directories(CFMetaData metadata)
+    public Directories(final CFMetaData metadata)
     {
         this.metadata = metadata;
 
         String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.cfId));
         int idx = metadata.cfName.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
-        // secondary indicies go in the same directory as the base cf
-        String directoryName;
-        if (idx >= 0)
-        {   
-            //索引也用一个独立的目条来存放，
-            //例如keysindextest.KeysIndexTest_index_f1,
-            //变成keysindextest-71e4fce06fdf11e4954d35ee8e523b2d\.KeysIndexTest_index_f1
-            directoryName = metadata.cfName.substring(0, idx) + "-" + cfId + File.separator + metadata.cfName.substring(idx);
-        }
-        else
-        {
-             directoryName = metadata.cfName + "-" + cfId;
-        }
+//<<<<<<< HEAD
+//        // secondary indicies go in the same directory as the base cf
+//        String directoryName;
+//        if (idx >= 0)
+//        {   
+//            //索引也用一个独立的目条来存放，
+//            //例如keysindextest.KeysIndexTest_index_f1,
+//            //变成keysindextest-71e4fce06fdf11e4954d35ee8e523b2d\.KeysIndexTest_index_f1
+//            directoryName = metadata.cfName.substring(0, idx) + "-" + cfId + File.separator + metadata.cfName.substring(idx);
+//        }
+//        else
+//        {
+//             directoryName = metadata.cfName + "-" + cfId;
+//        }
+//=======
+        String cfName = idx >= 0 ? metadata.cfName.substring(0, idx) : metadata.cfName;
+        String indexNameWithDot = idx >= 0 ? metadata.cfName.substring(idx) : null;
 
         this.dataPaths = new File[dataDirectories.length];
         // If upgraded from version less than 2.1, use existing directories
-        String oldSSTableRelativePath = join(metadata.ksName,
-                                         idx > 0 ? metadata.cfName.substring(0, idx) : metadata.cfName);
+        String oldSSTableRelativePath = join(metadata.ksName, cfName);
         for (int i = 0; i < dataDirectories.length; ++i)
         {
             // check if old SSTable directory exists
@@ -214,11 +227,16 @@ public class Directories
         });
         if (!olderDirectoryExists)
         {
-            // use 2.1-style path names
-        	
-        	String newSSTableRelativePath = join(metadata.ksName, directoryName);
+            // use 2.1+ style
+            String newSSTableRelativePath = join(metadata.ksName, cfName + '-' + cfId);
             for (int i = 0; i < dataDirectories.length; ++i)
                 dataPaths[i] = new File(dataDirectories[i].location, newSSTableRelativePath);
+        }
+        // if index, then move to its own directory
+        if (indexNameWithDot != null)
+        {
+            for (int i = 0; i < dataDirectories.length; ++i)
+                dataPaths[i] = new File(dataPaths[i], indexNameWithDot);
         }
 
         for (File dir : dataPaths)
@@ -232,6 +250,34 @@ public class Directories
                 // don't just let the default exception handler do this, we need the create loop to continue
                 logger.error("Failed to create {} directory", dir);
                 FileUtils.handleFSError(e);
+            }
+        }
+
+        // if index, move existing older versioned SSTable files to new directory
+        if (indexNameWithDot != null)
+        {
+            for (File dataPath : dataPaths)
+            {
+                File[] indexFiles = dataPath.getParentFile().listFiles(new FileFilter()
+                {
+                    @Override
+                    public boolean accept(File file)
+                    {
+                        if (file.isDirectory())
+                            return false;
+
+                        Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(file.getParentFile(),
+                                                                                            file.getName());
+                        return pair != null && pair.left.ksname.equals(metadata.ksName) && pair.left.cfname.equals(metadata.cfName);
+
+                    }
+                });
+                for (File indexFile : indexFiles)
+                {
+                    File destFile = new File(dataPath, indexFile.getName());
+                    logger.debug("Moving index file {} to {}", indexFile, destFile);
+                    FileUtils.renameWithConfirm(indexFile, destFile);
+                }
             }
         }
     }
@@ -380,6 +426,17 @@ public class Directories
         return getSnapshotDirectory(desc.directory, snapshotName);
     }
 
+    /**
+     * Returns directory to write snapshot. If directory does not exist, then one is created.
+     *
+     * If given {@code location} indicates secondary index, this will return
+     * {@code <cf dir>/snapshots/<snapshot name>/.<index name>}.
+     * Otherwise, this will return {@code <cf dir>/snapshots/<snapshot name>}.
+     *
+     * @param location base directory
+     * @param snapshotName snapshot name
+     * @return directory to write snapshot
+     */
     public static File getSnapshotDirectory(File location, String snapshotName)
     {
         if (location.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR))
@@ -394,7 +451,19 @@ public class Directories
 
     public File getSnapshotManifestFile(String snapshotName)
     {
-         return new File(getDirectoryForNewSSTables(), join(SNAPSHOT_SUBDIR, snapshotName, "manifest.json"));
+        File snapshotDir = getSnapshotDirectory(getDirectoryForNewSSTables(), snapshotName);
+        return new File(snapshotDir, "manifest.json");
+    }
+
+    public File getNewEphemeralSnapshotMarkerFile(String snapshotName)
+    {
+        File snapshotDir = new File(getWriteableLocationAsFile(1L), join(SNAPSHOT_SUBDIR, snapshotName));
+        return getEphemeralSnapshotMarkerFile(snapshotDir);
+    }
+
+    private static File getEphemeralSnapshotMarkerFile(File snapshotDirectory)
+    {
+        return new File(snapshotDirectory, "ephemeral.snapshot");
     }
 
     public static File getBackupsDirectory(Descriptor desc)
@@ -412,6 +481,35 @@ public class Directories
         {
             return getOrCreate(location, BACKUPS_SUBDIR);
         }
+    }
+
+    public static File getTransactionsDirectory(File folder)
+    {
+        return getOrCreate(folder, TRANSACTIONS_SUBDIR);
+    }
+
+    public List<File> getExistingDirectories(String subFolder)
+    {
+        List<File> ret = new ArrayList<>();
+        for (File dir : dataPaths)
+        {
+            File subDir = getExistingDirectory(dir, subFolder);
+            if (subDir != null)
+                ret.add(subDir);
+
+        }
+        return ret;
+    }
+
+    public static File getExistingDirectory(File folder, String subFolder)
+    {
+        File subDir = new File(folder, join(subFolder));
+        if (subDir.exists())
+        {
+            assert(subDir.isDirectory());
+            return subDir;
+        }
+        return null;
     }
 
     public SSTableLister sstableLister()
@@ -469,6 +567,7 @@ public class Directories
     public class SSTableLister
     {
         private boolean skipTemporary;
+        private boolean onlyTemporary;
         private boolean includeBackups;
         private boolean onlyBackups;
         private int nbFiles;
@@ -481,6 +580,14 @@ public class Directories
             if (filtered)
                 throw new IllegalStateException("list() has already been called");
             skipTemporary = b;
+            return this;
+        }
+
+        public SSTableLister onlyTemporary(boolean b)
+        {
+            if (filtered)
+                throw new IllegalStateException("list() has already been called");
+            onlyTemporary = b;
             return this;
         }
 
@@ -541,21 +648,25 @@ public class Directories
 
                 if (snapshotName != null)
                 {
-                    getSnapshotDirectory(location, snapshotName).listFiles(getFilter());
+                    getSnapshotDirectory(location, snapshotName).listFiles(getFilter(location));
                     continue;
                 }
 
                 if (!onlyBackups)
-                    location.listFiles(getFilter());
+                    location.listFiles(getFilter(location));
 
                 if (includeBackups)
-                    getBackupsDirectory(location).listFiles(getFilter());
+                    getBackupsDirectory(location).listFiles(getFilter(location));
             }
             filtered = true;
         }
 
-        private FileFilter getFilter()
+        private FileFilter getFilter(File location)
         {
+           final Set<File> temporaryFiles = skipTemporary || onlyTemporary
+                                            ? LifecycleTransaction.getTemporaryFiles(metadata, location)
+                                            : Collections.<File>emptySet();
+
             return new FileFilter()
             {
                 // This function always return false since accepts adds to the components map
@@ -580,7 +691,10 @@ public class Directories
                     if (!pair.left.ksname.equals(metadata.ksName) || !pair.left.cfname.equals(metadata.cfName))
                         return false;
 
-                    if (skipTemporary && pair.left.type.isTemporary)
+                    if (skipTemporary && temporaryFiles.contains(file))
+                        return false;
+
+                    if (onlyTemporary && !temporaryFiles.contains(file))
                         return false;
 
                     Set<Component> previous = components.get(pair.left);
@@ -605,39 +719,70 @@ public class Directories
     public Map<String, Pair<Long, Long>> getSnapshotDetails()
     {
         final Map<String, Pair<Long, Long>> snapshotSpaceMap = new HashMap<>();
+        for (File snapshot : listSnapshots())
+        {
+            final long sizeOnDisk = FileUtils.folderSize(snapshot);
+            final long trueSize = getTrueAllocatedSizeIn(snapshot);
+            Pair<Long, Long> spaceUsed = snapshotSpaceMap.get(snapshot.getName());
+            if (spaceUsed == null)
+                spaceUsed =  Pair.create(sizeOnDisk,trueSize);
+            else
+                spaceUsed = Pair.create(spaceUsed.left + sizeOnDisk, spaceUsed.right + trueSize);
+            snapshotSpaceMap.put(snapshot.getName(), spaceUsed);
+        }
+        return snapshotSpaceMap;
+    }
+
+
+    public List<String> listEphemeralSnapshots()
+    {
+        final List<String> ephemeralSnapshots = new LinkedList<>();
+        for (File snapshot : listSnapshots())
+        {
+            if (getEphemeralSnapshotMarkerFile(snapshot).exists())
+                ephemeralSnapshots.add(snapshot.getName());
+        }
+        return ephemeralSnapshots;
+    }
+
+    private List<File> listSnapshots()
+    {
+        final List<File> snapshots = new LinkedList<>();
         for (final File dir : dataPaths)
         {
-            final File snapshotDir = new File(dir,SNAPSHOT_SUBDIR);
+            File snapshotDir = dir.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR) ?
+                                       new File(dir.getParent(), SNAPSHOT_SUBDIR) :
+                                       new File(dir, SNAPSHOT_SUBDIR);
             if (snapshotDir.exists() && snapshotDir.isDirectory())
             {
-                final File[] snapshots  = snapshotDir.listFiles();
-                if (snapshots != null)
+                final File[] snapshotDirs  = snapshotDir.listFiles();
+                if (snapshotDirs != null)
                 {
-                    for (final File snapshot : snapshots)
+                    for (final File snapshot : snapshotDirs)
                     {
                         if (snapshot.isDirectory())
-                        {
-                            final long sizeOnDisk = FileUtils.folderSize(snapshot);
-                            final long trueSize = getTrueAllocatedSizeIn(snapshot);
-                            Pair<Long,Long> spaceUsed = snapshotSpaceMap.get(snapshot.getName());
-                            if (spaceUsed == null)
-                                spaceUsed =  Pair.create(sizeOnDisk,trueSize);
-                            else
-                                spaceUsed = Pair.create(spaceUsed.left + sizeOnDisk, spaceUsed.right + trueSize);
-                            snapshotSpaceMap.put(snapshot.getName(), spaceUsed);
-                        }
+                            snapshots.add(snapshot);
                     }
                 }
             }
         }
 
-        return snapshotSpaceMap;
+        return snapshots;
     }
+
     public boolean snapshotExists(String snapshotName)
     {
         for (File dir : dataPaths)
         {
-            File snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
+            File snapshotDir;
+            if (dir.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR))
+            {
+                snapshotDir = new File(dir.getParentFile(), join(SNAPSHOT_SUBDIR, snapshotName, dir.getName()));
+            }
+            else
+            {
+                snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
+            }
             if (snapshotDir.exists())
                 return true;
         }
@@ -653,9 +798,23 @@ public class Directories
             File snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, tag));
             if (snapshotDir.exists())
             {
-                if (logger.isDebugEnabled())
-                    logger.debug("Removing snapshot directory {}", snapshotDir);
-                FileUtils.deleteRecursive(snapshotDir);
+                logger.debug("Removing snapshot directory {}", snapshotDir);
+                try
+                {
+                    FileUtils.deleteRecursive(snapshotDir);
+                }
+                catch (FSWriteError e)
+                {
+                    if (FBUtilities.isWindows())
+                    {
+                        logger.warn("Failed to delete snapshot directory [{}]. Folder will be deleted on JVM shutdown or next node restart on crash. You can safely attempt to delete this folder but it will fail so long as readers are open on the files.", snapshotDir);
+                        WindowsFailedSnapshotTracker.handleFailedSnapshot(snapshotDir);
+                    }
+                    else
+                    {
+                        throw e;
+                    }
+                }
             }
         }
     }
@@ -665,18 +824,26 @@ public class Directories
     {
         for (File dir : dataPaths)
         {
-            File snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
+            File snapshotDir = getSnapshotDirectory(dir, snapshotName);
             if (snapshotDir.exists())
                 return snapshotDir.lastModified();
         }
         throw new RuntimeException("Snapshot " + snapshotName + " doesn't exist");
     }
-    
+
+    /**
+     * @return total snapshot size in byte for all snapshots.
+     */
     public long trueSnapshotsSize()
     {
         long result = 0L;
         for (File dir : dataPaths)
-            result += getTrueAllocatedSizeIn(new File(dir, join(SNAPSHOT_SUBDIR)));
+        {
+            File snapshotDir = dir.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR) ?
+                                       new File(dir.getParent(), SNAPSHOT_SUBDIR) :
+                                       new File(dir, SNAPSHOT_SUBDIR);
+            result += getTrueAllocatedSizeIn(snapshotDir);
+        }
         return result;
     }
 
@@ -684,7 +851,7 @@ public class Directories
     {
         if (!input.isDirectory())
             return 0;
-        
+
         TrueFilesSizeVisitor visitor = new TrueFilesSizeVisitor();
         try
         {
@@ -694,7 +861,7 @@ public class Directories
         {
             logger.error("Could not calculate the size of {}. {}", input, e);
         }
-    
+
         return visitor.getAllocatedSize();
     }
 
@@ -769,11 +936,11 @@ public class Directories
         private final Set<String> visited = newHashSet(); //count each file only once
         private final Set<String> alive;
 
-        public TrueFilesSizeVisitor()
+        TrueFilesSizeVisitor()
         {
             super();
             Builder<String> builder = ImmutableSet.builder();
-            for (File file: sstableLister().listFiles())
+            for (File file : sstableLister().listFiles())
                 builder.add(file.getName());
             alive = builder.build();
         }

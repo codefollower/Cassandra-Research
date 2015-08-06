@@ -11,9 +11,10 @@ debian/cassandra.conf etc/security/limits.d
 debian/cassandra-sysctl.conf etc/sysctl.d
 bin/cassandra usr/sbin
 bin/nodetool usr/bin
-bin/sstablekeys usr/bin
+bin/sstablelister usr/bin
 bin/sstableloader usr/bin
 bin/cqlsh usr/bin
+bin/cqlsh.py usr/bin
 bin/sstablescrub usr/bin
 bin/sstableupgrade usr/bin
 tools/bin/cassandra-stress usr/bin

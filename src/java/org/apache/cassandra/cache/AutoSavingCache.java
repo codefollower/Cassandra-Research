@@ -26,7 +26,6 @@ import java.util.concurrent.TimeUnit;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -39,6 +38,7 @@ import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.*;
+import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Pair;
@@ -140,11 +140,11 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         File path = getCachePath(cfs.metadata.cfId, CURRENT_VERSION);
         if (path.exists())
         {
-            DataInputStream in = null;
+            DataInputStreamPlus in = null;
             try
             {
                 logger.info(String.format("reading saved cache %s", path));
-                in = new DataInputStream(new LengthAvailableInputStream(new BufferedInputStream(streamFactory.getInputStream(path)), path.length()));
+                in = new DataInputStreamPlus(new LengthAvailableInputStream(new BufferedInputStream(streamFactory.getInputStream(path)), path.length()));
                 List<Future<Pair<K, V>>> futures = new ArrayList<Future<Pair<K, V>>>();
                 while (in.available() > 0)
                 {
@@ -216,7 +216,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             else
                 type = OperationType.UNKNOWN;
 
-            info = new CompactionInfo(CFMetaData.denseCFMetaData(SystemKeyspace.NAME, cacheType.toString(), BytesType.instance),
+            info = new CompactionInfo(CFMetaData.createFake(SystemKeyspace.NAME, cacheType.toString()),
                                       type,
                                       0,
                                       keysEstimate,
@@ -236,6 +236,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             return info.forProgress(keysWritten, Math.max(keysWritten, keysEstimate));
         }
 
+        @SuppressWarnings("resource")
         public void saveCache()
         {
             logger.debug("Deleting old {} files.", cacheType);
@@ -364,6 +365,6 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
     {
         void serialize(K key, DataOutputPlus out) throws IOException;
 
-        Future<Pair<K, V>> deserialize(DataInputStream in, ColumnFamilyStore cfs) throws IOException;
+        Future<Pair<K, V>> deserialize(DataInputPlus in, ColumnFamilyStore cfs) throws IOException;
     }
 }

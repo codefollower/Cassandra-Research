@@ -33,8 +33,7 @@ import java.util.concurrent.*;
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.io.compress.CompressionParameters;
-import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.slf4j.Logger;
@@ -64,12 +63,14 @@ public class CommitLogArchiver
     public CommitLogArchiver()
     {
         Properties commitlog_commands = new Properties();
-        InputStream stream = null;
-        try
+        try (InputStream stream = getClass().getClassLoader().getResourceAsStream("commitlog_archiving.properties"))
         {
-            stream = getClass().getClassLoader().getResourceAsStream("commitlog_archiving.properties");
-            getClass().getClassLoader().getResource("commitlog_archiving.properties"); //我加上的，看看这文件在哪
-
+//<<<<<<< HEAD
+//            stream = getClass().getClassLoader().getResourceAsStream("commitlog_archiving.properties");
+//            getClass().getClassLoader().getResource("commitlog_archiving.properties"); //我加上的，看看这文件在哪
+//
+//=======
+//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
             if (stream == null)
             {
                 logger.debug("No commitlog_archiving properties found; archive + pitr will be disabled");
@@ -115,10 +116,7 @@ public class CommitLogArchiver
         {
             throw new RuntimeException("Unable to load commitlog_archiving.properties", e);
         }
-        finally
-        {
-            FileUtils.closeQuietly(stream);
-        }
+
     }
 
     public void maybeArchive(final CommitLogSegment segment)
@@ -214,13 +212,13 @@ public class CommitLogArchiver
                     descriptor = fromHeader;
                 else descriptor = fromName;
 
-                if (descriptor.version > CommitLogDescriptor.VERSION_22)
+                if (descriptor.version > CommitLogDescriptor.current_version)
                     throw new IllegalStateException("Unsupported commit log version: " + descriptor.version);
 
                 if (descriptor.compression != null) {
                     try
                     {
-                        CompressionParameters.createCompressor(descriptor.compression);
+                        CompressionParams.createCompressor(descriptor.compression);
                     }
                     catch (ConfigurationException e)
                     {

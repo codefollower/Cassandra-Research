@@ -28,6 +28,7 @@ import com.google.common.collect.Multimap;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -71,19 +72,24 @@ public class SSTableLoader implements StreamEventHandler
         this.connectionsPerHost = connectionsPerHost;
     }
 
+    @SuppressWarnings("resource")
     protected Collection<SSTableReader> openSSTables(final Map<InetAddress, Collection<Range<Token>>> ranges)
     {
         outputHandler.output("Opening sstables and calculating sections to stream");
 
         directory.list(new FilenameFilter()
         {
+            final Map<File, Set<File>> allTemporaryFiles = new HashMap<>();
             public boolean accept(File dir, String name)
             {
-                if (new File(dir, name).isDirectory())
+                File file = new File(dir, name);
+
+                if (file.isDirectory())
                     return false;
+
                 Pair<Descriptor, Component> p = SSTable.tryComponentFromFilename(dir, name);
                 Descriptor desc = p == null ? null : p.left;
-                if (p == null || !p.right.equals(Component.DATA) || desc.type.isTemporary)
+                if (p == null || !p.right.equals(Component.DATA))
                     return false;
 
                 if (!new File(desc.filenameFor(Component.PRIMARY_INDEX)).exists())
@@ -96,6 +102,19 @@ public class SSTableLoader implements StreamEventHandler
                 if (metadata == null)
                 {
                     outputHandler.output(String.format("Skipping file %s: table %s.%s doesn't exist", name, keyspace, desc.cfname));
+                    return false;
+                }
+
+                Set<File> temporaryFiles = allTemporaryFiles.get(dir);
+                if (temporaryFiles == null)
+                {
+                    temporaryFiles = LifecycleTransaction.getTemporaryFiles(metadata, dir);
+                    allTemporaryFiles.put(dir, temporaryFiles);
+                }
+
+                if (temporaryFiles.contains(file))
+                {
+                    outputHandler.output(String.format("Skipping temporary file %s", name));
                     return false;
                 }
 
@@ -114,7 +133,7 @@ public class SSTableLoader implements StreamEventHandler
                     // To conserve memory, open SSTableReaders without bloom filters and discard
                     // the index summary after calculating the file sections to stream and the estimated
                     // number of keys for each endpoint. See CASSANDRA-5555 for details.
-                    SSTableReader sstable = SSTableReader.openForBatch(desc, components, metadata, client.getPartitioner());
+                    SSTableReader sstable = SSTableReader.openForBatch(desc, components, metadata);
                     sstables.add(sstable);
 
                     // calculate the sstable sections to stream as well as the estimated number of
@@ -126,9 +145,7 @@ public class SSTableLoader implements StreamEventHandler
 
                         List<Pair<Long, Long>> sstableSections = sstable.getPositionsForRanges(tokenRanges);
                         long estimatedKeys = sstable.estimatedKeysForRanges(tokenRanges);
-                        Ref ref = sstable.tryRef();
-                        if (ref == null)
-                            throw new IllegalStateException("Could not acquire ref for "+sstable);
+                        Ref<SSTableReader> ref = sstable.ref();
                         StreamSession.SSTableStreamingSections details = new StreamSession.SSTableStreamingSections(ref, sstableSections, estimatedKeys, ActiveRepairService.UNREPAIRED_SSTABLE);
                         streamingDetails.put(endpoint, details);
                     }
@@ -235,7 +252,6 @@ public class SSTableLoader implements StreamEventHandler
     public static abstract class Client
     {
         private final Map<InetAddress, Collection<Range<Token>>> endpointToRanges = new HashMap<>();
-        private IPartitioner partitioner;
 
         /**
          * Initialize the client.
@@ -280,23 +296,6 @@ public class SSTableLoader implements StreamEventHandler
         public Map<InetAddress, Collection<Range<Token>>> getEndpointToRangesMap()
         {
             return endpointToRanges;
-        }
-
-        protected void setPartitioner(String partclass) throws ConfigurationException
-        {
-            setPartitioner(FBUtilities.newPartitioner(partclass));
-        }
-
-        protected void setPartitioner(IPartitioner partitioner)
-        {
-            this.partitioner = partitioner;
-            // the following is still necessary since Range/Token reference partitioner through StorageService.getPartitioner
-            DatabaseDescriptor.setPartitioner(partitioner);
-        }
-
-        public IPartitioner getPartitioner()
-        {
-            return partitioner;
         }
 
         protected void addRangeForEndpoint(Range<Token> range, InetAddress endpoint)

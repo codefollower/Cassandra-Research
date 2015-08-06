@@ -42,11 +42,19 @@ public class AuthSuccess extends Message.Response
 
             //我加上的，源代码会抛出java.lang.NullPointerException
             ByteBuffer b = CBUtil.readValue(body);
-            if (b == null)
-                return new AuthSuccess(null);
-
-            byte[] token = new byte[b.remaining()];
-            b.get(token);
+//<<<<<<< HEAD
+//            if (b == null)
+//                return new AuthSuccess(null);
+//
+//            byte[] token = new byte[b.remaining()];
+//            b.get(token);
+//=======
+            byte[] token = null;
+            if (b != null)
+            {
+                token = new byte[b.remaining()];
+                b.get(token);
+            }
             return new AuthSuccess(token);
         }
 

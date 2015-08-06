@@ -34,5 +34,5 @@ public interface BatchlogManagerMBean
     /**
      * Forces batchlog replay. Returns immediately if replay is already in progress.
      */
-    public void forceBatchlogReplay();
+    public void forceBatchlogReplay() throws Exception;
 }

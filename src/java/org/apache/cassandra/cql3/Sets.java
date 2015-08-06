@@ -26,12 +26,9 @@ import com.google.common.base.Joiner;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.functions.Function;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.MapType;
-import org.apache.cassandra.db.marshal.SetType;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.serializers.CollectionSerializer;
 import org.apache.cassandra.serializers.MarshalException;
@@ -273,7 +270,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
 //<<<<<<< HEAD
 //            //像这种:UPDATE users SET emails = {'fb@friendsofmordor.org','abc@d.com'}
@@ -281,14 +278,13 @@ public abstract class Sets
 //            if (column.type.isMultiCell())
 //=======
             Term.Terminal value = t.bind(params.options);
-            if (column.type.isMultiCell() && value != UNSET_VALUE)
-            {
-                // delete + add
-                CellName name = cf.getComparator().create(prefix, column);
-                cf.addAtom(params.makeTombstoneForOverwrite(name.slice()));
-            }
-            if (value != UNSET_VALUE)
-                Adder.doAdd(cf, prefix, column, params, value);
+            if (value == UNSET_VALUE)
+                return;
+
+            // delete + add
+            if (column.type.isMultiCell())
+                params.setComplexDeletionTimeForOverwrite(column);
+            Adder.doAdd(value, column, params);
         }
     }
 
@@ -299,15 +295,15 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
             assert column.type.isMultiCell() : "Attempted to add items to a frozen set";
             Term.Terminal value = t.bind(params.options);
             if (value != UNSET_VALUE)
-                doAdd(cf, prefix, column, params, value);
+                doAdd(value, column, params);
         }
 
-        static void doAdd(ColumnFamily cf, Composite prefix, ColumnDefinition column, UpdateParameters params, Term.Terminal value) throws InvalidRequestException
+        static void doAdd(Term.Terminal value, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             if (column.type.isMultiCell())
             {
@@ -318,18 +314,17 @@ public abstract class Sets
                 {
                     if (bb == ByteBufferUtil.UNSET_BYTE_BUFFER)
                         continue;
-                    CellName cellName = cf.getComparator().create(prefix, column, bb);
-                    cf.addColumn(params.makeColumn(cellName, ByteBufferUtil.EMPTY_BYTE_BUFFER));
+
+                    params.addCell(column, CellPath.create(bb), ByteBufferUtil.EMPTY_BYTE_BUFFER);
                 }
             }
             else
             {
                 // for frozen sets, we're overwriting the whole cell
-                CellName cellName = cf.getComparator().create(prefix, column);
                 if (value == null)
-                    cf.addAtom(params.makeTombstone(cellName));
+                    params.addTombstone(column);
                 else
-                    cf.addColumn(params.makeColumn(cellName, value.get(Server.CURRENT_VERSION)));
+                    params.addCell(column, value.get(Server.CURRENT_VERSION));
             }
         }
     }
@@ -344,7 +339,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
             assert column.type.isMultiCell() : "Attempted to remove items from a frozen set";
 
@@ -358,7 +353,7 @@ public abstract class Sets
                                       : Collections.singleton(value.get(params.options.getProtocolVersion()));
 
             for (ByteBuffer bb : toDiscard)
-                cf.addColumn(params.makeTombstone(cf.getComparator().create(prefix, column, bb)));
+                params.addTombstone(column, CellPath.create(bb));
         }
     }
 
@@ -369,15 +364,14 @@ public abstract class Sets
             super(column, k);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException
         {
             assert column.type.isMultiCell() : "Attempted to delete a single element in a frozen set";
             Term.Terminal elt = t.bind(params.options);
             if (elt == null)
                 throw new InvalidRequestException("Invalid null set element");
 
-            CellName cellName = cf.getComparator().create(prefix, column, elt.get(params.options.getProtocolVersion()));
-            cf.addColumn(params.makeTombstone(cellName));
+            params.addTombstone(column, CellPath.create(elt.get(params.options.getProtocolVersion())));
         }
     }
 }

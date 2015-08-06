@@ -32,11 +32,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.CRC32;
 
 import com.codahale.metrics.Timer;
-import com.github.tjake.ICRC32;
 
-import org.apache.cassandra.utils.CRC32Factory;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import org.slf4j.Logger;
@@ -45,13 +44,16 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.Mutation;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.CLibrary;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.WaitQueue;
+
+import static org.apache.cassandra.utils.FBUtilities.updateChecksumInt;
 
 /*
  * A single commit log file on disk. Manages creation of the file and writing mutations to disk,
@@ -113,6 +115,7 @@ public abstract class CommitLogSegment
 
     ByteBuffer buffer;
 
+    final CommitLog commitLog;
     public final CommitLogDescriptor descriptor;
 
     static CommitLogSegment createSegment(CommitLog commitLog)
@@ -132,6 +135,7 @@ public abstract class CommitLogSegment
      */
     CommitLogSegment(CommitLog commitLog)
     {
+        this.commitLog = commitLog;
         id = getNextId();
         descriptor = new CommitLogDescriptor(id, commitLog.compressorClass);
         logFile = new File(commitLog.location, descriptor.fileName());
@@ -160,6 +164,7 @@ public abstract class CommitLogSegment
      * Allocate space in this buffer for the provided mutation, and return the allocated Allocation object.
      * Returns null if there is not enough space in this segment, and a new segment is needed.
      */
+    @SuppressWarnings("resource") //we pass the op order around
     Allocation allocate(Mutation mutation, int size)
     {
         final OpOrder.Group opGroup = appendOrder.start();
@@ -342,12 +347,12 @@ public abstract class CommitLogSegment
 
     protected void writeSyncMarker(ByteBuffer buffer, int offset, int filePos, int nextMarker)
     {
-        ICRC32 crc = CRC32Factory.instance.create();
-        crc.updateInt((int) (id & 0xFFFFFFFFL));
-        crc.updateInt((int) (id >>> 32));
-        crc.updateInt(filePos);
+        CRC32 crc = new CRC32();
+        updateChecksumInt(crc, (int) (id & 0xFFFFFFFFL));
+        updateChecksumInt(crc, (int) (id >>> 32));
+        updateChecksumInt(crc, filePos);
         buffer.putInt(offset, nextMarker);
-        buffer.putInt(offset + 4, crc.getCrc());
+        buffer.putInt(offset + 4, (int) crc.getValue());
     }
 
     abstract void write(int lastSyncedOffset, int nextMarker);
@@ -360,9 +365,12 @@ public abstract class CommitLogSegment
     /**
      * Completely discards a segment file by deleting it. (Potentially blocking operation)
      */
-    void delete()
+    void discard(boolean deleteFile)
     {
-       FileUtils.deleteWithConfirm(logFile);
+        close();
+        if (deleteFile)
+            FileUtils.deleteWithConfirm(logFile);
+        commitLog.allocator.addSize(-onDiskSize());
     }
 
     /**
@@ -448,15 +456,8 @@ public abstract class CommitLogSegment
 
     void markDirty(Mutation mutation, int allocatedPosition)
     {
-        for (ColumnFamily columnFamily : mutation.getColumnFamilies())
-        {
-            // check for deleted CFS
-            CFMetaData cfm = columnFamily.metadata();
-            if (cfm.isPurged())
-                logger.error("Attempted to write commit log entry for unrecognized table: {}", columnFamily.id());
-            else
-                ensureAtleast(cfDirty, cfm.cfId, allocatedPosition);
-        }
+        for (PartitionUpdate update : mutation.getPartitionUpdates())
+            ensureAtleast(cfDirty, update.metadata().cfId, allocatedPosition);
     }
 
     /**
@@ -578,6 +579,13 @@ public abstract class CommitLogSegment
             sb.append(m == null ? "<deleted>" : m.cfName).append(" (").append(cfId).append("), ");
         }
         return sb.toString();
+    }
+
+    abstract public long onDiskSize();
+
+    public long contentSize()
+    {
+        return lastSyncedOffset;
     }
 
     @Override

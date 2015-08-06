@@ -26,109 +26,125 @@ import org.apache.commons.lang3.StringUtils;
 
 import org.apache.cassandra.auth.*;
 import org.apache.cassandra.config.*;
-import org.apache.cassandra.cql3.CFName;
-import org.apache.cassandra.cql3.CQL3Type;
-import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.db.ColumnFamilyType;
-import org.apache.cassandra.db.composites.*;
+import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
-import org.apache.cassandra.io.compress.CompressionParameters;
+import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.Event;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
-/** A <code>CREATE TABLE</code> parsed from a CQL query statement. */
+/** A {@code CREATE TABLE} parsed from a CQL query statement. */
 public class CreateTableStatement extends SchemaAlteringStatement
 {
-    //与CLUSTERING_COLUMN的类型相关
-    //1. 如果没有定义CLUSTERING_COLUMN并且使用CompactStorage，那么comparator是UTF8Type
-    //2. 如果没有定义CLUSTERING_COLUMN并且未使用CompactStorage，那么comparator是CompositeType
-    //   如果普通字段中没有Collection类型的字段，
-    //   那么这个CompositeType只有一个UTF8Type，否则等于UTF8Type + ColumnToCollectionType
-    //3. 如果CLUSTERING_COLUMN只有一个字段并且使用CompactStorage，那么comparator就是此字段的类型
-    //4. 其他情况comparator是CompositeType
-    //   4.1 使用CompactStorage时，CompositeType由CLUSTERING_COLUMN中的所有字段类型组成
-    //   4.2 未使用CompactStorage时，
-    //       如果普通字段中没有Collection类型的字段，
-    //       CompositeType由CLUSTERING_COLUMN中的所有字段类型 + UTF8Type组成
-    //       如果普通字段中有Collection类型的字段，
-    //       则CompositeType由CLUSTERING_COLUMN中的所有字段类型 + UTF8Type + ColumnToCollectionType组成
-    
-    //    org.apache.cassandra.db.composites包中有东西都与聚簇列相关
-    //
-    //    两对关健词:
-    //    Sparse(稀疏)与Dense(稠密) //与数据库中的稀疏索引和稠密索引有相似之处
-    //    Simple(单一的)与Compound(复合的)
-    //
-    //    在建表时:
-    //    1. 没有定义聚簇列
-    //        1.1 使用了COMPACT STORAGE，那么使用SimpleSparseCellNameType(包装类型是UTF8Type)
-    //        1.2 没有使用COMPACT STORAGE
-    //            1.2.1 普通列中有集合类型(CollectionType)，那么使用CompoundSparseCellNameType.WithCollection
-    //            1.2.2 没有，则使用CompoundSparseCellNameType
-    //
-    //    2. 定义了聚簇列
-    //        2.1 只有一个聚簇列并且使用了COMPACT STORAGE，那么使用SimpleDenseCellNameType(包装类型是此聚簇列的类型)
-    //        2.2 使用了COMPACT STORAGE，那么使用CompoundDenseCellNameType(包装类型是所有聚簇列的类型)
-    //        2.3 没有使用COMPACT STORAGE
-    //            2.3.1 普通列中有集合类型(CollectionType)，那么使用CompoundSparseCellNameType.WithCollection
-    //            2.3.2 没有，则使用CompoundSparseCellNameType
-    //
-    //    由上面总结如下:
-    //    只有定义了聚簇列的情况下，并且使用了COMPACT STORAGE才会使用SimpleDenseCellNameType或CompoundDenseCellNameType
+//<<<<<<< HEAD
+//    //与CLUSTERING_COLUMN的类型相关
+//    //1. 如果没有定义CLUSTERING_COLUMN并且使用CompactStorage，那么comparator是UTF8Type
+//    //2. 如果没有定义CLUSTERING_COLUMN并且未使用CompactStorage，那么comparator是CompositeType
+//    //   如果普通字段中没有Collection类型的字段，
+//    //   那么这个CompositeType只有一个UTF8Type，否则等于UTF8Type + ColumnToCollectionType
+//    //3. 如果CLUSTERING_COLUMN只有一个字段并且使用CompactStorage，那么comparator就是此字段的类型
+//    //4. 其他情况comparator是CompositeType
+//    //   4.1 使用CompactStorage时，CompositeType由CLUSTERING_COLUMN中的所有字段类型组成
+//    //   4.2 未使用CompactStorage时，
+//    //       如果普通字段中没有Collection类型的字段，
+//    //       CompositeType由CLUSTERING_COLUMN中的所有字段类型 + UTF8Type组成
+//    //       如果普通字段中有Collection类型的字段，
+//    //       则CompositeType由CLUSTERING_COLUMN中的所有字段类型 + UTF8Type + ColumnToCollectionType组成
+//    
+//    //    org.apache.cassandra.db.composites包中有东西都与聚簇列相关
+//    //
+//    //    两对关健词:
+//    //    Sparse(稀疏)与Dense(稠密) //与数据库中的稀疏索引和稠密索引有相似之处
+//    //    Simple(单一的)与Compound(复合的)
+//    //
+//    //    在建表时:
+//    //    1. 没有定义聚簇列
+//    //        1.1 使用了COMPACT STORAGE，那么使用SimpleSparseCellNameType(包装类型是UTF8Type)
+//    //        1.2 没有使用COMPACT STORAGE
+//    //            1.2.1 普通列中有集合类型(CollectionType)，那么使用CompoundSparseCellNameType.WithCollection
+//    //            1.2.2 没有，则使用CompoundSparseCellNameType
+//    //
+//    //    2. 定义了聚簇列
+//    //        2.1 只有一个聚簇列并且使用了COMPACT STORAGE，那么使用SimpleDenseCellNameType(包装类型是此聚簇列的类型)
+//    //        2.2 使用了COMPACT STORAGE，那么使用CompoundDenseCellNameType(包装类型是所有聚簇列的类型)
+//    //        2.3 没有使用COMPACT STORAGE
+//    //            2.3.1 普通列中有集合类型(CollectionType)，那么使用CompoundSparseCellNameType.WithCollection
+//    //            2.3.2 没有，则使用CompoundSparseCellNameType
+//    //
+//    //    由上面总结如下:
+//    //    只有定义了聚簇列的情况下，并且使用了COMPACT STORAGE才会使用SimpleDenseCellNameType或CompoundDenseCellNameType
+//
+//    public CellNameType comparator;
+//    
+//
+//    //1. 如果定义了CLUSTERING_COLUMN并且使用CompactStorage，同时没有其他普通字段, 那么defaultValidator是UTF8Type
+//    //2. 如果定义了CLUSTERING_COLUMN并且使用CompactStorage，同时有其他普通字段(只能有一个), 那么defaultValidator是此普通字段的类型
+//    //3. 如果没有定义CLUSTERING_COLUMN或者未使用CompactStorage
+//    //   3.1 如果普通字段中有Counter类型的字段, 那么defaultValidator是CounterColumnType
+//    //   3.2 其他情况，defaultValidator是BytesType
+//    private AbstractType<?> defaultValidator;
+//    
+//    //与PARTITION_KEY的类型相关
+//    //如果PARTITION_KEY只有一个字段，那么keyValidator就是此字段的类型
+//    //如果PARTITION_KEY有多个字段，那么keyValidator就是CompositeType
+//    private AbstractType<?> keyValidator;
+//
+//    private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
+//    private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
+//    //1.
+//    //前提条件: 使用CompactStorage并且存在CLUSTERING_COLUMN字段时,
+//    //除了PARTITION_KEY和CLUSTERING_COLUMN字段之外，最多可以定义一个普通字段，
+//    //如果存在这样的普通字段那么valueAlias就是这个普通字段的字段名
+//    //如果不存在这样的普通字段，valueAlias的值是ByteBufferUtil.EMPTY_BYTE_BUFFER
+//    //2.
+//    //如果不满足前提条件，valueAlias是null
+//    private ByteBuffer valueAlias; 
+//=======
+    private List<AbstractType<?>> keyTypes;
+    private List<AbstractType<?>> clusteringTypes;
 
-    public CellNameType comparator;
-    
+    private final Map<ByteBuffer, CollectionType> collections = new HashMap<>();
 
-    //1. 如果定义了CLUSTERING_COLUMN并且使用CompactStorage，同时没有其他普通字段, 那么defaultValidator是UTF8Type
-    //2. 如果定义了CLUSTERING_COLUMN并且使用CompactStorage，同时有其他普通字段(只能有一个), 那么defaultValidator是此普通字段的类型
-    //3. 如果没有定义CLUSTERING_COLUMN或者未使用CompactStorage
-    //   3.1 如果普通字段中有Counter类型的字段, 那么defaultValidator是CounterColumnType
-    //   3.2 其他情况，defaultValidator是BytesType
-    private AbstractType<?> defaultValidator;
-    
-    //与PARTITION_KEY的类型相关
-    //如果PARTITION_KEY只有一个字段，那么keyValidator就是此字段的类型
-    //如果PARTITION_KEY有多个字段，那么keyValidator就是CompositeType
-    private AbstractType<?> keyValidator;
-
-    private final List<ByteBuffer> keyAliases = new ArrayList<ByteBuffer>();
-    private final List<ByteBuffer> columnAliases = new ArrayList<ByteBuffer>();
-    //1.
-    //前提条件: 使用CompactStorage并且存在CLUSTERING_COLUMN字段时,
-    //除了PARTITION_KEY和CLUSTERING_COLUMN字段之外，最多可以定义一个普通字段，
-    //如果存在这样的普通字段那么valueAlias就是这个普通字段的字段名
-    //如果不存在这样的普通字段，valueAlias的值是ByteBufferUtil.EMPTY_BYTE_BUFFER
-    //2.
-    //如果不满足前提条件，valueAlias是null
-    private ByteBuffer valueAlias; 
+    private final List<ColumnIdentifier> keyAliases = new ArrayList<>();
+    private final List<ColumnIdentifier> columnAliases = new ArrayList<>();
 
     private boolean isDense;
+    private boolean isCompound;
+    private boolean hasCounters;
 
-    //普通列: org.apache.cassandra.config.ColumnDefinition.Kind.REGULAR
-    private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
+    // use a TreeMap to preserve ordering across JDK versions (see CASSANDRA-9492)
+    private final Map<ColumnIdentifier, AbstractType> columns = new TreeMap<>((o1, o2) -> o1.bytes.compareTo(o2.bytes));
+
+//<<<<<<< HEAD
+//    //普通列: org.apache.cassandra.config.ColumnDefinition.Kind.REGULAR
+//    private final Map<ColumnIdentifier, AbstractType> columns = new HashMap<ColumnIdentifier, AbstractType>();
+//=======
+//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
     private final Set<ColumnIdentifier> staticColumns;
-    private final CFPropDefs properties;
+    private final TableParams params;
     private final boolean ifNotExists;
 
-    public CreateTableStatement(CFName name, CFPropDefs properties, boolean ifNotExists, Set<ColumnIdentifier> staticColumns)
+    public CreateTableStatement(CFName name, TableParams params, boolean ifNotExists, Set<ColumnIdentifier> staticColumns)
     {
         super(name);
-        this.properties = properties;
+        this.params = params;
         this.ifNotExists = ifNotExists;
         this.staticColumns = staticColumns;
-
-        //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
-        //注意compression属性对应的是一个Map不是一个字符串
-        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
-            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
-                                        new HashMap<String, String>()
-                                        {{
-                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
-                                        }});
+//<<<<<<< HEAD
+//
+//        //如果没指定compression属性，则默认使用org.apache.cassandra.io.compress.LZ4Compressor
+//        //注意compression属性对应的是一个Map不是一个字符串
+//        if (!this.properties.hasProperty(CFPropDefs.KW_COMPRESSION) && CFMetaData.DEFAULT_COMPRESSOR != null)
+//            this.properties.addProperty(CFPropDefs.KW_COMPRESSION,
+//                                        new HashMap<String, String>()
+//                                        {{
+//                                            put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
+//                                        }});
+//=======
+//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -141,27 +157,30 @@ public class CreateTableStatement extends SchemaAlteringStatement
         // validated in announceMigration()
     }
 
-    // Column definitions
-    //只涉及普通列
-    private List<ColumnDefinition> getColumns(CFMetaData cfm)
-    {
-        List<ColumnDefinition> columnDefs = new ArrayList<>(columns.size());
-        //如果没有定义聚簇列时CompoundSparseCellNameType虽然comparator.clusteringPrefixSize()返回0
-        //但是当在ColumnDefinition的构造函数调用cfm.getComponentComparator(componentIndex, kind))时会
-        //触发org.apache.cassandra.db.composites.AbstractCompoundCellNameType.subtype(int)用的是fullType.get(0)
-        //而fullType.get(0)刚好是CompoundSparseCellNameType.makeCType加入的columnNameType(也就是UTF8Type)
-        Integer componentIndex = comparator.isCompound() ? comparator.clusteringPrefixSize() : null;
-        for (Map.Entry<ColumnIdentifier, AbstractType> col : columns.entrySet())
-        {
-            ColumnIdentifier id = col.getKey();
-            columnDefs.add(staticColumns.contains(id)
-                           ? ColumnDefinition.staticDef(cfm, col.getKey().bytes, col.getValue(), componentIndex)
-                           : ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
-        }
-
-        return columnDefs;
-    }
-
+//<<<<<<< HEAD
+//    // Column definitions
+//    //只涉及普通列
+//    private List<ColumnDefinition> getColumns(CFMetaData cfm)
+//    {
+//        List<ColumnDefinition> columnDefs = new ArrayList<>(columns.size());
+//        //如果没有定义聚簇列时CompoundSparseCellNameType虽然comparator.clusteringPrefixSize()返回0
+//        //但是当在ColumnDefinition的构造函数调用cfm.getComponentComparator(componentIndex, kind))时会
+//        //触发org.apache.cassandra.db.composites.AbstractCompoundCellNameType.subtype(int)用的是fullType.get(0)
+//        //而fullType.get(0)刚好是CompoundSparseCellNameType.makeCType加入的columnNameType(也就是UTF8Type)
+//        Integer componentIndex = comparator.isCompound() ? comparator.clusteringPrefixSize() : null;
+//        for (Map.Entry<ColumnIdentifier, AbstractType> col : columns.entrySet())
+//        {
+//            ColumnIdentifier id = col.getKey();
+//            columnDefs.add(staticColumns.contains(id)
+//                           ? ColumnDefinition.staticDef(cfm, col.getKey().bytes, col.getValue(), componentIndex)
+//                           : ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
+//        }
+//
+//        return columnDefs;
+//    }
+//
+//=======
+//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
         try
@@ -198,102 +217,149 @@ public class CreateTableStatement extends SchemaAlteringStatement
         }
     }
 
+    public CFMetaData.Builder metadataBuilder()
+    {
+        CFMetaData.Builder builder = CFMetaData.Builder.create(keyspace(), columnFamily(), isDense, isCompound, hasCounters);
+        for (int i = 0; i < keyAliases.size(); i++)
+            builder.addPartitionKey(keyAliases.get(i), keyTypes.get(i));
+        for (int i = 0; i < columnAliases.size(); i++)
+            builder.addClusteringColumn(columnAliases.get(i), clusteringTypes.get(i));
+
+        boolean isStaticCompact = !isDense && !isCompound;
+        for (Map.Entry<ColumnIdentifier, AbstractType> entry : columns.entrySet())
+        {
+            ColumnIdentifier name = entry.getKey();
+            // Note that for "static" no-clustering compact storage we use static for the defined columns
+            if (staticColumns.contains(name) || isStaticCompact)
+                builder.addStaticColumn(name, entry.getValue());
+            else
+                builder.addRegularColumn(name, entry.getValue());
+        }
+
+        boolean isCompactTable = isDense || !isCompound;
+        if (isCompactTable)
+        {
+            CompactTables.DefaultNames names = CompactTables.defaultNameGenerator(builder.usedColumnNames());
+            // Compact tables always have a clustering and a single regular value.
+            if (isStaticCompact)
+            {
+                builder.addClusteringColumn(names.defaultClusteringName(), UTF8Type.instance);
+                builder.addRegularColumn(names.defaultCompactValueName(), hasCounters ? CounterColumnType.instance : BytesType.instance);
+            }
+            else if (isDense && !builder.hasRegulars())
+            {
+                // Even for dense, we might not have our regular column if it wasn't part of the declaration. If
+                // that's the case, add it but with a specific EmptyType so we can recognize that case later
+                builder.addRegularColumn(names.defaultCompactValueName(), EmptyType.instance);
+            }
+        }
+
+        return builder;
+    }
+
     /**
      * Returns a CFMetaData instance based on the parameters parsed from this
-     * <code>CREATE</code> statement, or defaults where applicable.
+     * {@code CREATE} statement, or defaults where applicable.
      *
      * @return a CFMetaData instance corresponding to the values parsed from this statement
      * @throws InvalidRequestException on failure to validate parsed parameters
      */
-    public CFMetaData getCFMetaData() throws RequestValidationException
+    public CFMetaData getCFMetaData()
     {
-        CFMetaData newCFMD;
-        newCFMD = new CFMetaData(keyspace(),
-                                 columnFamily(),
-                                 ColumnFamilyType.Standard,
-                                 comparator);
-        applyPropertiesTo(newCFMD);
-        return newCFMD;
+        return metadataBuilder().build().params(params);
     }
 
-    public void applyPropertiesTo(CFMetaData cfmd) throws RequestValidationException
+    public TableParams params()
     {
-        cfmd.defaultValidator(defaultValidator)
-            .keyValidator(keyValidator)
-            .addAllColumnDefinitions(getColumns(cfmd))
-            .isDense(isDense);
-
-        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
-        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
-        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
-        addColumnMetadataFromAliases(cfmd, keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
-        addColumnMetadataFromAliases(cfmd, columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
-        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
-        if (valueAlias != null)
-            addColumnMetadataFromAliases(cfmd, Collections.singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
-
-        properties.applyToCFMetadata(cfmd);
+//<<<<<<< HEAD
+//        cfmd.defaultValidator(defaultValidator)
+//            .keyValidator(keyValidator)
+//            .addAllColumnDefinitions(getColumns(cfmd))
+//            .isDense(isDense);
+//
+//        //只有普通字段(ColumnDefinition.Kind.REGULAR)才会像getColumns中那样在乎comparator的类型
+//        //下面三个种类型的字段在CFMetaData.getComponentComparator(Integer, Kind)都返回UTF8Type，
+//        //所以在调用ColumnIdentifier(ByteBuffer, AbstractType)时都不会有问题
+//        addColumnMetadataFromAliases(cfmd, keyAliases, keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
+//        addColumnMetadataFromAliases(cfmd, columnAliases, comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
+//        //只有useCompactStorage为true且columnAliases不为empty时valueAlias才可能不为null
+//        if (valueAlias != null)
+//            addColumnMetadataFromAliases(cfmd, Collections.singletonList(valueAlias), defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
+//
+//        properties.applyToCFMetadata(cfmd);
+//    }
+//
+//
+//    private void addColumnMetadataFromAliases(CFMetaData cfm, List<ByteBuffer> aliases, AbstractType<?> comparator, ColumnDefinition.Kind kind)
+//    {
+//        if (comparator instanceof CompositeType)
+//        {
+//            CompositeType ct = (CompositeType)comparator;
+//            for (int i = 0; i < aliases.size(); ++i)
+//                if (aliases.get(i) != null)
+//                    cfm.addOrReplaceColumnDefinition(new ColumnDefinition(cfm, aliases.get(i), ct.types.get(i), i, kind));
+//        }
+//        else
+//        {
+//            assert aliases.size() <= 1;
+//            if (!aliases.isEmpty() && aliases.get(0) != null)
+//                cfm.addOrReplaceColumnDefinition(new ColumnDefinition(cfm, aliases.get(0), comparator, null, kind));
+//        }
+//    }
+//
+//    /*
+//            对于这样的CQL:
+//      CREATE TABLE test (
+//         table_name text,
+//         index_name text,
+//         index_name2 text,
+//         PRIMARY KEY (table_name, index_name)
+//      )WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) 
+//       AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
+//    
+//      keyAliases是table_name
+//      columnAliases是index_name
+//      definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
+//      useCompactStorage是true
+//      properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
+//      
+//            如果PRIMARY KEY是 ((table_name,index_name2), index_name)
+//            则keyAliases是(table_name,index_name2)
+//    */
+//    public static class RawStatement extends CFStatement
+//    {
+//        private final Map<ColumnIdentifier, CQL3Type.Raw> definitions = new HashMap<>();
+//        //在org.apache.cassandra.cql3.CqlParser.cfamProperty(RawStatement)中把属性解析后放到properties字段中
+//        public final CFPropDefs properties = new CFPropDefs();
+//        //如CREATE TABLE IF NOT EXISTS Cats0 ( block_id uuid PRIMARY KEY, breed text, color text, short_hair boolean,"
+//        //+ "PRIMARY KEY ((block_id, breed), color, short_hair))
+//        //此时keyAliases.size是2，
+//        //其中keyAliases[0]是block_id
+//        //keyAliases[1]是(block_id, breed)
+//        //这在语法解析阶段是允许的，但是在CreateTableStatement.RawStatement.prepare()中才抛错，只需要keyAliases.size是1
+//        
+//        //每个表必须有主键，并且只能有一个
+//        //这个是错误的: CREATE TABLE IF NOT EXISTS Cats00 ( block_id uuid, breed text, color text, short_hair boolean)
+//        private final List<List<ColumnIdentifier>> keyAliases = new ArrayList<List<ColumnIdentifier>>();
+//        private final List<ColumnIdentifier> columnAliases = new ArrayList<ColumnIdentifier>();
+//        private final Map<ColumnIdentifier, Boolean> definedOrdering = new LinkedHashMap<ColumnIdentifier, Boolean>(); // Insertion ordering is important
+//        private final Set<ColumnIdentifier> staticColumns = new HashSet<ColumnIdentifier>();
+//
+//        private boolean useCompactStorage;
+//        //允许相同的元素出现多个(按元素的hash值确定)
+//        //用来检查是否定义了多个同名的字段
+//=======
+        return params;
     }
 
-
-    private void addColumnMetadataFromAliases(CFMetaData cfm, List<ByteBuffer> aliases, AbstractType<?> comparator, ColumnDefinition.Kind kind)
-    {
-        if (comparator instanceof CompositeType)
-        {
-            CompositeType ct = (CompositeType)comparator;
-            for (int i = 0; i < aliases.size(); ++i)
-                if (aliases.get(i) != null)
-                    cfm.addOrReplaceColumnDefinition(new ColumnDefinition(cfm, aliases.get(i), ct.types.get(i), i, kind));
-        }
-        else
-        {
-            assert aliases.size() <= 1;
-            if (!aliases.isEmpty() && aliases.get(0) != null)
-                cfm.addOrReplaceColumnDefinition(new ColumnDefinition(cfm, aliases.get(0), comparator, null, kind));
-        }
-    }
-
-    /*
-            对于这样的CQL:
-      CREATE TABLE test (
-         table_name text,
-         index_name text,
-         index_name2 text,
-         PRIMARY KEY (table_name, index_name)
-      )WITH CLUSTERING ORDER BY (index_name DESC, index_name2 ASC) 
-       AND COMPACT STORAGE AND COMMENT='indexes that have been completed'");
-    
-      keyAliases是table_name
-      columnAliases是index_name
-      definedOrdering是index_name, index_name2，其中index_name的reversed是true，index_name2是false
-      useCompactStorage是true
-      properties是COMMENT(通过org.apache.cassandra.cql3.PropertyDefinitions.addProperty(String, String)增加)
-      
-            如果PRIMARY KEY是 ((table_name,index_name2), index_name)
-            则keyAliases是(table_name,index_name2)
-    */
     public static class RawStatement extends CFStatement
     {
         private final Map<ColumnIdentifier, CQL3Type.Raw> definitions = new HashMap<>();
-        //在org.apache.cassandra.cql3.CqlParser.cfamProperty(RawStatement)中把属性解析后放到properties字段中
-        public final CFPropDefs properties = new CFPropDefs();
-        //如CREATE TABLE IF NOT EXISTS Cats0 ( block_id uuid PRIMARY KEY, breed text, color text, short_hair boolean,"
-        //+ "PRIMARY KEY ((block_id, breed), color, short_hair))
-        //此时keyAliases.size是2，
-        //其中keyAliases[0]是block_id
-        //keyAliases[1]是(block_id, breed)
-        //这在语法解析阶段是允许的，但是在CreateTableStatement.RawStatement.prepare()中才抛错，只需要keyAliases.size是1
-        
-        //每个表必须有主键，并且只能有一个
-        //这个是错误的: CREATE TABLE IF NOT EXISTS Cats00 ( block_id uuid, breed text, color text, short_hair boolean)
-        private final List<List<ColumnIdentifier>> keyAliases = new ArrayList<List<ColumnIdentifier>>();
-        private final List<ColumnIdentifier> columnAliases = new ArrayList<ColumnIdentifier>();
-        private final Map<ColumnIdentifier, Boolean> definedOrdering = new LinkedHashMap<ColumnIdentifier, Boolean>(); // Insertion ordering is important
-        private final Set<ColumnIdentifier> staticColumns = new HashSet<ColumnIdentifier>();
+        public final CFProperties properties = new CFProperties();
 
-        private boolean useCompactStorage;
-        //允许相同的元素出现多个(按元素的hash值确定)
-        //用来检查是否定义了多个同名的字段
+        private final List<List<ColumnIdentifier>> keyAliases = new ArrayList<>();
+        private final List<ColumnIdentifier> columnAliases = new ArrayList<>();
+        private final Set<ColumnIdentifier> staticColumns = new HashSet<>();
         private final Multiset<ColumnIdentifier> definedNames = HashMultiset.create(1);
 
         private final boolean ifNotExists;
@@ -331,25 +397,25 @@ public class CreateTableStatement extends SchemaAlteringStatement
             //这样的用法是错误的:  WITH min_threshold=2 (Unknown property 'min_threshold')
             properties.validate();
 
-            CreateTableStatement stmt = new CreateTableStatement(cfName, properties, ifNotExists, staticColumns);
+            TableParams params = properties.properties.asNewTableParams();
 
-            //以下代码用于确定stmt.columns的值
-            ///////////////////////////////////////////////////////////////////////////
-            boolean hasCounters = false;
-            Map<ByteBuffer, CollectionType> definedMultiCellCollections = null;
+            CreateTableStatement stmt = new CreateTableStatement(cfName, params, ifNotExists, staticColumns);
+
+//<<<<<<< HEAD
+//            //以下代码用于确定stmt.columns的值
+//            ///////////////////////////////////////////////////////////////////////////
+//            boolean hasCounters = false;
+//            Map<ByteBuffer, CollectionType> definedMultiCellCollections = null;
+//=======
+//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
             for (Map.Entry<ColumnIdentifier, CQL3Type.Raw> entry : definitions.entrySet())
             {
                 ColumnIdentifier id = entry.getKey();
                 CQL3Type pt = entry.getValue().prepare(keyspace());
-                if (pt.isCollection() && ((CollectionType) pt.getType()).isMultiCell())
-                {
-                    if (definedMultiCellCollections == null)
-                        definedMultiCellCollections = new HashMap<>();
-                    definedMultiCellCollections.put(id.bytes, (CollectionType) pt.getType());
-                }
-                else if (entry.getValue().isCounter())
-                    hasCounters = true;
-
+                if (pt.isCollection() && ((CollectionType)pt.getType()).isMultiCell())
+                    stmt.collections.put(id.bytes, (CollectionType)pt.getType());
+                if (entry.getValue().isCounter())
+                    stmt.hasCounters = true;
                 stmt.columns.put(id, pt.getType()); // we'll remove what is not a column below
             }
 
@@ -360,25 +426,27 @@ public class CreateTableStatement extends SchemaAlteringStatement
             //每个表必须有主键，并且只能有一个
             if (keyAliases.isEmpty())
                 throw new InvalidRequestException("No PRIMARY KEY specifed (exactly one required)");
-            else if (keyAliases.size() > 1)
+            if (keyAliases.size() > 1)
                 throw new InvalidRequestException("Multiple PRIMARY KEYs specifed (exactly one required)");
-            else if (hasCounters && properties.getDefaultTimeToLive() > 0)
+            if (stmt.hasCounters && params.defaultTimeToLive > 0)
                 throw new InvalidRequestException("Cannot set default_time_to_live on a table with counters");
 
             List<ColumnIdentifier> kAliases = keyAliases.get(0);
-
-            List<AbstractType<?>> keyTypes = new ArrayList<AbstractType<?>>(kAliases.size());
+            stmt.keyTypes = new ArrayList<>(kAliases.size());
             for (ColumnIdentifier alias : kAliases)
             {
-                stmt.keyAliases.add(alias.bytes);
-                //通过PRIMARY KEY定义的部分，
-                //例如: PRIMARY KEY ((block_id, breed), color, short_hair)
-                //PRIMARY KEY由PARTITION_KEY和CLUSTERING_COLUMN组成，
-                //其中(block_id, breed)是PARTITION_KEY，而(color, short_hair)是CLUSTERING_COLUMN
-                //因为(block_id, breed)由大于1个字段组成，所以又叫composite PARTITION_KEY
-                //getTypeAndRemove就是用来检查PARTITION_KEY和CLUSTERING_COLUMN的，这两种key中的字段类型不能是CollectionType
-                
-                //另外，此类的keyAliases对应PARTITION_KEY，而columnAliases对应CLUSTERING_COLUMN
+//<<<<<<< HEAD
+//                stmt.keyAliases.add(alias.bytes);
+//                //通过PRIMARY KEY定义的部分，
+//                //例如: PRIMARY KEY ((block_id, breed), color, short_hair)
+//                //PRIMARY KEY由PARTITION_KEY和CLUSTERING_COLUMN组成，
+//                //其中(block_id, breed)是PARTITION_KEY，而(color, short_hair)是CLUSTERING_COLUMN
+//                //因为(block_id, breed)由大于1个字段组成，所以又叫composite PARTITION_KEY
+//                //getTypeAndRemove就是用来检查PARTITION_KEY和CLUSTERING_COLUMN的，这两种key中的字段类型不能是CollectionType
+//                
+//                //另外，此类的keyAliases对应PARTITION_KEY，而columnAliases对应CLUSTERING_COLUMN
+//=======
+                stmt.keyAliases.add(alias);
                 AbstractType<?> t = getTypeAndRemove(stmt.columns, alias);
                 //主键字段不能是counter类型
                 //例如这样是不行的: block_id counter PRIMARY KEY
@@ -392,172 +460,221 @@ public class CreateTableStatement extends SchemaAlteringStatement
                     throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", alias));
                 if (staticColumns.contains(alias))
                     throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", alias));
-                keyTypes.add(t);
+                stmt.keyTypes.add(t);
             }
-            stmt.keyValidator = keyTypes.size() == 1 ? keyTypes.get(0) : CompositeType.getInstance(keyTypes);
+//<<<<<<< HEAD
+//            stmt.keyValidator = keyTypes.size() == 1 ? keyTypes.get(0) : CompositeType.getInstance(keyTypes);
+//
+//            //以下代码用于确定stmt.comparator和stmt.columnAliases的值(处理CLUSTERING_COLUMN)
+//            ///////////////////////////////////////////////////////////////////////////
+//            // Dense means that no part of the comparator stores a CQL column name. This means
+//            // COMPACT STORAGE with at least one columnAliases (otherwise it's a thrift "static" CF).
+//            stmt.isDense = useCompactStorage && !columnAliases.isEmpty();
+//            // Handle column aliases
+//            //没有CLUSTERING_COLUMN或有CLUSTERING_COLUMN但是没有使用COMPACT STORAGE时都使用XxxSparseCellNameType(稀疏的)
+//            //其他情况使用XxxDenseCellNameType(稠密的)
+//            if (columnAliases.isEmpty())
+//            {
+//                if (useCompactStorage)
+//                {
+//                    // There should remain some column definition since it is a non-composite "static" CF
+//                    if (stmt.columns.isEmpty())
+//                        throw new InvalidRequestException("No definition found that is not part of the PRIMARY KEY");
+//
+//                    if (definedMultiCellCollections != null)
+//                        throw new InvalidRequestException("Non-frozen collection types are not supported with COMPACT STORAGE");
+//
+//                    stmt.comparator = new SimpleSparseCellNameType(UTF8Type.instance);
+//                }
+//                else
+//                {
+//                    //如: CREATE TABLE test
+//                    //+ " ( block_id uuid, breed text, short_hair boolean, emails set<text>," //
+//                    //+ " PRIMARY KEY ((block_id, breed)))
+//                    //此时stmt.comparator是一个CompositeType(包含UTF8Type和ColumnToCollectionType)
+//                    stmt.comparator = definedMultiCellCollections == null
+//                                    ? new CompoundSparseCellNameType(Collections.<AbstractType<?>>emptyList())
+//                                    : new CompoundSparseCellNameType.WithCollection(Collections.<AbstractType<?>>emptyList(), ColumnToCollectionType.getInstance(definedMultiCellCollections));
+//                }
+//            }
+//            else
+//            {
+//                // If we use compact storage and have only one alias, it is a
+//                // standard "dynamic" CF, otherwise it's a composite
+//                if (useCompactStorage && columnAliases.size() == 1)
+//                {
+//                    if (definedMultiCellCollections != null)
+//                        throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
+//
+//                    ColumnIdentifier alias = columnAliases.get(0);
+//                    if (staticColumns.contains(alias))
+//                        throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", alias));
+//
+//                    stmt.columnAliases.add(alias.bytes);
+//                    AbstractType<?> at = getTypeAndRemove(stmt.columns, alias);
+//                    if (at instanceof CounterColumnType)
+//                        throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", stmt.columnAliases.get(0)));
+//                    stmt.comparator = new SimpleDenseCellNameType(at);
+//                }
+//                else
+//                {
+//                    List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(columnAliases.size() + 1); //没有必要加1
+//                    for (ColumnIdentifier t : columnAliases)
+//                    {
+//                        stmt.columnAliases.add(t.bytes);
+//
+//                        AbstractType<?> type = getTypeAndRemove(stmt.columns, t);
+//                        if (type instanceof CounterColumnType)
+//                            throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", t));
+//                        if (staticColumns.contains(t))
+//                            throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", t));
+//                        types.add(type);
+//                    }
+//
+//                    if (useCompactStorage)
+//                    {
+//                        if (definedMultiCellCollections != null)
+//                            throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
+//=======
 
-            //以下代码用于确定stmt.comparator和stmt.columnAliases的值(处理CLUSTERING_COLUMN)
-            ///////////////////////////////////////////////////////////////////////////
-            // Dense means that no part of the comparator stores a CQL column name. This means
-            // COMPACT STORAGE with at least one columnAliases (otherwise it's a thrift "static" CF).
-            stmt.isDense = useCompactStorage && !columnAliases.isEmpty();
+            stmt.clusteringTypes = new ArrayList<>(columnAliases.size());
             // Handle column aliases
-            //没有CLUSTERING_COLUMN或有CLUSTERING_COLUMN但是没有使用COMPACT STORAGE时都使用XxxSparseCellNameType(稀疏的)
-            //其他情况使用XxxDenseCellNameType(稠密的)
-            if (columnAliases.isEmpty())
+            for (ColumnIdentifier t : columnAliases)
             {
-                if (useCompactStorage)
+                stmt.columnAliases.add(t);
+
+                AbstractType<?> type = getTypeAndRemove(stmt.columns, t);
+                if (type instanceof CounterColumnType)
+                    throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", t));
+                if (staticColumns.contains(t))
+                    throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", t));
+                stmt.clusteringTypes.add(type);
+            }
+
+            // We've handled anything that is not a rpimary key so stmt.columns only contains NON-PK columns. So
+            // if it's a counter table, make sure we don't have non-counter types
+            if (stmt.hasCounters)
+            {
+                for (AbstractType<?> type : stmt.columns.values())
+                    if (!type.isCounter())
+                        throw new InvalidRequestException("Cannot mix counter and non counter columns in the same table");
+            }
+//<<<<<<< HEAD
+//            
+//            //以下代码用于确定stmt.defaultValidator和stmt.valueAlias的值
+//            ///////////////////////////////////////////////////////////////////////////
+//            if (!staticColumns.isEmpty())
+//=======
+
+            boolean useCompactStorage = properties.useCompactStorage;
+            // Dense means that on the thrift side, no part of the "thrift column name" stores a "CQL/metadata column name".
+            // This means COMPACT STORAGE with at least one clustering type (otherwise it's a thrift "static" CF).
+            stmt.isDense = useCompactStorage && !stmt.clusteringTypes.isEmpty();
+            // Compound means that on the thrift side, the "thrift column name" is a composite one. It's the case unless
+            // we use compact storage COMPACT STORAGE and we have either no clustering columns (thrift "static" CF) or
+            // only one of them (if more than one, it's a "dense composite").
+            stmt.isCompound = !(useCompactStorage && stmt.clusteringTypes.size() <= 1);
+
+            // For COMPACT STORAGE, we reject any "feature" that we wouldn't be able to translate back to thrift.
+            if (useCompactStorage)
+            {
+                if (!stmt.collections.isEmpty())
+                    throw new InvalidRequestException("Non-frozen collection types are not supported with COMPACT STORAGE");
+                if (!staticColumns.isEmpty())
+                    throw new InvalidRequestException("Static columns are not supported in COMPACT STORAGE tables");
+
+                if (stmt.clusteringTypes.isEmpty())
                 {
-                    // There should remain some column definition since it is a non-composite "static" CF
+                    // It's a thrift "static CF" so there should be some columns definition
                     if (stmt.columns.isEmpty())
                         throw new InvalidRequestException("No definition found that is not part of the PRIMARY KEY");
-
-                    if (definedMultiCellCollections != null)
-                        throw new InvalidRequestException("Non-frozen collection types are not supported with COMPACT STORAGE");
-
-                    stmt.comparator = new SimpleSparseCellNameType(UTF8Type.instance);
                 }
-                else
+
+                if (stmt.isDense)
                 {
-                    //如: CREATE TABLE test
-                    //+ " ( block_id uuid, breed text, short_hair boolean, emails set<text>," //
-                    //+ " PRIMARY KEY ((block_id, breed)))
-                    //此时stmt.comparator是一个CompositeType(包含UTF8Type和ColumnToCollectionType)
-                    stmt.comparator = definedMultiCellCollections == null
-                                    ? new CompoundSparseCellNameType(Collections.<AbstractType<?>>emptyList())
-                                    : new CompoundSparseCellNameType.WithCollection(Collections.<AbstractType<?>>emptyList(), ColumnToCollectionType.getInstance(definedMultiCellCollections));
-                }
-            }
-            else
-            {
-                // If we use compact storage and have only one alias, it is a
-                // standard "dynamic" CF, otherwise it's a composite
-                if (useCompactStorage && columnAliases.size() == 1)
-                {
-                    if (definedMultiCellCollections != null)
-                        throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
-
-                    ColumnIdentifier alias = columnAliases.get(0);
-                    if (staticColumns.contains(alias))
-                        throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", alias));
-
-                    stmt.columnAliases.add(alias.bytes);
-                    AbstractType<?> at = getTypeAndRemove(stmt.columns, alias);
-                    if (at instanceof CounterColumnType)
-                        throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", stmt.columnAliases.get(0)));
-                    stmt.comparator = new SimpleDenseCellNameType(at);
-                }
-                else
-                {
-                    List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(columnAliases.size() + 1); //没有必要加1
-                    for (ColumnIdentifier t : columnAliases)
-                    {
-                        stmt.columnAliases.add(t.bytes);
-
-                        AbstractType<?> type = getTypeAndRemove(stmt.columns, t);
-                        if (type instanceof CounterColumnType)
-                            throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", t));
-                        if (staticColumns.contains(t))
-                            throw new InvalidRequestException(String.format("Static column %s cannot be part of the PRIMARY KEY", t));
-                        types.add(type);
-                    }
-
-                    if (useCompactStorage)
-                    {
-                        if (definedMultiCellCollections != null)
-                            throw new InvalidRequestException("Collection types are not supported with COMPACT STORAGE");
-
-                        stmt.comparator = new CompoundDenseCellNameType(types);
-                    }
-                    else
-                    {
-                        stmt.comparator = definedMultiCellCollections == null
-                                        ? new CompoundSparseCellNameType(types)
-                                        : new CompoundSparseCellNameType.WithCollection(types, ColumnToCollectionType.getInstance(definedMultiCellCollections));
-                    }
-                }
-            }
-            
-            //以下代码用于确定stmt.defaultValidator和stmt.valueAlias的值
-            ///////////////////////////////////////////////////////////////////////////
-            if (!staticColumns.isEmpty())
-            {
-                // Only CQL3 tables can have static columns
-                if (useCompactStorage)
-                    throw new InvalidRequestException("Static columns are not supported in COMPACT STORAGE tables");
-                // Static columns only make sense if we have at least one clustering column. Otherwise everything is static anyway
-                if (columnAliases.isEmpty())
-                    throw new InvalidRequestException("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
-            }
-
-            if (useCompactStorage && !stmt.columnAliases.isEmpty())
-            {
-                if (stmt.columns.isEmpty())
-                {
-                    // The only value we'll insert will be the empty one, so the default validator don't matter
-                    stmt.defaultValidator = BytesType.instance;
-                    // We need to distinguish between
-                    //   * I'm upgrading from thrift so the valueAlias is null
-                    //   * I've defined my table with only a PK (and the column value will be empty)
-                    // So, we use an empty valueAlias (rather than null) for the second case
-                    stmt.valueAlias = ByteBufferUtil.EMPTY_BYTE_BUFFER;
-                }
-                else
-                {
+                    // We can have no columns (only the PK), but we can't have more than one.
                     if (stmt.columns.size() > 1)
                         throw new InvalidRequestException(String.format("COMPACT STORAGE with composite PRIMARY KEY allows no more than one column not part of the PRIMARY KEY (got: %s)", StringUtils.join(stmt.columns.keySet(), ", ")));
-                    //使用最后那个字段
-                    //如:
-                    //CREATE TABLE IF NOT EXISTS " + tableName
-                    //  (block_id uuid, breed text, short_hair boolean, f1 text"
-                    //   PRIMARY KEY ((block_id, breed), short_hair)) WITH COMPACT STORAGE");
-                    //则defaultValidator是text
-                    //valueAlias是f1
-                    Map.Entry<ColumnIdentifier, AbstractType> lastEntry = stmt.columns.entrySet().iterator().next();
-                    stmt.defaultValidator = lastEntry.getValue();
-                    stmt.valueAlias = lastEntry.getKey().bytes;
-                    stmt.columns.remove(lastEntry.getKey()); //stmt.columns之后就空了
+//<<<<<<< HEAD
+//                    //使用最后那个字段
+//                    //如:
+//                    //CREATE TABLE IF NOT EXISTS " + tableName
+//                    //  (block_id uuid, breed text, short_hair boolean, f1 text"
+//                    //   PRIMARY KEY ((block_id, breed), short_hair)) WITH COMPACT STORAGE");
+//                    //则defaultValidator是text
+//                    //valueAlias是f1
+//                    Map.Entry<ColumnIdentifier, AbstractType> lastEntry = stmt.columns.entrySet().iterator().next();
+//                    stmt.defaultValidator = lastEntry.getValue();
+//                    stmt.valueAlias = lastEntry.getKey().bytes;
+//                    stmt.columns.remove(lastEntry.getKey()); //stmt.columns之后就空了
+//=======
+                }
+                else
+                {
+                    // we are in the "static" case, so we need at least one column defined. For non-compact however, having
+                    // just the PK is fine.
+                    if (stmt.columns.isEmpty())
+                        throw new InvalidRequestException("COMPACT STORAGE with non-composite PRIMARY KEY require one column not part of the PRIMARY KEY, none given");
                 }
             }
             else
             {
-                // For compact, we are in the "static" case, so we need at least one column defined. For non-compact however, having
-                // just the PK is fine since we have CQL3 row marker.
-                //不可能出现这个，
-                //因为前面if (columnAliases.isEmpty())　{　if (useCompactStorage)　{if (stmt.columns.isEmpty())
-                //如果满足这三个if就提前抛异常了
-                //如果columnAliases不是Empty，直接就进入了上一个if (useCompactStorage && !stmt.columnAliases.isEmpty())
-                if (useCompactStorage && stmt.columns.isEmpty())
-                    throw new InvalidRequestException("COMPACT STORAGE with non-composite PRIMARY KEY require one column not part of the PRIMARY KEY, none given");
-
-                // There is no way to insert/access a column that is not defined for non-compact storage, so
-                // the actual validator don't matter much (except that we want to recognize counter CF as limitation apply to them).
-                stmt.defaultValidator = !stmt.columns.isEmpty() && (stmt.columns.values().iterator().next() instanceof CounterColumnType)
-                    ? CounterColumnType.instance
-                    : BytesType.instance;
+//<<<<<<< HEAD
+//                // For compact, we are in the "static" case, so we need at least one column defined. For non-compact however, having
+//                // just the PK is fine since we have CQL3 row marker.
+//                //不可能出现这个，
+//                //因为前面if (columnAliases.isEmpty())　{　if (useCompactStorage)　{if (stmt.columns.isEmpty())
+//                //如果满足这三个if就提前抛异常了
+//                //如果columnAliases不是Empty，直接就进入了上一个if (useCompactStorage && !stmt.columnAliases.isEmpty())
+//                if (useCompactStorage && stmt.columns.isEmpty())
+//                    throw new InvalidRequestException("COMPACT STORAGE with non-composite PRIMARY KEY require one column not part of the PRIMARY KEY, none given");
+//
+//                // There is no way to insert/access a column that is not defined for non-compact storage, so
+//                // the actual validator don't matter much (except that we want to recognize counter CF as limitation apply to them).
+//                stmt.defaultValidator = !stmt.columns.isEmpty() && (stmt.columns.values().iterator().next() instanceof CounterColumnType)
+//                    ? CounterColumnType.instance
+//                    : BytesType.instance;
+//            }
+//
+//            
+//            
+//            //以下代码用于检查CLUSTERING ORDER子句是否合法
+//            ///////////////////////////////////////////////////////////////////////////
+//            //CLUSTERING ORDER中的字段只能是CLUSTERING_COLUMN包含的字段
+//=======
+                if (stmt.clusteringTypes.isEmpty() && !staticColumns.isEmpty())
+                {
+                    // Static columns only make sense if we have at least one clustering column. Otherwise everything is static anyway
+                    if (columnAliases.isEmpty())
+                        throw new InvalidRequestException("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
+                }
             }
 
-            
-            
-            //以下代码用于检查CLUSTERING ORDER子句是否合法
-            ///////////////////////////////////////////////////////////////////////////
-            //CLUSTERING ORDER中的字段只能是CLUSTERING_COLUMN包含的字段
             // If we give a clustering order, we must explicitly do so for all aliases and in the order of the PK
-            if (!definedOrdering.isEmpty())
+            if (!properties.definedOrdering.isEmpty())
             {
-                if (definedOrdering.size() > columnAliases.size())
-                    throw new InvalidRequestException("Only CLUSTERING_COLUMN columns can be defined in CLUSTERING ORDER directive");
+//<<<<<<< HEAD
+//                if (definedOrdering.size() > columnAliases.size())
+//                    throw new InvalidRequestException("Only CLUSTERING_COLUMN columns can be defined in CLUSTERING ORDER directive");
+//=======
+                if (properties.definedOrdering.size() > columnAliases.size())
+                    throw new InvalidRequestException("Only clustering key columns can be defined in CLUSTERING ORDER directive");
 
                 int i = 0;
-                for (ColumnIdentifier id : definedOrdering.keySet())
+                for (ColumnIdentifier id : properties.definedOrdering.keySet())
                 {
                     ColumnIdentifier c = columnAliases.get(i);
                     if (!id.equals(c))
                     {
-                        //排序key中的字段与CLUSTERING_COLUMN中的字段顺序必须一样
-                        if (definedOrdering.containsKey(c))
-                            throw new InvalidRequestException(String.format("The order of columns in the CLUSTERING ORDER directive must be the one of the CLUSTERING_COLUMN (%s must appear before %s)", c, id));
-                        else //排序key中的字段必须是CLUSTERING_COLUMN中的字段
+//<<<<<<< HEAD
+//                        //排序key中的字段与CLUSTERING_COLUMN中的字段顺序必须一样
+//                        if (definedOrdering.containsKey(c))
+//                            throw new InvalidRequestException(String.format("The order of columns in the CLUSTERING ORDER directive must be the one of the CLUSTERING_COLUMN (%s must appear before %s)", c, id));
+//                        else //排序key中的字段必须是CLUSTERING_COLUMN中的字段
+//=======
+                        if (properties.definedOrdering.containsKey(c))
+                            throw new InvalidRequestException(String.format("The order of columns in the CLUSTERING ORDER directive must be the one of the clustering key (%s must appear before %s)", c, id));
+                        else
                             throw new InvalidRequestException(String.format("Missing CLUSTERING ORDER for column %s", c));
                     }
                     ++i;
@@ -579,7 +696,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException(String.format("Invalid collection type for PRIMARY KEY component %s", t));
 
             columns.remove(t);
-            Boolean isReversed = definedOrdering.get(t);
+            Boolean isReversed = properties.definedOrdering.get(t);
             return isReversed != null && isReversed ? ReversedType.getInstance(type) : type;
         }
 
@@ -604,16 +721,6 @@ public class CreateTableStatement extends SchemaAlteringStatement
         public void addColumnAlias(ColumnIdentifier alias)
         {
             columnAliases.add(alias);
-        }
-
-        public void setOrdering(ColumnIdentifier alias, boolean reversed)
-        {
-            definedOrdering.put(alias, reversed);
-        }
-
-        public void setCompactStorage()
-        {
-            useCompactStorage = true;
         }
     }
 }

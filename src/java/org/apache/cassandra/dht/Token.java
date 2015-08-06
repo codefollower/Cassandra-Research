@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.db.RowPosition;
+import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -65,7 +65,7 @@ public abstract class Token implements RingPosition<Token>, Serializable
         {
             IPartitioner p = object.getPartitioner();
             ByteBuffer b = p.getTokenFactory().toByteArray(object);
-            return TypeSizes.NATIVE.sizeof(b.remaining()) + b.remaining();
+            return TypeSizes.sizeof(b.remaining()) + b.remaining();
         }
     }
 
@@ -73,7 +73,22 @@ public abstract class Token implements RingPosition<Token>, Serializable
     abstract public long getHeapSize();
     abstract public Object getTokenValue();
 
-    public Token getToken() //没用子类覆盖
+//<<<<<<< HEAD
+//    public Token getToken() //没用子类覆盖
+//=======
+    /**
+     * Returns a measure for the token space covered between this token and next.
+     * Used by the token allocation algorithm (see CASSANDRA-7032).
+     */
+    abstract public double size(Token next);
+    /**
+     * Returns a token that is slightly greater than this. Used to avoid clashes
+     * between nodes in separate datacentres trying to use the same token via
+     * the token allocation algorithm.
+     */
+    abstract public Token increaseSlightly();
+
+    public Token getToken()
     {
         return this;
     }
@@ -130,7 +145,7 @@ public abstract class Token implements RingPosition<Token>, Serializable
             return (R)maxKeyBound();
     }
 
-    public static class KeyBound implements RowPosition
+    public static class KeyBound implements PartitionPosition
     {
         private final Token token;
         public final boolean isMinimumBound;
@@ -146,7 +161,7 @@ public abstract class Token implements RingPosition<Token>, Serializable
             return token;
         }
 
-        public int compareTo(RowPosition pos)
+        public int compareTo(PartitionPosition pos)
         {
             if (this == pos)
                 return 0;
@@ -176,9 +191,9 @@ public abstract class Token implements RingPosition<Token>, Serializable
             return getToken().isMinimum();
         }
 
-        public RowPosition.Kind kind()
+        public PartitionPosition.Kind kind()
         {
-            return isMinimumBound ? RowPosition.Kind.MIN_BOUND : RowPosition.Kind.MAX_BOUND;
+            return isMinimumBound ? PartitionPosition.Kind.MIN_BOUND : PartitionPosition.Kind.MAX_BOUND;
         }
 
         @Override

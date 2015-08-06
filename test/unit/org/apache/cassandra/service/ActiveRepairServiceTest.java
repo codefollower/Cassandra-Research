@@ -28,15 +28,14 @@ import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
-import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
+import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.FBUtilities;
 
 import static org.junit.Assert.assertEquals;
@@ -58,8 +57,7 @@ public class ActiveRepairServiceTest
     {
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE5,
-                                    SimpleStrategy.class,
-                                    KSMetaData.optsWithRF(2),
+                                    KeyspaceParams.simple(2),
                                     SchemaLoader.standardCFMD(KEYSPACE5, CF_COUNTER),
                                     SchemaLoader.standardCFMD(KEYSPACE5, CF_STANDRAD1));
     }
@@ -79,8 +77,8 @@ public class ActiveRepairServiceTest
 
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
         tmd.clearUnsafe();
-        StorageService.instance.setTokens(Collections.singleton(StorageService.getPartitioner().getRandomToken()));
-        tmd.updateNormalToken(StorageService.getPartitioner().getMinimumToken(), REMOTE);
+        StorageService.instance.setTokens(Collections.singleton(tmd.partitioner.getRandomToken()));
+        tmd.updateNormalToken(tmd.partitioner.getMinimumToken(), REMOTE);
         assert tmd.isMember(REMOTE);
     }
 
@@ -190,8 +188,8 @@ public class ActiveRepairServiceTest
         Collection<String> hosts = Arrays.asList(FBUtilities.getBroadcastAddress().getCanonicalHostName(),expected.get(0).getCanonicalHostName());
 
        assertEquals(expected.get(0), ActiveRepairService.getNeighbors(KEYSPACE5,
-                                                                      StorageService.instance.getLocalRanges(KEYSPACE5).iterator().next(),
-                                                                      null, hosts).iterator().next());
+               StorageService.instance.getLocalRanges(KEYSPACE5).iterator().next(),
+               null, hosts).iterator().next());
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -210,7 +208,7 @@ public class ActiveRepairServiceTest
         for (int i = 1; i <= max; i++)
         {
             InetAddress endpoint = InetAddress.getByName("127.0.0." + i);
-            tmd.updateNormalToken(StorageService.getPartitioner().getRandomToken(), endpoint);
+            tmd.updateNormalToken(tmd.partitioner.getRandomToken(), endpoint);
             endpoints.add(endpoint);
         }
         return endpoints;

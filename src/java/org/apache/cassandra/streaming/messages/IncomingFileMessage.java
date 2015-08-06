@@ -23,6 +23,8 @@ import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
+import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.streaming.StreamReader;
 import org.apache.cassandra.streaming.StreamSession;
@@ -36,9 +38,10 @@ public class IncomingFileMessage extends StreamMessage
 {
     public static Serializer<IncomingFileMessage> serializer = new Serializer<IncomingFileMessage>()
     {
+        @SuppressWarnings("resource")
         public IncomingFileMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
         {
-            DataInputStream input = new DataInputStream(Channels.newInputStream(in));
+            DataInputPlus input = new DataInputStreamPlus(Channels.newInputStream(in));
             FileMessageHeader header = FileMessageHeader.serializer.deserialize(input, version);
             StreamReader reader = header.compressionInfo == null ? new StreamReader(header, session)
                     : new CompressedStreamReader(header, session);
@@ -55,6 +58,14 @@ public class IncomingFileMessage extends StreamMessage
             }
             catch (Throwable t)
             {
+                // Throwable can be Runtime error containing IOException.
+                // In that case we don't want to retry.
+                Throwable cause = t;
+                while ((cause = cause.getCause()) != null)
+                {
+                   if (cause instanceof IOException)
+                       throw (IOException) cause;
+                }
                 JVMStabilityInspector.inspectThrowable(t);
                 // Otherwise, we can retry
                 session.doRetry(header, t);

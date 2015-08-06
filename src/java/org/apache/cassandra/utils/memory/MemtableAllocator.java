@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.WaitQueue;
 
@@ -58,10 +59,7 @@ public abstract class MemtableAllocator
         this.offHeap = offHeap;
     }
 
-    public abstract Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp);
-    public abstract CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp);
-    public abstract DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp);
-    public abstract ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp);
+    public abstract Row.Builder rowBuilder(CFMetaData metadata, OpOrder.Group opGroup, boolean isStatic);
     public abstract DecoratedKey clone(DecoratedKey key, OpOrder.Group opGroup);
     public abstract DataReclaimer reclaimer();
 
@@ -106,8 +104,8 @@ public abstract class MemtableAllocator
 
     public static interface DataReclaimer
     {
-        public DataReclaimer reclaim(Cell cell);
-        public DataReclaimer reclaimImmediately(Cell cell);
+        public DataReclaimer reclaim(Row row);
+        public DataReclaimer reclaimImmediately(Row row);
         public DataReclaimer reclaimImmediately(DecoratedKey key);
         public void cancel();
         public void commit();
@@ -115,12 +113,12 @@ public abstract class MemtableAllocator
 
     public static final DataReclaimer NO_OP = new DataReclaimer()
     {
-        public DataReclaimer reclaim(Cell cell)
+        public DataReclaimer reclaim(Row update)
         {
             return this;
         }
 
-        public DataReclaimer reclaimImmediately(Cell cell)
+        public DataReclaimer reclaimImmediately(Row update)
         {
             return this;
         }
@@ -160,13 +158,24 @@ public abstract class MemtableAllocator
         // currently no corroboration/enforcement of this is performed.
         void releaseAll()
         {
-            parent.adjustAcquired(-ownsUpdater.getAndSet(this, 0), false);
-            parent.adjustReclaiming(-reclaimingUpdater.getAndSet(this, 0));
+            parent.released(ownsUpdater.getAndSet(this, 0));
+            parent.reclaimed(reclaimingUpdater.getAndSet(this, 0));
+        }
+
+        // like allocate, but permits allocations to be negative
+        public void adjust(long size, OpOrder.Group opGroup)
+        {
+            if (size <= 0)
+                released(-size);
+            else
+                allocate(size, opGroup);
         }
 
         // allocate memory in the tracker, and mark ourselves as owning it
         public void allocate(long size, OpOrder.Group opGroup)
         {
+            assert size >= 0;
+
             while (true)
             {
                 if (parent.tryAllocate(size))
@@ -190,23 +199,23 @@ public abstract class MemtableAllocator
             }
         }
 
-        // retroactively mark an amount allocated amd acquired in the tracker, and owned by us
-        void allocated(long size)
+        // retroactively mark an amount allocated and acquired in the tracker, and owned by us
+        private void allocated(long size)
         {
-            parent.adjustAcquired(size, true);
+            parent.allocated(size);
             ownsUpdater.addAndGet(this, size);
         }
 
         // retroactively mark an amount acquired in the tracker, and owned by us
-        void acquired(long size)
+        private void acquired(long size)
         {
-            parent.adjustAcquired(size, false);
+            parent.acquired(size);
             ownsUpdater.addAndGet(this, size);
         }
 
-        void release(long size)
+        void released(long size)
         {
-            parent.adjustAcquired(-size, false);
+            parent.released(size);
             ownsUpdater.addAndGet(this, -size);
         }
 
@@ -217,11 +226,11 @@ public abstract class MemtableAllocator
             {
                 long cur = owns;
                 long prev = reclaiming;
-                if (reclaimingUpdater.compareAndSet(this, prev, cur))
-                {
-                    parent.adjustReclaiming(cur - prev);
-                    return;
-                }
+                if (!reclaimingUpdater.compareAndSet(this, prev, cur))
+                    continue;
+
+                parent.reclaiming(cur - prev);
+                return;
             }
         }
 

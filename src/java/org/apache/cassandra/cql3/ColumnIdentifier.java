@@ -17,9 +17,14 @@
  */
 package org.apache.cassandra.cql3;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.List;
 import java.util.Locale;
 import java.nio.ByteBuffer;
+import java.util.concurrent.ConcurrentMap;
+
+import com.google.common.collect.MapMaker;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.config.CFMetaData;
@@ -29,8 +34,8 @@ import org.apache.cassandra.cql3.selection.Selector;
 import org.apache.cassandra.cql3.selection.SimpleSelector;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
@@ -39,30 +44,93 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  * Represents an identifer for a CQL column definition.
  * TODO : should support light-weight mode without text representation for when not interned
  */
-//表示一个列名
-public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Selectable implements IMeasurableMemory
+//<<<<<<< HEAD
+////表示一个列名
+//public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Selectable implements IMeasurableMemory
+//{
+//    public final ByteBuffer bytes; //列名字节形式
+//    private final String text; //列名文本形式
+//=======
+public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Selectable implements IMeasurableMemory, Comparable<ColumnIdentifier>
 {
-    public final ByteBuffer bytes; //列名字节形式
-    private final String text; //列名文本形式
+    public final ByteBuffer bytes;
+    private final String text;
+    /**
+     * since these objects are compared frequently, we stash an efficiently compared prefix of the bytes, in the expectation
+     * that the majority of comparisons can be answered by this value only
+     */
+    private final long prefixComparison;
+    private final boolean interned;
 
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new ColumnIdentifier("", true));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new ColumnIdentifier(ByteBufferUtil.EMPTY_BYTE_BUFFER, "", false));
+
+    private static final ConcurrentMap<ByteBuffer, ColumnIdentifier> internedInstances = new MapMaker().weakValues().makeMap();
+
+    private static long prefixComparison(ByteBuffer bytes)
+    {
+        long prefix = 0;
+        ByteBuffer read = bytes.duplicate();
+        int i = 0;
+        while (read.hasRemaining() && i < 8)
+        {
+            prefix <<= 8;
+            prefix |= read.get() & 0xFF;
+            i++;
+        }
+        prefix <<= (8 - i) * 8;
+        // by flipping the top bit (==Integer.MIN_VALUE), we ensure that signed comparison gives the same result
+        // as an unsigned without the bit flipped
+        prefix ^= Long.MIN_VALUE;
+        return prefix;
+    }
 
     public ColumnIdentifier(String rawText, boolean keepCase) //keepCase为true时保留原始名称，否则全转成小写
     {
         this.text = keepCase ? rawText : rawText.toLowerCase(Locale.US);
         this.bytes = ByteBufferUtil.bytes(this.text); //按UTF_8编码
+        this.prefixComparison = prefixComparison(bytes);
+        this.interned = false;
     }
 
     public ColumnIdentifier(ByteBuffer bytes, AbstractType<?> type)
     {
-        this.bytes = bytes;
-        this.text = type.getString(bytes);
+        this(bytes, type.getString(bytes), false);
     }
 
-    public ColumnIdentifier(ByteBuffer bytes, String text)
+    private ColumnIdentifier(ByteBuffer bytes, String text, boolean interned)
     {
         this.bytes = bytes;
         this.text = text;
+        this.interned = interned;
+        this.prefixComparison = prefixComparison(bytes);
+    }
+
+    public static ColumnIdentifier getInterned(ByteBuffer bytes, AbstractType<?> type)
+    {
+        return getInterned(bytes, type.getString(bytes));
+    }
+
+    public static ColumnIdentifier getInterned(String rawText, boolean keepCase)
+    {
+        String text = keepCase ? rawText : rawText.toLowerCase(Locale.US);
+        ByteBuffer bytes = ByteBufferUtil.bytes(text);
+        return getInterned(bytes, text);
+    }
+
+    public static ColumnIdentifier getInterned(ByteBuffer bytes, String text)
+    {
+        ColumnIdentifier id = internedInstances.get(bytes);
+        if (id != null)
+            return id;
+
+        ColumnIdentifier created = new ColumnIdentifier(bytes, text, true);
+        ColumnIdentifier previous = internedInstances.putIfAbsent(bytes, created);
+        return previous == null ? created : previous;
+    }
+
+    public boolean isInterned()
+    {
+        return interned;
     }
 
     @Override
@@ -74,8 +142,6 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
     @Override
     public final boolean equals(Object o)
     {
-        // Note: it's worth checking for reference equality since we intern those
-        // in SparseCellNameType
         if (this == o)
             return true;
 
@@ -107,7 +173,7 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
 
     public ColumnIdentifier clone(AbstractAllocator allocator)
     {
-        return new ColumnIdentifier(allocator.clone(bytes), text);
+        return interned ? this : new ColumnIdentifier(allocator.clone(bytes), text, false);
     }
 
     public Selector.Factory newSelectorFactory(CFMetaData cfm, List<ColumnDefinition> defs) throws InvalidRequestException
@@ -116,7 +182,17 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
         if (def == null)
             throw new InvalidRequestException(String.format("Undefined name %s in selection clause", this));
 
-        return SimpleSelector.newFactory(def.name.toString(), addAndGetIndex(def, defs), def.type);
+        return SimpleSelector.newFactory(def, addAndGetIndex(def, defs));
+    }
+
+    public int compareTo(ColumnIdentifier that)
+    {
+        int c = Long.compare(this.prefixComparison, that.prefixComparison);
+        if (c != 0)
+            return c;
+        if (this == that)
+            return 0;
+        return ByteBufferUtil.compareUnsigned(this.bytes, that.bytes);
     }
 
     /**
@@ -138,20 +214,22 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
 
         public ColumnIdentifier prepare(CFMetaData cfm)
         {
-            AbstractType<?> comparator = cfm.comparator.asAbstractType();
-            if (cfm.getIsDense() || comparator instanceof CompositeType || comparator instanceof UTF8Type)
-                return new ColumnIdentifier(text, true);
+            if (!cfm.isStaticCompactTable())
+                return getInterned(text, true);
 
-            // We have a Thrift-created table with a non-text comparator.  We need to parse column names with the comparator
-            // to get the correct ByteBuffer representation.  However, this doesn't apply to key aliases, so we need to
-            // make a special check for those and treat them normally.  See CASSANDRA-8178.
+            AbstractType<?> thriftColumnNameType = cfm.thriftColumnNameType();
+            if (thriftColumnNameType instanceof UTF8Type)
+                return getInterned(text, true);
+
+            // We have a Thrift-created table with a non-text comparator. Check if we have a match column, otherwise assume we should use
+            // thriftColumnNameType
             ByteBuffer bufferName = ByteBufferUtil.bytes(text);
-            for (ColumnDefinition def : cfm.partitionKeyColumns())
+            for (ColumnDefinition def : cfm.allColumns())
             {
                 if (def.name.bytes.equals(bufferName))
-                    return new ColumnIdentifier(text, true);
+                    return def.name;
             }
-            return new ColumnIdentifier(comparator.fromString(rawText), text);
+            return getInterned(thriftColumnNameType.fromString(rawText), text);
         }
 
         public boolean processesSelection()

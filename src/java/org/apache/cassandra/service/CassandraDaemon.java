@@ -36,26 +36,32 @@ import javax.management.remote.JMXConnectorServer;
 import javax.management.remote.JMXServiceURL;
 import javax.management.remote.rmi.RMIConnectorServer;
 
+import com.addthis.metrics3.reporter.config.ReporterConfig;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricRegistryListener;
+import com.codahale.metrics.SharedMetricRegistries;
 import com.google.common.util.concurrent.Uninterruptibles;
-import org.apache.cassandra.gms.Gossiper;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.addthis.metrics3.reporter.config.ReporterConfig;
 import org.apache.cassandra.concurrent.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
-import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.StartupException;
+import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
+import org.apache.cassandra.metrics.DefaultNameFactory;
 import org.apache.cassandra.metrics.StorageMetrics;
+import org.apache.cassandra.schema.LegacySchemaMigrator;
+import org.apache.cassandra.cql3.functions.ThreadAwareSecurityManager;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
@@ -71,7 +77,25 @@ public class CassandraDaemon
     public static final String MBEAN_NAME = "org.apache.cassandra.db:type=NativeAccess";
     private static JMXConnectorServer jmxServer = null;
 
-    private static final Logger logger = LoggerFactory.getLogger(CassandraDaemon.class);
+    private static final Logger logger;
+    static {
+        // Need to register metrics before instrumented appender is created(first access to LoggerFactory).
+        SharedMetricRegistries.getOrCreate("logback-metrics").addListener(new MetricRegistryListener.Base()
+        {
+            @Override
+            public void onMeterAdded(String metricName, Meter meter)
+            {
+                // Given metricName consists of appender name in logback.xml + "." + metric name.
+                // We first separate appender name
+                int separator = metricName.lastIndexOf('.');
+                String appenderName = metricName.substring(0, separator);
+                String metric = metricName.substring(separator + 1); // remove "."
+                ObjectName name = DefaultNameFactory.createMetricName(appenderName, metric, null).getMBeanName();
+                CassandraMetricsRegistry.Metrics.registerMBean(meter, name);
+            }
+        });
+        logger = LoggerFactory.getLogger(CassandraDaemon.class);
+    }
 
     private static void maybeInitJmx()
     {
@@ -105,6 +129,7 @@ public class CassandraDaemon
 
     private final boolean runManaged;
     protected final StartupChecks startupChecks;
+    private boolean setupCompleted;
 
     public CassandraDaemon() {
         this(false);
@@ -113,6 +138,7 @@ public class CassandraDaemon
     public CassandraDaemon(boolean runManaged) {
         this.runManaged = runManaged;
         this.startupChecks = new StartupChecks().withDefaultTests();
+        this.setupCompleted = false;
     }
 
     /**
@@ -122,7 +148,15 @@ public class CassandraDaemon
      */
     protected void setup()
     {
+        // Delete any failed snapshot deletions on Windows - see CASSANDRA-9658
+        if (FBUtilities.isWindows())
+            WindowsFailedSnapshotTracker.deleteOldSnapshots();
+
+        ThreadAwareSecurityManager.install();
+
         logSystemInfo();
+
+        CLibrary.tryMlockall();
 
         try
         {
@@ -133,11 +167,17 @@ public class CassandraDaemon
             exitOrFail(e.returnCode, e.getMessage(), e.getCause());
         }
 
-        CLibrary.tryMlockall(); //看一下本地库是否可用，windows下不支持JNA
-
+//<<<<<<< HEAD
+//        CLibrary.tryMlockall(); //看一下本地库是否可用，windows下不支持JNA
+//
+//=======
+//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
         try
         {
-            SystemKeyspace.snapshotOnVersionChange();
+            if (SystemKeyspace.snapshotOnVersionChange())
+            {
+                SystemKeyspace.migrateDataDirs();
+            }
         }
         catch (IOException e)
         {
@@ -174,21 +214,18 @@ public class CassandraDaemon
                 }
             }
         });
-        
+
+        /*
+         * Migrate pre-3.0 keyspaces, tables, types, functions, and aggregates, to their new 3.0 storage.
+         * We don't (and can't) wait for commit log replay here, but we don't need to - all schema changes force
+         * explicit memtable flushes.
+         */
+        LegacySchemaMigrator.migrate();
+
         StorageService.instance.populateTokenMetadata();
+
         // load schema from disk
         Schema.instance.loadFromDisk();
-
-        // clean up compaction leftovers
-        Map<Pair<String, String>, Map<Integer, UUID>> unfinishedCompactions = SystemKeyspace.getUnfinishedCompactions();
-        for (Pair<String, String> kscf : unfinishedCompactions.keySet())
-        {
-            CFMetaData cfm = Schema.instance.getCFMetaData(kscf.left, kscf.right);
-            // CFMetaData can be null if CF is already dropped
-            if (cfm != null)
-                ColumnFamilyStore.removeUnfinishedCompactionLeftovers(cfm, unfinishedCompactions.get(kscf));
-        }
-        SystemKeyspace.discardCompactionsInProgress();
 
         // clean up debris in the rest of the keyspaces
         for (String keyspaceName : Schema.instance.getKeyspaces())
@@ -197,8 +234,12 @@ public class CassandraDaemon
             if (keyspaceName.equals(SystemKeyspace.NAME))
                 continue;
 
-            for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(keyspaceName).values())
-                ColumnFamilyStore.scrubDataDirectories(cfm); //清理一些临时或不再需要的文件
+//<<<<<<< HEAD
+//            for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(keyspaceName).values())
+//                ColumnFamilyStore.scrubDataDirectories(cfm); //清理一些临时或不再需要的文件
+//=======
+            for (CFMetaData cfm : Schema.instance.getTables(keyspaceName))
+                ColumnFamilyStore.scrubDataDirectories(cfm);
         }
 
         Keyspace.setInitialized();
@@ -251,27 +292,29 @@ public class CassandraDaemon
             {
                 for (final ColumnFamilyStore store : cfs.concatWithIndexes())
                 {
-                    if (store.getCompactionStrategy().shouldBeEnabled())
+                    if (store.getCompactionStrategyManager().shouldBeEnabled())
                         store.enableAutoCompaction();
                 }
             }
         }
-        // start compactions in five minutes (if no flushes have occurred by then to do so)
-        Runnable runnable = new Runnable()
+
+        Runnable indexRebuild = new Runnable()
         {
+            @Override
             public void run()
             {
-                for (Keyspace keyspaceName : Keyspace.all())
+                for (Keyspace keyspace : Keyspace.all())
                 {
-                    for (ColumnFamilyStore cf : keyspaceName.getColumnFamilyStores())
+                    for (ColumnFamilyStore cf: keyspace.getColumnFamilyStores())
                     {
-                        for (ColumnFamilyStore store : cf.concatWithIndexes())
-                            CompactionManager.instance.submitBackground(store);
+                        cf.materializedViewManager.buildAllViews();
                     }
                 }
             }
         };
-        ScheduledExecutors.optionalTasks.schedule(runnable, 5, TimeUnit.MINUTES);
+
+        ScheduledExecutors.optionalTasks.schedule(indexRebuild, StorageService.RING_DELAY, TimeUnit.MILLISECONDS);
+
 
         SystemKeyspace.finishStartup();
         
@@ -310,6 +353,10 @@ public class CassandraDaemon
         if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
             waitForGossipToSettle();
 
+        // schedule periodic background compaction task submission. this is simply a backstop against compactions stalling
+        // due to scheduling errors or race conditions
+        ScheduledExecutors.optionalTasks.scheduleWithFixedDelay(ColumnFamilyStore.getBackgroundCompactionTaskSubmitter(), 5, 1, TimeUnit.MINUTES);
+
         // schedule periodic dumps of table size estimates into SystemKeyspace.SIZE_ESTIMATES_CF
         // set cassandra.size_recorder_interval to 0 to disable
         int sizeRecorderInterval = Integer.getInteger("cassandra.size_recorder_interval", 5 * 60);
@@ -326,7 +373,17 @@ public class CassandraDaemon
         //用于支持CQL
         InetAddress nativeAddr = DatabaseDescriptor.getRpcAddress();
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
-        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
+//<<<<<<< HEAD
+//        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
+//=======
+        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort);
+
+        setupCompleted = true;
+    }
+
+    public boolean setupCompleted()
+    {
+        return setupCompleted;
     }
 
     private void logSystemInfo()
@@ -439,6 +496,13 @@ public class CassandraDaemon
         //bin/cassandra文件的aunch_service()中有设置
         //存放cassandra的进程id的文件
         String pidFile = System.getProperty("cassandra-pidfile");
+
+        if (FBUtilities.isWindows())
+        {
+            // We need to adjust the system timer on windows from the default 15ms down to the minimum of 1ms as this
+            // impacts timer intervals, thread scheduling, driver interrupts, etc.
+            WindowsTimer.startTimerPeriod(DatabaseDescriptor.getWindowsTimerInterval());
+        }
 
         try
         {

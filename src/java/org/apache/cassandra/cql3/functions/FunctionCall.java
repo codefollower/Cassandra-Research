@@ -124,7 +124,7 @@ public class FunctionCall extends Term.NonTerminal
 
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
-            Function fun = Functions.get(keyspace, name, terms, receiver.ksName, receiver.cfName, receiver.type);
+            Function fun = FunctionResolver.get(keyspace, name, terms, receiver.ksName, receiver.cfName, receiver.type);
             if (fun == null)
                 throw new InvalidRequestException(String.format("Unknown function %s called", name));
             if (fun.isAggregate())
@@ -134,7 +134,7 @@ public class FunctionCall extends Term.NonTerminal
 
             // Functions.get() will complain if no function "name" type check with the provided arguments.
             // We still have to validate that the return type matches however
-            if (!receiver.type.isValueCompatibleWith(scalarFun.returnType()))
+            if (!scalarFun.testAssignment(keyspace, receiver).isAssignable())
                 throw new InvalidRequestException(String.format("Type error: cannot assign result of function %s (type %s) to %s (type %s)",
                                                                 scalarFun.name(), scalarFun.returnType().asCQL3Type(),
                                                                 receiver.name, receiver.type.asCQL3Type()));
@@ -146,7 +146,7 @@ public class FunctionCall extends Term.NonTerminal
             List<Term> parameters = new ArrayList<>(terms.size());
             for (int i = 0; i < terms.size(); i++)
             {
-                Term t = terms.get(i).prepare(keyspace, Functions.makeArgSpec(receiver.ksName, receiver.cfName, scalarFun, i));
+                Term t = terms.get(i).prepare(keyspace, FunctionResolver.makeArgSpec(receiver.ksName, receiver.cfName, scalarFun, i));
                 parameters.add(t);
             }
 
@@ -161,7 +161,7 @@ public class FunctionCall extends Term.NonTerminal
             // later with a more helpful error message that if we were to return false here.
             try
             {
-                Function fun = Functions.get(keyspace, name, terms, receiver.ksName, receiver.cfName, receiver.type);
+                Function fun = FunctionResolver.get(keyspace, name, terms, receiver.ksName, receiver.cfName, receiver.type);
 
                 // Because fromJson() can return whatever type the receiver is, we'll always get EXACT_MATCH.  To
                 // handle potentially ambiguous function calls with fromJson() as an argument, always return

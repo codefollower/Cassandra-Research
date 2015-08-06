@@ -17,11 +17,16 @@
  */
 package org.apache.cassandra.db;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
+import org.apache.commons.io.FileUtils;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -29,15 +34,25 @@ import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.dht.ByteOrderedPartitioner.BytesToken;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.SemanticVersion;
+import org.apache.cassandra.utils.CassandraVersion;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class SystemKeyspaceTest
 {
+    public static final String MIGRATION_SSTABLES_ROOT = "migration-sstable-root";
+
+    @BeforeClass
+    public static void prepSnapshotTracker()
+    {
+        if (FBUtilities.isWindows())
+            WindowsFailedSnapshotTracker.deleteOldSnapshots();
+    }
+
     @Test
     public void testLocalTokens()
     {
@@ -78,6 +93,28 @@ public class SystemKeyspaceTest
         assert firstId.equals(secondId) : String.format("%s != %s%n", firstId.toString(), secondId.toString());
     }
 
+    private void assertDeletedOrDeferred(int expectedCount)
+    {
+        if (FBUtilities.isWindows())
+            assertEquals(expectedCount, getDeferredDeletionCount());
+        else
+            assertTrue(getSystemSnapshotFiles().isEmpty());
+    }
+
+    private int getDeferredDeletionCount()
+    {
+        try
+        {
+            Class c = Class.forName("java.io.DeleteOnExitHook");
+            LinkedHashSet<String> files = (LinkedHashSet<String>)FBUtilities.getProtectedField(c, "files").get(c);
+            return files.size();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Test
     public void snapshotSystemKeyspaceIfUpgrading() throws IOException
     {
@@ -86,17 +123,19 @@ public class SystemKeyspaceTest
             cfs.clearUnsafe();
         Keyspace.clearSnapshot(null, SystemKeyspace.NAME);
 
+        int baseline = getDeferredDeletionCount();
+
         SystemKeyspace.snapshotOnVersionChange();
-        assertTrue(getSystemSnapshotFiles().isEmpty());
+        assertDeletedOrDeferred(baseline);
 
         // now setup system.local as if we're upgrading from a previous version
         setupReleaseVersion(getOlderVersionString());
         Keyspace.clearSnapshot(null, SystemKeyspace.NAME);
-        assertTrue(getSystemSnapshotFiles().isEmpty());
+        assertDeletedOrDeferred(baseline);
 
         // Compare versions again & verify that snapshots were created for all tables in the system ks
         SystemKeyspace.snapshotOnVersionChange();
-        assertEquals(SystemKeyspace.definition().cfMetaData().size(), getSystemSnapshotFiles().size());
+        assertEquals(SystemKeyspace.metadata().tables.size(), getSystemSnapshotFiles().size());
 
         // clear out the snapshots & set the previous recorded version equal to the latest, we shouldn't
         // see any new snapshots created this time.
@@ -104,13 +143,60 @@ public class SystemKeyspaceTest
         setupReleaseVersion(FBUtilities.getReleaseVersionString());
 
         SystemKeyspace.snapshotOnVersionChange();
-        assertTrue(getSystemSnapshotFiles().isEmpty());
+
+        // snapshotOnVersionChange for upgrade case will open a SSTR when the CFS is flushed. On Windows, we won't be
+        // able to delete hard-links to that file while segments are memory-mapped, so they'll be marked for deferred deletion.
+        // 10 files expected.
+        assertDeletedOrDeferred(baseline + 10);
+
+        Keyspace.clearSnapshot(null, SystemKeyspace.NAME);
+    }
+
+    @Test
+    public void testMigrateDataDirs() throws IOException
+    {
+        Path migrationSSTableRoot = Paths.get(System.getProperty(MIGRATION_SSTABLES_ROOT), "2.2");
+        Path dataDir = Paths.get(DatabaseDescriptor.getAllDataFileLocations()[0]);
+
+        FileUtils.copyDirectory(migrationSSTableRoot.toFile(), dataDir.toFile());
+
+        assertEquals(5, numLegacyFiles()); // see test data
+
+        SystemKeyspace.migrateDataDirs();
+
+        assertEquals(0, numLegacyFiles());
+    }
+
+    private static int numLegacyFiles()
+    {
+        int ret = 0;
+        Iterable<String> dirs = Arrays.asList(DatabaseDescriptor.getAllDataFileLocations());
+        for (String dataDir : dirs)
+        {
+            File dir = new File(dataDir);
+            for (File ksdir : dir.listFiles((d, n) -> d.isDirectory()))
+            {
+                for (File cfdir : ksdir.listFiles((d, n) -> d.isDirectory()))
+                {
+                    if (Descriptor.isLegacyFile(cfdir.getName()))
+                    {
+                        ret++;
+                    }
+                    else
+                    {
+                        File[] legacyFiles = cfdir.listFiles((d, n) -> Descriptor.isLegacyFile(n));
+                        ret += legacyFiles.length;
+                    }
+                }
+            }
+        }
+        return ret;
     }
 
     private String getOlderVersionString()
     {
         String version = FBUtilities.getReleaseVersionString();
-        SemanticVersion semver = new SemanticVersion(version.contains("-") ? version.substring(0, version.indexOf('-'))
+        CassandraVersion semver = new CassandraVersion(version.contains("-") ? version.substring(0, version.indexOf('-'))
                                                                            : version);
         return (String.format("%s.%s.%s", semver.major - 1, semver.minor, semver.patch));
     }

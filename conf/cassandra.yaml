@@ -24,6 +24,17 @@ cluster_name: 'Test Cluster'
 # multiple tokens per node, see http://wiki.apache.org/cassandra/Operations
 num_tokens: 256
 
+# Triggers automatic allocation of num_tokens tokens for this node. The allocation
+# algorithm attempts to choose tokens in a way that optimizes replicated load over
+# the nodes in the datacenter for the replication strategy used by the specified
+# keyspace.
+#
+# The load assigned to each node will be close to proportional to its number of
+# vnodes.
+#
+# Only supported with the Murmur3Partitioner.
+# allocate_tokens_keyspace: KEYSPACE
+
 # initial_token allows you to specify tokens manually.  While you can use # it with
 # vnodes (num_tokens > 1, above) -- in which case you should provide a 
 # comma-separated list -- it's primarily used when adding nodes # to legacy clusters 
@@ -31,10 +42,13 @@ num_tokens: 256
 # initial_token:
 
 # See http://wiki.apache.org/cassandra/HintedHandoff
-# May either be "true" or "false" to enable globally, or contain a list
-# of data centers to enable per-datacenter.
-# hinted_handoff_enabled: DC1,DC2
+# May either be "true" or "false" to enable globally
 hinted_handoff_enabled: true
+# When hinted_handoff_enabled is true, a black list of data centers that will not
+# perform hinted handoff
+#hinted_handoff_disabled_datacenters:
+#    - DC1
+#    - DC2
 # this defines the maximum amount of time a dead host will have hints
 # generated.  After it has been dead this long, new hints for it will not be
 # created until it has been seen alive and gone down again.
@@ -140,11 +154,12 @@ partitioner: org.apache.cassandra.dht.Murmur3Partitioner
 # commitlog_directory: /var/lib/cassandra/commitlog
 
 # policy for data disk failures:
-# die: shut down gossip and Thrift and kill the JVM for any fs errors or
+# die: shut down gossip and client transports and kill the JVM for any fs errors or
 #      single-sstable errors, so the node can be replaced.
-# stop_paranoid: shut down gossip and Thrift even for single-sstable errors.
-# stop: shut down gossip and Thrift, leaving the node effectively dead, but
-#       can still be inspected via JMX.
+# stop_paranoid: shut down gossip and client transports even for single-sstable errors,
+#                kill the JVM for errors during startup.
+# stop: shut down gossip and client transports, leaving the node effectively dead, but
+#       can still be inspected via JMX, kill the JVM for errors during startup.
 # best_effort: stop using the failed disk and respond to requests based on
 #              remaining available sstables.  This means you WILL see obsolete
 #              data at CL.ONE!
@@ -264,13 +279,16 @@ counter_cache_save_period: 7200
 # saved_caches_directory: /var/lib/cassandra/saved_caches
 
 # commitlog_sync may be either "periodic" or "batch." 
+# 
 # When in batch mode, Cassandra won't ack writes until the commit log
-# has been fsynced to disk.  It will wait up to
-# commitlog_sync_batch_window_in_ms milliseconds for other writes, before
-# performing the sync.
+# has been fsynced to disk.  It will wait
+# commitlog_sync_batch_window_in_ms milliseconds between fsyncs.
+# This window should be kept short because the writer threads will
+# be unable to do extra work while waiting.  (You may need to increase
+# concurrent_writes for the same reason.)
 #
 # commitlog_sync: batch
-# commitlog_sync_batch_window_in_ms: 50
+# commitlog_sync_batch_window_in_ms: 2
 #
 # the other option is "periodic" where writes may be acked immediately
 # and the CommitLog is simply synced every commitlog_sync_period_in_ms
@@ -324,12 +342,30 @@ seed_provider:
 concurrent_reads: 32
 concurrent_writes: 32
 concurrent_counter_writes: 32
+concurrent_batchlog_writes: 32
 
-# Total memory to use for sstable-reading buffers.  Defaults to
-# the smaller of 1/4 of heap or 512MB.
+# For materialized view writes, as there is a read involved, so this should
+# be limited by the less of concurrent reads or concurrent writes.
+concurrent_materialized_view_writes: 32
+
+# Maximum memory to use for pooling sstable buffers. Defaults to the smaller
+# of 1/4 of heap or 512MB. This pool is allocated off-heap, so is in addition
+# to the memory allocated for heap. Memory is only allocated as needed.
 # file_cache_size_in_mb: 512
 
-# Total permitted memory to use for memtables. Cassandra will stop 
+# Flag indicating whether to allocate on or off heap when the sstable buffer
+# pool is exhausted, that is when it has exceeded the maximum memory
+# file_cache_size_in_mb, beyond which it will not cache buffers but allocate on request.
+
+# buffer_pool_use_heap_if_exhausted: true
+
+# The strategy for optimizing disk read
+# Possible values are:
+# ssd (for solid state disks, the default)
+# spinning (for spinning disks)
+# disk_optimization_strategy: ssd
+
+# Total permitted memory to use for memtables. Cassandra will stop
 # accepting writes when the limit is exceeded until a flush completes,
 # and will trigger a flush based on memtable_cleanup_threshold
 # If omitted, Cassandra will set both to 1/4 the size of the heap.
@@ -352,7 +388,7 @@ concurrent_counter_writes: 32
 #   offheap_objects: native memory, eliminating nio buffer heap overhead
 memtable_allocation_type: heap_buffers
 
-# Total uncompressed size of the commit log.
+# Total space to use for commit logs on disk.
 #
 # If space gets above this value, Cassandra will flush every dirty CF
 # in the oldest segment and remove it.  So a small total commitlog space
@@ -619,6 +655,9 @@ batch_size_fail_threshold_in_kb: 50
 # of compaction, including validation compaction.
 compaction_throughput_mb_per_sec: 16
 
+# Log a warning when compacting partitions larger than this value
+compaction_large_partition_warning_threshold_mb: 100
+
 # When compacting, the replacement sstable(s) can be opened before they
 # are completely written, and used in place of the prior sstables for
 # any range that has been written. This helps to smoothly transfer reads 
@@ -845,6 +884,18 @@ tracetype_query_ttl: 86400
 tracetype_repair_ttl: 604800
 
 # UDFs (user defined functions) are disabled by default.
-# As of Cassandra 2.2-beta1, there is no security manager or anything else in place that
-# prevents execution of evil code. CASSANDRA-9402 will fix this issue for Cassandra 2.2-rc1.
+# As of Cassandra 3.0 there is a sandbox in place that should prevent execution of evil code.
 enable_user_defined_functions: false
+
+# Enables scripted UDFs (JavaScript UDFs).
+# Java UDFs are always enabled, if enable_user_defined_functions is true.
+# Enable this option to be able to use UDFs with "language javascript" or any custom JSR-223 provider.
+# This option has no effect, if enable_user_defined_functions is false.
+enable_scripted_user_defined_functions: false
+
+# The default Windows kernel timer and scheduling resolution is 15.6ms for power conservation.
+# Lowering this value on Windows can provide much tighter latency and better throughput, however
+# some virtualized environments may see a negative performance impact from changing this setting
+# below their system default. The sysinternals 'clockres' tool can confirm your system's default
+# setting.
+windows_timer_interval: 1

@@ -31,7 +31,6 @@ import com.datastax.driver.core.exceptions.*;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.hadoop.ColumnFamilyOutputFormat;
 import org.apache.cassandra.hadoop.ConfigHelper;
 import org.apache.cassandra.hadoop.HadoopCompat;
 import org.apache.cassandra.utils.FBUtilities;
@@ -109,31 +108,31 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
     CqlRecordWriter(Configuration conf)
     {
         this.conf = conf;
-        this.queueSize = conf.getInt(ColumnFamilyOutputFormat.QUEUE_SIZE, 32 * FBUtilities.getAvailableProcessors());
-        batchThreshold = conf.getLong(ColumnFamilyOutputFormat.BATCH_THRESHOLD, 32);
+        this.queueSize = conf.getInt(CqlOutputFormat.QUEUE_SIZE, 32 * FBUtilities.getAvailableProcessors());
+        batchThreshold = conf.getLong(CqlOutputFormat.BATCH_THRESHOLD, 32);
         this.clients = new HashMap<>();
 
         try
         {
             String keyspace = ConfigHelper.getOutputKeyspace(conf);
-            Session client = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace);
-            ringCache = new NativeRingCache(conf);
-            if (client != null)
+            try (Session client = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace))
             {
-                TableMetadata tableMetadata = client.getCluster().getMetadata().getKeyspace(client.getLoggedKeyspace()).getTable(ConfigHelper.getOutputColumnFamily(conf));
-                clusterColumns = tableMetadata.getClusteringColumns();
-                partitionKeyColumns = tableMetadata.getPartitionKey();
+                ringCache = new NativeRingCache(conf);
+                if (client != null)
+                {
+                    TableMetadata tableMetadata = client.getCluster().getMetadata().getKeyspace(client.getLoggedKeyspace()).getTable(ConfigHelper.getOutputColumnFamily(conf));
+                    clusterColumns = tableMetadata.getClusteringColumns();
+                    partitionKeyColumns = tableMetadata.getPartitionKey();
 
-                String cqlQuery = CqlConfigHelper.getOutputCql(conf).trim();
-                if (cqlQuery.toLowerCase().startsWith("insert"))
-                    throw new UnsupportedOperationException("INSERT with CqlRecordWriter is not supported, please use UPDATE/DELETE statement");
-                cql = appendKeyWhereClauses(cqlQuery);
-
-                client.close();
-            }
-            else
-            {
-                throw new IllegalArgumentException("Invalid configuration specified " + conf);
+                    String cqlQuery = CqlConfigHelper.getOutputCql(conf).trim();
+                    if (cqlQuery.toLowerCase().startsWith("insert"))
+                        throw new UnsupportedOperationException("INSERT with CqlRecordWriter is not supported, please use UPDATE/DELETE statement");
+                    cql = appendKeyWhereClauses(cqlQuery);
+                }
+                else
+                {
+                    throw new IllegalArgumentException("Invalid configuration specified " + conf);
+                }
             }
         }
         catch (Exception e)
@@ -299,6 +298,35 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                 while (true)
                 {
                     // send the mutation to the last-used endpoint.  first time through, this will NPE harmlessly.
+                    try
+                    {
+                        int i = 0;
+                        PreparedStatement statement = preparedStatement(client);
+                        while (bindVariables != null)
+                        {
+                            BoundStatement boundStatement = new BoundStatement(statement);
+                            for (int columnPosition = 0; columnPosition < bindVariables.size(); columnPosition++)
+                            {
+                                boundStatement.setBytesUnsafe(columnPosition, bindVariables.get(columnPosition));
+                            }
+                            client.execute(boundStatement);
+                            i++;
+
+                            if (i >= batchThreshold)
+                                break;
+                            bindVariables = queue.poll();
+                        }
+                        break;
+                    }
+                    catch (Exception e)
+                    {
+                        closeInternal();
+                        if (!iter.hasNext())
+                        {
+                            lastException = new IOException(e);
+                            break outer;
+                        }
+                    }
 
                     // attempt to connect to a different endpoint
                     try
@@ -326,39 +354,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
                             lastException = new IOException(e);
                             break outer;
                         }
-                        continue;
                     }
-
-                    try
-                    {
-                        int i = 0;
-                        PreparedStatement statement = preparedStatement(client);
-                        while (bindVariables != null)
-                        {
-                            BoundStatement boundStatement = new BoundStatement(statement);
-                            for (int columnPosition = 0; columnPosition < bindVariables.size(); columnPosition++)
-                            {
-                                boundStatement.setBytesUnsafe(columnPosition, bindVariables.get(columnPosition));
-                            }
-                            client.execute(boundStatement);
-                            i++;
-                            
-                            if (i >= batchThreshold)
-                                break;
-                            bindVariables = queue.poll();
-                        }
-                        break;
-                    }
-                    catch (Exception e)
-                    {
-                        closeInternal();
-                        if (!iter.hasNext())
-                        {
-                            lastException = new IOException(e);
-                            break outer;
-                        }
-                    }
-
                 }
             }
             // close all our connections once we are done.
@@ -409,7 +405,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         {
             if (client != null)
             {
-                client.close();;
+                client.close();
             }
         }
 
@@ -471,7 +467,7 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         return "\"" + identifier.replaceAll("\"", "\"\"") + "\"";
     }
 
-    class NativeRingCache
+    static class NativeRingCache
     {
         private Map<TokenRange, Set<Host>> rangeMap;
         private Metadata metadata;
@@ -489,13 +485,15 @@ class CqlRecordWriter extends RecordWriter<Map<String, ByteBuffer>, List<ByteBuf
         private void refreshEndpointMap()
         {
             String keyspace = ConfigHelper.getOutputKeyspace(conf);
-            Session session = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace);
-            rangeMap = new HashMap<>();
-            metadata = session.getCluster().getMetadata();
-            Set<TokenRange> ranges = metadata.getTokenRanges();
-            for (TokenRange range : ranges)
+            try (Session session = CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf), conf).connect(keyspace))
             {
-                rangeMap.put(range, metadata.getReplicas(keyspace, range));
+                rangeMap = new HashMap<>();
+                metadata = session.getCluster().getMetadata();
+                Set<TokenRange> ranges = metadata.getTokenRanges();
+                for (TokenRange range : ranges)
+                {
+                    rangeMap.put(range, metadata.getReplicas(keyspace, range));
+                }
             }
         }
 

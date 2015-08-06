@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.io.sstable.format;
 
+import java.util.regex.Pattern;
+
 /**
  * A set of feature flags associated with a SSTable format
  *
@@ -30,6 +32,8 @@ package org.apache.cassandra.io.sstable.format;
  */
 public abstract class Version
 {
+    private static final Pattern VALIDATION = Pattern.compile("[a-z]+");
+
     protected final String version;
     protected final SSTableFormat format;
     protected Version(SSTableFormat format, String version)
@@ -52,6 +56,12 @@ public abstract class Version
 
     public abstract boolean hasNewFileName();
 
+    public abstract boolean storeRows();
+
+    public abstract int correspondingMessagingVersion(); // Only use by storage that 'storeRows' so far
+
+    public abstract boolean hasOldBfHashOrder();
+
     public String getVersion()
     {
         return version;
@@ -69,10 +79,11 @@ public abstract class Version
      */
     public static boolean validate(String ver)
     {
-        return ver != null && ver.matches("[a-z]+");
+        return ver != null && VALIDATION.matcher(ver).matches();
     }
 
     abstract public boolean isCompatible();
+    abstract public boolean isCompatibleForStreaming();
 
     @Override
     public String toString()

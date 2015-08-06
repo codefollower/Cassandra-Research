@@ -19,8 +19,6 @@ package org.apache.cassandra.utils;
 
 import java.io.*;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.net.*;
 import java.nio.ByteBuffer;
@@ -28,7 +26,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.zip.Adler32;
 import java.util.zip.Checksum;
 
 import com.google.common.base.Joiner;
@@ -47,12 +44,12 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.IVersionedSerializer;
-import org.apache.cassandra.io.compress.CompressionParameters;
+import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.net.AsyncOneResponse;
-import org.apache.thrift.*;
+
 import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.map.ObjectMapper;
 
@@ -247,45 +244,6 @@ public class FBUtilities
         return new BigInteger(hash(data)).abs();
     }
 
-    @Deprecated
-    public static void serialize(TSerializer serializer, TBase struct, DataOutput out)
-    throws IOException
-    {
-        assert serializer != null;
-        assert struct != null;
-        assert out != null;
-        byte[] bytes;
-        try
-        {
-            bytes = serializer.serialize(struct);
-        }
-        catch (TException e)
-        {
-            throw new RuntimeException(e);
-        }
-        out.writeInt(bytes.length);
-        out.write(bytes);
-    }
-
-    @Deprecated
-    public static void deserialize(TDeserializer deserializer, TBase struct, DataInput in)
-    throws IOException
-    {
-        assert deserializer != null;
-        assert struct != null;
-        assert in != null;
-        byte[] bytes = new byte[in.readInt()];
-        in.readFully(bytes);
-        try
-        {
-            deserializer.deserialize(struct, bytes);
-        }
-        catch (TException ex)
-        {
-            throw new IOException(ex);
-        }
-    }
-
     public static void sortSampledKeys(List<DecoratedKey> keys, Range<Token> range)
     {
         if (range.left.compareTo(range.right) >= 0)
@@ -347,10 +305,8 @@ public class FBUtilities
 
     public static String getReleaseVersionString()
     {
-        InputStream in = null;
-        try
+        try (InputStream in = FBUtilities.class.getClassLoader().getResourceAsStream("org/apache/cassandra/config/version.properties"))
         {
-            in = FBUtilities.class.getClassLoader().getResourceAsStream("org/apache/cassandra/config/version.properties");
             if (in == null)
             {
                 return System.getProperty("cassandra.releaseVersion", "Unknown");
@@ -365,10 +321,6 @@ public class FBUtilities
             logger.warn("Unable to load version.properties", e);
             return "debug version";
         }
-        finally
-        {
-            FileUtils.closeQuietly(in);
-        }
     }
 
     public static long timestampMicros() //获得当前时间，按微妙算，System.currentTimeMillis()是毫秒，所以要乘以1000
@@ -376,6 +328,11 @@ public class FBUtilities
         // we use microsecond resolution for compatibility with other client libraries, even though
         // we can't actually get microsecond precision.
         return System.currentTimeMillis() * 1000;
+    }
+
+    public static int nowInSeconds()
+    {
+        return (int)(System.currentTimeMillis() / 1000);
     }
 
     public static void waitOnFutures(Iterable<Future<?>> futures)
@@ -508,11 +465,16 @@ public class FBUtilities
         }
     }
 
-    public static <T> SortedSet<T> singleton(T column, Comparator<? super T> comparator)
+    public static <T> NavigableSet<T> singleton(T column, Comparator<? super T> comparator)
     {
-        SortedSet<T> s = new TreeSet<T>(comparator);
+        NavigableSet<T> s = new TreeSet<T>(comparator);
         s.add(column);
         return s;
+    }
+
+    public static <T> NavigableSet<T> emptySortedSet(Comparator<? super T> comparator)
+    {
+        return new TreeSet<T>(comparator);
     }
 
     public static String toString(Map<?,?> map)
@@ -582,6 +544,15 @@ public class FBUtilities
         }
     }
 
+    public static String prettyPrintMemory(long size)
+    {
+        if (size >= 1 << 30)
+            return String.format("%.3fGiB", size / (double) (1 << 30));
+        if (size >= 1 << 20)
+            return String.format("%.3fMiB", size / (double) (1 << 20));
+        return String.format("%.3fKiB", size / (double) (1 << 10));
+    }
+
     /**
      * Starts and waits for the given @param pb to finish.
      * @throws java.io.IOException on non-zero exit code
@@ -624,66 +595,18 @@ public class FBUtilities
         checksum.update((v >>> 0) & 0xFF);
     }
 
-    private static Method directUpdate;
-    static
-    {
-        try
-        {
-            directUpdate = Adler32.class.getDeclaredMethod("update", new Class[]{ByteBuffer.class});
-            directUpdate.setAccessible(true);
-        } catch (NoSuchMethodException e)
-        {
-            logger.warn("JVM doesn't support Adler32 byte buffer access");
-            directUpdate = null;
-        }
-    }
-
-    private static final ThreadLocal<byte[]> localDigestBuffer = new ThreadLocal<byte[]>()
+    private static final ThreadLocal<byte[]> threadLocalScratchBuffer = new ThreadLocal<byte[]>()
     {
         @Override
         protected byte[] initialValue()
         {
-            return new byte[CompressionParameters.DEFAULT_CHUNK_LENGTH];
+            return new byte[CompressionParams.DEFAULT_CHUNK_LENGTH];
         }
     };
 
-    //Java 7 has this method but it's private till Java 8. Thanks JDK!
-    public static boolean supportsDirectChecksum()
+    public static byte[] getThreadLocalScratchBuffer()
     {
-        return directUpdate != null;
-    }
-
-    public static void directCheckSum(Adler32 checksum, ByteBuffer bb)
-    {
-        if (directUpdate != null)
-        {
-            try
-            {
-                directUpdate.invoke(checksum, bb);
-                return;
-            }
-            catch (IllegalAccessException e)
-            {
-                directUpdate = null;
-                logger.warn("JVM doesn't support Adler32 byte buffer access");
-            }
-            catch (InvocationTargetException e)
-            {
-                throw new RuntimeException(e);
-            }
-        }
-
-        //Fallback
-        byte[] buffer = localDigestBuffer.get();
-
-        int remaining;
-        while ((remaining = bb.remaining()) > 0)
-        {
-            remaining = Math.min(remaining, buffer.length);
-            ByteBufferUtil.arrayCopy(bb, bb.position(), buffer, 0, remaining);
-            bb.position(bb.position() + remaining);
-            checksum.update(buffer, 0, remaining);
-        }
+        return threadLocalScratchBuffer.get();
     }
 
     public static long abs(long index)
@@ -713,10 +636,10 @@ public class FBUtilities
 
     public static <T> byte[] serialize(T object, IVersionedSerializer<T> serializer, int version)
     {
-        try
+        int size = (int) serializer.serializedSize(object, version);
+
+        try (DataOutputBuffer buffer = new DataOutputBufferFixed(size))
         {
-            int size = (int) serializer.serializedSize(object, version);
-            DataOutputBuffer buffer = new DataOutputBufferFixed(size);
             serializer.serialize(object, buffer, version);
             assert buffer.getLength() == size && buffer.getData().length == size
                 : String.format("Final buffer length %s to accommodate data size of %s (predicted %s) for %s",
@@ -796,5 +719,31 @@ public class FBUtilities
         digest.update((byte) ((val >>> 16) & 0xFF));
         digest.update((byte) ((val >>>  8) & 0xFF));
         digest.update((byte)  ((val >>> 0) & 0xFF));
+    }
+
+    public static void updateWithBoolean(MessageDigest digest, boolean val)
+    {
+        updateWithByte(digest, val ? 0 : 1);
+    }
+
+    public static void closeAll(List<? extends AutoCloseable> l) throws Exception
+    {
+        Exception toThrow = null;
+        for (AutoCloseable c : l)
+        {
+            try
+            {
+                c.close();
+            }
+            catch (Exception e)
+            {
+                if (toThrow == null)
+                    toThrow = e;
+                else
+                    toThrow.addSuppressed(e);
+            }
+        }
+        if (toThrow != null)
+            throw toThrow;
     }
 }

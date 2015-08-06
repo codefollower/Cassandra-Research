@@ -45,6 +45,11 @@ public class TimestampType extends AbstractType<Date>
 
     private TimestampType() {} // singleton
 
+    public boolean isEmptyValueMeaningless()
+    {
+        return true;
+    }
+
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
         return LongType.compareLongs(o1, o2);
@@ -57,6 +62,11 @@ public class TimestampType extends AbstractType<Date>
           return ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
       return ByteBufferUtil.bytes(TimestampSerializer.dateStringToTimestamp(source));
+    }
+
+    public ByteBuffer fromTimeInMillis(long millis) throws MarshalException
+    {
+        return ByteBufferUtil.bytes(millis);
     }
 
     @Override
@@ -114,5 +124,11 @@ public class TimestampType extends AbstractType<Date>
     public TypeSerializer<Date> getSerializer()
     {
         return TimestampSerializer.instance;
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return 8;
     }
 }

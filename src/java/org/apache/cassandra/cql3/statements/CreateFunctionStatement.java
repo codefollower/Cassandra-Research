@@ -29,6 +29,7 @@ import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.schema.Functions;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.QueryState;
@@ -85,9 +86,9 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
         argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-            argTypes.add(rawType.prepare(functionName.keyspace).getType());
+            argTypes.add(prepareType("arguments", rawType));
 
-        returnType = rawReturnType.prepare(functionName.keyspace).getType();
+        returnType = prepareType("return type", rawReturnType);
         return super.prepare();
     }
 
@@ -120,7 +121,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
     {
-        if (Functions.find(functionName, argTypes) != null && orReplace)
+        if (Schema.instance.findFunction(functionName, argTypes).isPresent() && orReplace)
             state.ensureHasPermission(Permission.ALTER, FunctionResource.function(functionName.keyspace,
                                                                                   functionName.name,
                                                                                   argTypes));
@@ -130,8 +131,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws InvalidRequestException
     {
-        if (!DatabaseDescriptor.enableUserDefinedFunctions())
-            throw new InvalidRequestException("User-defined-functions are disabled in cassandra.yaml - set enable_user_defined_functions=true to enable if you are aware of the security risks");
+        UDFunction.assertUdfsEnabled(language);
 
         if (ifNotExists && orReplace)
             throw new InvalidRequestException("Cannot use both 'OR REPLACE' and 'IF NOT EXISTS' directives");
@@ -149,7 +149,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
-        Function old = Functions.find(functionName, argTypes);
+        Function old = Schema.instance.findFunction(functionName, argTypes).orElse(null);
         if (old != null)
         {
             if (ifNotExists)
@@ -162,7 +162,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException(String.format("Function %s can only be replaced with %s", old,
                                                                 calledOnNullInput ? "CALLED ON NULL INPUT" : "RETURNS NULL ON NULL INPUT"));
 
-            if (!Functions.typeEquals(old.returnType(), returnType))
+            if (!Functions.typesMatch(old.returnType(), returnType))
                 throw new InvalidRequestException(String.format("Cannot replace function %s, the new return type %s is not compatible with the return type %s of existing function",
                                                                 functionName, returnType.asCQL3Type(), old.returnType().asCQL3Type()));
         }
@@ -173,5 +173,19 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
         MigrationManager.announceNewFunction(udFunction, isLocalOnly);
 
         return true;
+    }
+
+    private AbstractType<?> prepareType(String typeName, CQL3Type.Raw rawType)
+    {
+        if (rawType.isFrozen())
+            throw new InvalidRequestException(String.format("The function %s should not be frozen; remove the frozen<> modifier", typeName));
+
+        // UDT are not supported non frozen but we do not allow the frozen keyword for argument. So for the moment we
+        // freeze them here
+        if (!rawType.canBeNonFrozen())
+            rawType.freeze();
+
+        AbstractType<?> type = rawType.prepare(functionName.keyspace).getType();
+        return type;
     }
 }

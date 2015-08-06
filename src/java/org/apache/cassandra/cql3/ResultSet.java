@@ -254,6 +254,15 @@ public class ResultSet
             return new ResultMetadata(EnumSet.copyOf(flags), names, columnCount, pagingState);
         }
 
+        /**
+         * Return only the column names requested by the user, excluding those added for post-query re-orderings,
+         * see definition of names and columnCount.
+         **/
+        public List<ColumnSpecification> requestNames()
+        {
+            return names.subList(0, columnCount);
+        }
+
         // The maximum number of values that the ResultSet can hold. This can be bigger than columnCount due to CASSANDRA-4911
         public int valueCount()
         {
@@ -269,11 +278,11 @@ public class ResultSet
 
         public void setHasMorePages(PagingState pagingState)
         {
-            if (pagingState == null)
-                return;
-
-            flags.add(Flag.HAS_MORE_PAGES);
             this.pagingState = pagingState;
+            if (pagingState == null)
+                flags.remove(Flag.HAS_MORE_PAGES);
+            else
+                flags.add(Flag.HAS_MORE_PAGES);
         }
 
         public void setSkipMetadata()

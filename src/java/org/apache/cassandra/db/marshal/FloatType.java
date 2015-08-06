@@ -34,6 +34,11 @@ public class FloatType extends AbstractType<Float>
 
     FloatType() {} // singleton
 
+    public boolean isEmptyValueMeaningless()
+    {
+        return true;
+    }
+
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
         if (!o1.hasRemaining() || !o2.hasRemaining())
@@ -90,5 +95,11 @@ public class FloatType extends AbstractType<Float>
     public TypeSerializer<Float> getSerializer()
     {
         return FloatSerializer.instance;
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return 4;
     }
 }

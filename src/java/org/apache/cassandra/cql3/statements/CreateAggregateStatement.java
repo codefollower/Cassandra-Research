@@ -83,10 +83,14 @@ public final class CreateAggregateStatement extends SchemaAlteringStatement
     {
         argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-            argTypes.add(rawType.prepare(functionName.keyspace).getType());
+            argTypes.add(prepareType("arguments", rawType));
 
-        AbstractType<?> stateType = stateTypeRaw.prepare(functionName.keyspace).getType();
-        Function f = Functions.find(stateFunc, stateArguments(stateType, argTypes));
+        AbstractType<?> stateType = prepareType("state type", stateTypeRaw);
+
+        List<AbstractType<?>> stateArgs = stateArguments(stateType, argTypes);
+        stateFunc = validateFunctionKeyspace(stateFunc);
+
+        Function f = Schema.instance.findFunction(stateFunc, stateArgs).orElse(null);
         if (!(f instanceof ScalarFunction))
             throw new InvalidRequestException("State function " + stateFuncSig(stateFunc, stateTypeRaw, argRawTypes) + " does not exist or is not a scalar function");
         stateFunction = (ScalarFunction)f;
@@ -97,7 +101,9 @@ public final class CreateAggregateStatement extends SchemaAlteringStatement
 
         if (finalFunc != null)
         {
-            f = Functions.find(finalFunc, Collections.<AbstractType<?>>singletonList(stateType));
+            List<AbstractType<?>> finalArgs = Collections.<AbstractType<?>>singletonList(stateType);
+            finalFunc = validateFunctionKeyspace(finalFunc);
+            f = Schema.instance.findFunction(finalFunc, finalArgs).orElse(null);
             if (!(f instanceof ScalarFunction))
                 throw new InvalidRequestException("Final function " + finalFunc + '(' + stateTypeRaw + ") does not exist or is not a scalar function");
             finalFunction = (ScalarFunction) f;
@@ -112,9 +118,25 @@ public final class CreateAggregateStatement extends SchemaAlteringStatement
         {
             ColumnSpecification receiver = new ColumnSpecification(functionName.keyspace, "--dummy--", new ColumnIdentifier("(aggregate_initcond)", true), stateType);
             initcond = ival.prepare(functionName.keyspace, receiver).bindAndGet(QueryOptions.DEFAULT);
+            if (Constants.NULL_LITERAL != ival && UDHelper.isNullOrEmpty(stateType, initcond))
+                throw new InvalidRequestException("INITCOND must not be empty for all types except TEXT, ASCII, BLOB");
         }
 
         return super.prepare();
+    }
+
+    private AbstractType<?> prepareType(String typeName, CQL3Type.Raw rawType)
+    {
+        if (rawType.isFrozen())
+            throw new InvalidRequestException(String.format("The function %s should not be frozen; remove the frozen<> modifier", typeName));
+
+        // UDT are not supported non frozen but we do not allow the frozen keyword for argument. So for the moment we
+        // freeze them here
+        if (!rawType.canBeNonFrozen())
+            rawType.freeze();
+
+        AbstractType<?> type = rawType.prepare(functionName.keyspace).getType();
+        return type;
     }
 
     public void prepareKeyspace(ClientState state) throws InvalidRequestException
@@ -124,11 +146,6 @@ public final class CreateAggregateStatement extends SchemaAlteringStatement
 
         if (!functionName.hasKeyspace())
             throw new InvalidRequestException("Functions must be fully qualified with a keyspace name if a keyspace is not set for the session");
-
-        stateFunc = validateFunctionKeyspace(stateFunc);
-
-        if (finalFunc != null)
-            finalFunc = validateFunctionKeyspace(finalFunc);
 
         ThriftValidation.validateKeyspaceNotSystem(functionName.keyspace);
     }
@@ -162,7 +179,7 @@ public final class CreateAggregateStatement extends SchemaAlteringStatement
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
     {
-        if (Functions.find(functionName, argTypes) != null && orReplace)
+        if (Schema.instance.findFunction(functionName, argTypes).isPresent() && orReplace)
             state.ensureHasPermission(Permission.ALTER, FunctionResource.function(functionName.keyspace,
                                                                                   functionName.name,
                                                                                   argTypes));
@@ -195,7 +212,7 @@ public final class CreateAggregateStatement extends SchemaAlteringStatement
 
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
-        Function old = Functions.find(functionName, argTypes);
+        Function old = Schema.instance.findFunction(functionName, argTypes).orElse(null);
         if (old != null)
         {
             if (ifNotExists)

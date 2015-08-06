@@ -18,6 +18,7 @@
 package org.apache.cassandra.cql3;
 
 import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.InetAddress;
@@ -29,28 +30,29 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.datastax.driver.core.*;
+import com.datastax.driver.core.ResultSet;
 import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableSet;
 import org.junit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.datastax.driver.core.*;
-import com.datastax.driver.core.ResultSet;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.functions.FunctionName;
+import org.apache.cassandra.cql3.functions.ThreadAwareSecurityManager;
 import org.apache.cassandra.cql3.statements.ParsedStatement;
-import org.apache.cassandra.db.Directories;
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.db.marshal.TupleType;
-import org.apache.cassandra.exceptions.CassandraException;
-import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.exceptions.SyntaxException;
+import org.apache.cassandra.dht.Murmur3Partitioner;
+import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.service.ClientState;
@@ -60,6 +62,8 @@ import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.transport.Server;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
+
+import static junit.framework.Assert.assertNotNull;
 
 /**
  * Base class for CQL tests.
@@ -71,6 +75,7 @@ public abstract class CQLTester
     public static final String KEYSPACE = "cql_test_keyspace";
     public static final String KEYSPACE_PER_TEST = "cql_test_keyspace_alt";
     protected static final boolean USE_PREPARED_VALUES = Boolean.valueOf(System.getProperty("cassandra.test.use_prepared", "true"));
+    protected static final long ROW_CACHE_SIZE_IN_MB = Integer.valueOf(System.getProperty("cassandra.test.row_cache_size_in_mb", "0"));
     private static final AtomicInteger seqNumber = new AtomicInteger();
 
     private static org.apache.cassandra.transport.Server server;
@@ -79,14 +84,17 @@ public abstract class CQLTester
     private static final Cluster[] cluster;
     private static final Session[] session;
 
-    static int maxProtocolVersion;
-    static {
+    private static boolean isServerPrepared = false;
+
+    public static int maxProtocolVersion;
+    static
+    {
         int version;
-        for (version = 1; version <= Server.CURRENT_VERSION; version++)
+        for (version = 1; version <= Server.CURRENT_VERSION; )
         {
             try
             {
-                ProtocolVersion.fromInt(version);
+                ProtocolVersion.fromInt(++version);
             }
             catch (IllegalArgumentException e)
             {
@@ -99,7 +107,7 @@ public abstract class CQLTester
         session = new Session[maxProtocolVersion];
 
         // Once per-JVM is enough
-        SchemaLoader.prepareServer();
+        prepareServer(true);
 
         nativeAddr = InetAddress.getLoopbackAddress();
 
@@ -128,10 +136,92 @@ public abstract class CQLTester
     // is not expected to be the same without preparation)
     private boolean usePrepared = USE_PREPARED_VALUES;
 
-    @BeforeClass
-    public static void setUpClass() throws Throwable
+    public static void prepareServer(boolean checkInit)
     {
-        schemaChange(String.format("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}", KEYSPACE));
+        if (checkInit && isServerPrepared)
+            return;
+
+        // Cleanup first
+        try
+        {
+            cleanupAndLeaveDirs();
+        }
+        catch (IOException e)
+        {
+            logger.error("Failed to cleanup and recreate directories.");
+            throw new RuntimeException(e);
+        }
+
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
+        {
+            public void uncaughtException(Thread t, Throwable e)
+            {
+                logger.error("Fatal exception in thread " + t, e);
+            }
+        });
+
+        ThreadAwareSecurityManager.install();
+
+        Keyspace.setInitialized();
+        isServerPrepared = true;
+    }
+
+    public static void cleanupAndLeaveDirs() throws IOException
+    {
+        // We need to stop and unmap all CLS instances prior to cleanup() or we'll get failures on Windows.
+        CommitLog.instance.stopUnsafe(true);
+        mkdirs();
+        cleanup();
+        mkdirs();
+        CommitLog.instance.startUnsafe();
+    }
+
+    public static void cleanup()
+    {
+        // clean up commitlog
+        String[] directoryNames = { DatabaseDescriptor.getCommitLogLocation(), };
+        for (String dirName : directoryNames)
+        {
+            File dir = new File(dirName);
+            if (!dir.exists())
+                throw new RuntimeException("No such directory: " + dir.getAbsolutePath());
+            FileUtils.deleteRecursive(dir);
+        }
+
+        cleanupSavedCaches();
+
+        // clean up data directory which are stored as data directory/keyspace/data files
+        for (String dirName : DatabaseDescriptor.getAllDataFileLocations())
+        {
+            File dir = new File(dirName);
+            if (!dir.exists())
+                throw new RuntimeException("No such directory: " + dir.getAbsolutePath());
+            FileUtils.deleteRecursive(dir);
+        }
+    }
+
+    public static void mkdirs()
+    {
+        DatabaseDescriptor.createAllDirectories();
+    }
+
+    public static void cleanupSavedCaches()
+    {
+        File cachesDir = new File(DatabaseDescriptor.getSavedCachesLocation());
+
+        if (!cachesDir.exists() || !cachesDir.isDirectory())
+            return;
+
+        FileUtils.delete(cachesDir.listFiles());
+    }
+
+    @BeforeClass
+    public static void setUpClass()
+    {
+        if (ROW_CACHE_SIZE_IN_MB > 0)
+            DatabaseDescriptor.setRowCacheSizeInMB(ROW_CACHE_SIZE_IN_MB);
+
+        StorageService.instance.setPartitionerUnsafe(Murmur3Partitioner.instance);
     }
 
     @AfterClass
@@ -151,6 +241,7 @@ public abstract class CQLTester
     @Before
     public void beforeTest() throws Throwable
     {
+        schemaChange(String.format("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}", KEYSPACE));
         schemaChange(String.format("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}", KEYSPACE_PER_TEST));
     }
 
@@ -178,30 +269,30 @@ public abstract class CQLTester
             {
                 try
                 {
-                    for (int i = tablesToDrop.size() - 1; i >=0; i--)
+                    for (int i = tablesToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP TABLE IF EXISTS %s.%s", KEYSPACE, tablesToDrop.get(i)));
 
-                    for (int i = aggregatesToDrop.size() - 1; i >=0; i--)
+                    for (int i = aggregatesToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP AGGREGATE IF EXISTS %s", aggregatesToDrop.get(i)));
 
-                    for (int i = functionsToDrop.size() - 1; i >=0; i--)
+                    for (int i = functionsToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP FUNCTION IF EXISTS %s", functionsToDrop.get(i)));
 
-                    for (int i = typesToDrop.size() - 1; i >=0; i--)
+                    for (int i = typesToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP TYPE IF EXISTS %s.%s", KEYSPACE, typesToDrop.get(i)));
 
                     // Dropping doesn't delete the sstables. It's not a huge deal but it's cleaner to cleanup after us
-                    // Thas said, we shouldn't delete blindly before the SSTableDeletingTask for the table we drop
+                    // Thas said, we shouldn't delete blindly before the TransactionLogs.SSTableTidier for the table we drop
                     // have run or they will be unhappy. Since those taks are scheduled on StorageService.tasks and that's
                     // mono-threaded, just push a task on the queue to find when it's empty. No perfect but good enough.
 
                     final CountDownLatch latch = new CountDownLatch(1);
                     ScheduledExecutors.nonPeriodicTasks.execute(new Runnable()
                     {
-                            public void run()
-                            {
-                                latch.countDown();
-                            }
+                        public void run()
+                        {
+                            latch.countDown();
+                        }
                     });
                     latch.await(2, TimeUnit.SECONDS);
 
@@ -258,13 +349,21 @@ public abstract class CQLTester
         return list.isEmpty() ? Collections.<String>emptyList() : new ArrayList<>(list);
     }
 
+    public ColumnFamilyStore getCurrentColumnFamilyStore()
+    {
+        String currentTable = currentTable();
+        return currentTable == null
+             ? null
+             : Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable);
+    }
+
     public void flush()
     {
         try
         {
-            String currentTable = currentTable();
-            if (currentTable != null)
-                Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable).forceFlush().get();
+            ColumnFamilyStore store = getCurrentColumnFamilyStore();
+            if (store != null)
+                store.forceFlush().get();
         }
         catch (InterruptedException | ExecutionException e)
         {
@@ -272,9 +371,25 @@ public abstract class CQLTester
         }
     }
 
-    public boolean usePrepared()
+    public void compact()
     {
-        return USE_PREPARED_VALUES;
+        try
+        {
+            String currentTable = currentTable();
+            if (currentTable != null)
+                Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable).forceMajorCompaction();
+        }
+        catch (InterruptedException | ExecutionException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void cleanupCache()
+    {
+        String currentTable = currentTable();
+        if (currentTable != null)
+            Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable).cleanupCache();
     }
 
     public static FunctionName parseFunctionName(String qualifiedName)
@@ -379,11 +494,17 @@ public abstract class CQLTester
 
     protected String createTable(String query)
     {
-        String currentTable = "table_" + seqNumber.getAndIncrement();
-        tables.add(currentTable);
+        String currentTable = createTableName();
         String fullQuery = formatQuery(query);
         logger.info(fullQuery);
         schemaChange(fullQuery);
+        return currentTable;
+    }
+
+    protected String createTableName()
+    {
+        String currentTable = "table_" + seqNumber.getAndIncrement();
+        tables.add(currentTable);
         return currentTable;
     }
 
@@ -422,6 +543,37 @@ public abstract class CQLTester
         String fullQuery = formatQuery(query);
         logger.info(fullQuery);
         schemaChange(fullQuery);
+    }
+
+    /**
+     * Index creation is asynchronous, this method searches in the system table IndexInfo
+     * for the specified index and returns true if it finds it, which indicates the
+     * index was built. If we haven't found it after 5 seconds we give-up.
+     */
+    protected boolean waitForIndex(String keyspace, String table, String index) throws Throwable
+    {
+        long start = System.currentTimeMillis();
+        boolean indexCreated = false;
+        String indedName = String.format("%s.%s", table, index);
+        while (!indexCreated)
+        {
+            Object[][] results = getRows(execute("select index_name from system.\"IndexInfo\" where table_name = ?", keyspace));
+            for(int i = 0; i < results.length; i++)
+            {
+                if (indedName.equals(results[i][0]))
+                {
+                    indexCreated = true;
+                    break;
+                }
+            }
+
+            if (System.currentTimeMillis() - start > 5000)
+                break;
+
+            Thread.sleep(10);
+        }
+
+        return indexCreated;
     }
 
     protected void createIndexMayThrow(String query) throws Throwable
@@ -504,17 +656,22 @@ public abstract class CQLTester
         UntypedResultSet rs;
         if (usePrepared)
         {
-            logger.info("Executing: {} with values {}", query, formatAllValues(values));
+            if (logger.isDebugEnabled())
+                logger.debug("Executing: {} with values {}", query, formatAllValues(values));
             rs = QueryProcessor.executeOnceInternal(query, transformValues(values));
         }
         else
         {
             query = replaceValues(query, values);
-            logger.info("Executing: {}", query);
+            if (logger.isDebugEnabled())
+                logger.debug("Executing: {}", query);
             rs = QueryProcessor.executeOnceInternal(query);
         }
         if (rs != null)
-            logger.info("Got {} rows", rs.size());
+        {
+            if (logger.isDebugEnabled())
+                logger.debug("Got {} rows", rs.size());
+        }
         return rs;
     }
 
@@ -576,7 +733,7 @@ public abstract class CQLTester
                                         rows.length>i ? "less" : "more", rows.length, i, protocolVersion), i == rows.length);
     }
 
-    protected void assertRows(UntypedResultSet result, Object[]... rows)
+    public static void assertRows(UntypedResultSet result, Object[]... rows)
     {
         if (result == null)
         {
@@ -593,7 +750,7 @@ public abstract class CQLTester
             Object[] expected = rows[i];
             UntypedResultSet.Row actual = iter.next();
 
-            Assert.assertEquals(String.format("Invalid number of (expected) values provided for row %d", i), meta.size(), expected.length);
+            Assert.assertEquals(String.format("Invalid number of (expected) values provided for row %d", i), expected.length, meta.size());
 
             for (int j = 0; j < meta.size(); j++)
             {
@@ -602,8 +759,17 @@ public abstract class CQLTester
                 ByteBuffer actualValue = actual.getBytes(column.name.toString());
 
                 if (!Objects.equal(expectedByteValue, actualValue))
-                    Assert.fail(String.format("Invalid value for row %d column %d (%s of type %s), expected <%s> but got <%s>",
-                                              i, j, column.name, column.type.asCQL3Type(), formatValue(expectedByteValue, column.type), formatValue(actualValue, column.type)));
+                {
+                    Object actualValueDecoded = actualValue == null ? null : column.type.getSerializer().deserialize(actualValue);
+                    if (!expected[j].equals(actualValueDecoded))
+                        Assert.fail(String.format("Invalid value for row %d column %d (%s of type %s), expected <%s> but got <%s>",
+                                                  i,
+                                                  j,
+                                                  column.name,
+                                                  column.type.asCQL3Type(),
+                                                  formatValue(expectedByteValue, column.type),
+                                                  formatValue(actualValue, column.type)));
+                }
             }
             i++;
         }
@@ -615,10 +781,69 @@ public abstract class CQLTester
                 iter.next();
                 i++;
             }
-            Assert.fail(String.format("Got less rows than expected. Expected %d but got %d.", rows.length, i));
+            Assert.fail(String.format("Got more rows than expected. Expected %d but got %d.", rows.length, i));
         }
 
         Assert.assertTrue(String.format("Got %s rows than expected. Expected %d but got %d", rows.length>i ? "less" : "more", rows.length, i), i == rows.length);
+    }
+
+    protected void assertRowCount(UntypedResultSet result, int numExpectedRows)
+    {
+        if (result == null)
+        {
+            if (numExpectedRows > 0)
+                Assert.fail(String.format("No rows returned by query but %d expected", numExpectedRows));
+            return;
+        }
+
+        List<ColumnSpecification> meta = result.metadata();
+        Iterator<UntypedResultSet.Row> iter = result.iterator();
+        int i = 0;
+        while (iter.hasNext() && i < numExpectedRows)
+        {
+            UntypedResultSet.Row actual = iter.next();
+            assertNotNull(actual);
+            i++;
+        }
+
+        if (iter.hasNext())
+        {
+            while (iter.hasNext())
+            {
+                iter.next();
+                i++;
+            }
+            Assert.fail(String.format("Got less rows than expected. Expected %d but got %d.", numExpectedRows, i));
+        }
+
+        Assert.assertTrue(String.format("Got %s rows than expected. Expected %d but got %d", numExpectedRows>i ? "less" : "more", numExpectedRows, i), i == numExpectedRows);
+    }
+
+    protected Object[][] getRows(UntypedResultSet result)
+    {
+        if (result == null)
+            return new Object[0][];
+
+        List<Object[]> ret = new ArrayList<>();
+        List<ColumnSpecification> meta = result.metadata();
+
+        Iterator<UntypedResultSet.Row> iter = result.iterator();
+        while (iter.hasNext())
+        {
+            UntypedResultSet.Row rowVal = iter.next();
+            Object[] row = new Object[meta.size()];
+            for (int j = 0; j < meta.size(); j++)
+            {
+                ColumnSpecification column = meta.get(j);
+                ByteBuffer val = rowVal.getBytes(column.name.toString());
+                row[j] = val == null ? null : column.type.getSerializer().deserialize(val);
+            }
+
+            ret.add(row);
+        }
+
+        Object[][] a = new Object[ret.size()][];
+        return ret.toArray(a);
     }
 
     protected void assertColumnNames(UntypedResultSet result, String... expectedColumnNames)
@@ -644,7 +869,7 @@ public abstract class CQLTester
         assertRows(execute("SELECT * FROM %s"), rows);
     }
 
-    protected Object[] row(Object... expected)
+    public static Object[] row(Object... expected)
     {
         return expected;
     }

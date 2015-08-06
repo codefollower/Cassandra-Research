@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.db.marshal;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,11 +28,16 @@ import java.util.Map;
 
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.cql3.Term;
+import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.MarshalException;
 
 import org.github.jamm.Unmetered;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Specifies a Comparator for a specific type of ByteBuffer.
@@ -89,6 +95,9 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     /** get a string representation of the bytes suitable for log messages */
     public String getString(ByteBuffer bytes)
     {
+        if (bytes == null)
+            return "null";
+
         TypeSerializer<T> serializer = getSerializer();
         serializer.validate(bytes);
 
@@ -134,6 +143,17 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         return new CQL3Type.Custom(this);
     }
 
+    /**
+     * Same as compare except that this ignore ReversedType. This is to be use when
+     * comparing 2 values to decide for a CQL condition (see Operator.isSatisfiedBy) as
+     * for CQL, ReversedType is simply an "hint" to the storage engine but it does not
+     * change the meaning of queries per-se.
+     */
+    public int compareForCQL(ByteBuffer v1, ByteBuffer v2)
+    {
+        return compare(v1, v2);
+    }
+
     public abstract TypeSerializer<T> getSerializer();
 
     /* convenience method */
@@ -150,6 +170,11 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public boolean isCounter()
     {
         return false;
+    }
+
+    public boolean isFrozenCollection()
+    {
+        return isCollection() && !isMultiCell();
     }
 
     public static AbstractType<?> parseDefaultParameters(AbstractType<?> baseType, TypeParser parser) throws SyntaxException
@@ -254,6 +279,14 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     }
 
     /**
+     * Returns {@code true} for types where empty should be handled like {@code null} like {@link Int32Type}.
+     */
+    public boolean isEmptyValueMeaningless()
+    {
+        return false;
+    }
+
+    /**
      * @param ignoreFreezing if true, the type string will not be wrapped with FrozenType(...), even if this type is frozen.
      */
     public String toString(boolean ignoreFreezing)
@@ -277,6 +310,50 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public List<AbstractType<?>> getComponents()
     {
         return Collections.<AbstractType<?>>singletonList(this);
+    }
+
+    /**
+    * The length of values for this type if all values are of fixed length, -1 otherwise.
+     */
+    protected int valueLengthIfFixed()
+    {
+        return -1;
+    }
+
+    // This assumes that no empty values are passed
+    public void writeValue(ByteBuffer value, DataOutputPlus out) throws IOException
+    {
+        assert value.hasRemaining();
+        if (valueLengthIfFixed() >= 0)
+            out.write(value);
+        else
+            ByteBufferUtil.writeWithVIntLength(value, out);
+    }
+
+    public long writtenLength(ByteBuffer value)
+    {
+        assert value.hasRemaining();
+        return valueLengthIfFixed() >= 0
+             ? value.remaining()
+             : TypeSizes.sizeofWithVIntLength(value);
+    }
+
+    public ByteBuffer readValue(DataInputPlus in) throws IOException
+    {
+        int length = valueLengthIfFixed();
+        if (length >= 0)
+            return ByteBufferUtil.read(in, length);
+        else
+            return ByteBufferUtil.readWithVIntLength(in);
+    }
+
+    public void skipValue(DataInputPlus in) throws IOException
+    {
+        int length = valueLengthIfFixed();
+        if (length >= 0)
+            FileUtils.skipBytesFully(in, length);
+        else
+            ByteBufferUtil.skipWithVIntLength(in);
     }
 
     /**

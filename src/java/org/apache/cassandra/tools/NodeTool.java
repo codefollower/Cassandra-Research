@@ -96,6 +96,7 @@ public class NodeTool
                 RemoveNode.class,
                 Assassinate.class,
                 Repair.class,
+                ReplayBatchlog.class,
                 SetCacheCapacity.class,
                 SetHintedHandoffThrottleInKB.class,
                 SetCompactionThreshold.class,
@@ -128,7 +129,9 @@ public class NodeTool
                 TpStats.class,
                 TopPartitions.class,
                 SetLoggingLevel.class,
-                GetLoggingLevels.class
+                GetLoggingLevels.class,
+                DisableHintsForDC.class,
+                EnableHintsForDC.class
         );
 
         Cli.CliBuilder<Runnable> builder = Cli.builder("nodetool");
@@ -237,6 +240,8 @@ public class NodeTool
             try (NodeProbe probe = connect())
             {
                 execute(probe);
+                if (probe.isFailed())
+                    throw new RuntimeException("nodetool failed, check server logs");
             }
             catch (IOException e)
             {
@@ -328,7 +333,7 @@ public class NodeTool
             return Collections.unmodifiableList(keyspaces);
         }
 
-        protected String[] parseOptionalColumnFamilies(List<String> cmdArgs)
+        protected String[] parseOptionalTables(List<String> cmdArgs)
         {
             return cmdArgs.size() <= 1 ? EMPTY_STRING_ARRAY : toArray(cmdArgs.subList(1, cmdArgs.size()), String.class);
         }

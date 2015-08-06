@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.cql3.statements;
 
-import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.collect.Iterators;
@@ -27,7 +26,7 @@ import org.apache.cassandra.cql3.restrictions.Restriction;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.Pair;
 
@@ -49,46 +48,79 @@ public class DeleteStatement extends ModificationStatement
         return false;
     }
 
-    public void addUpdateForKey(ColumnFamily cf, ByteBuffer key, Composite prefix, UpdateParameters params)
+    public void addUpdateForKey(PartitionUpdate update, CBuilder cbuilder, UpdateParameters params)
     throws InvalidRequestException
     {
-        List<Operation> deletions = getOperations();
+        List<Operation> regularDeletions = getRegularOperations();
+        List<Operation> staticDeletions = getStaticOperations();
 
-        //删除REGULAR、COMPACT_VALUE这种类型的字段时必须在where中完整指定所有的CLUSTERING_COLUMN
-        if (prefix.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
+//<<<<<<< HEAD
+//        //删除REGULAR、COMPACT_VALUE这种类型的字段时必须在where中完整指定所有的CLUSTERING_COLUMN
+//        if (prefix.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
+//        {
+//            // In general, we can't delete specific columns if not all clustering columns have been specified.
+//            // However, if we delete only static colums, it's fine since we won't really use the prefix anyway.
+//            for (Operation deletion : deletions)
+//                if (!deletion.column.isStatic())
+//                    throw new InvalidRequestException(String.format("Primary key column '%s' must be specified in order to delete column '%s'", getFirstEmptyKey().name, deletion.column.name));
+//        }
+//
+//        //delete from 语法
+//        if (deletions.isEmpty())
+//        {
+//            // We delete the slice selected by the prefix.
+//            // However, for performance reasons, we distinguish 2 cases:
+//            //   - It's a full internal row delete
+//            //   - It's a full cell name (i.e it's a dense layout and the prefix is full)
+//            if (prefix.isEmpty()) //因为where中必须指定PARTITION_KEY，所以这是没有CLUSTERING_COLUMN的情况，相当于删除整行
+//=======
+        if (regularDeletions.isEmpty() && staticDeletions.isEmpty())
         {
-            // In general, we can't delete specific columns if not all clustering columns have been specified.
-            // However, if we delete only static colums, it's fine since we won't really use the prefix anyway.
-            for (Operation deletion : deletions)
-                if (!deletion.column.isStatic())
-                    throw new InvalidRequestException(String.format("Primary key column '%s' must be specified in order to delete column '%s'", getFirstEmptyKey().name, deletion.column.name));
-        }
-
-        //delete from 语法
-        if (deletions.isEmpty())
-        {
-            // We delete the slice selected by the prefix.
-            // However, for performance reasons, we distinguish 2 cases:
-            //   - It's a full internal row delete
-            //   - It's a full cell name (i.e it's a dense layout and the prefix is full)
-            if (prefix.isEmpty()) //因为where中必须指定PARTITION_KEY，所以这是没有CLUSTERING_COLUMN的情况，相当于删除整行
+            // We're not deleting any specific columns so it's either a full partition deletion ....
+            if (cbuilder.count() == 0)
             {
-                // No columns specified, delete the row
-                cf.delete(new DeletionInfo(params.timestamp, params.localDeletionTime));
+                update.addPartitionDeletion(params.deletionTime());
             }
-            else if (cfm.comparator.isDense() && prefix.size() == cfm.clusteringColumns().size()) //删除COMPACT_VALUE列
+//<<<<<<< HEAD
+//            else if (cfm.comparator.isDense() && prefix.size() == cfm.clusteringColumns().size()) //删除COMPACT_VALUE列
+//=======
+            // ... or a row deletion ...
+            else if (cbuilder.remainingCount() == 0)
             {
-                cf.addAtom(params.makeTombstone(cfm.comparator.create(prefix, null)));
+                params.newRow(cbuilder.build());
+                params.addRowDeletion();
+                update.add(params.buildRow());
             }
+            // ... or a range of rows deletion.
             else
             {
-                cf.addAtom(params.makeRangeTombstone(prefix.slice())); //删除连续的多个列
+//<<<<<<< HEAD
+//                cf.addAtom(params.makeRangeTombstone(prefix.slice())); //删除连续的多个列
+//=======
+                update.add(params.makeRangeTombstone(cbuilder));
             }
         }
         else //delete xxx from 语法
         {
-            for (Operation op : deletions)
-                op.execute(key, cf, prefix, params);
+            if (!regularDeletions.isEmpty())
+            {
+                // We can't delete specific (regular) columns if not all clustering columns have been specified.
+                if (cbuilder.remainingCount() > 0)
+                    throw new InvalidRequestException(String.format("Primary key column '%s' must be specified in order to delete column '%s'", getFirstEmptyKey().name, regularDeletions.get(0).column.name));
+
+                params.newRow(cbuilder.build());
+                for (Operation op : regularDeletions)
+                    op.execute(update.partitionKey(), params);
+                update.add(params.buildRow());
+            }
+
+            if (!staticDeletions.isEmpty())
+            {
+                params.newRow(Clustering.STATIC_CLUSTERING);
+                for (Operation op : staticDeletions)
+                    op.execute(update.partitionKey(), params);
+                update.add(params.buildRow());
+            }
         }
     }
 

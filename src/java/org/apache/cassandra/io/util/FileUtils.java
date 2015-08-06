@@ -20,10 +20,13 @@ package org.apache.cassandra.io.util;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.Charset;
 import java.nio.file.*;
 import java.text.DecimalFormat;
 import java.util.Arrays;
+import java.util.List;
 
+import org.apache.cassandra.config.Config;
 import sun.nio.ch.DirectBuffer;
 
 import org.slf4j.Logger;
@@ -227,6 +230,19 @@ public class FileUtils
         }
     }
 
+    public static void closeQuietly(AutoCloseable c)
+    {
+        try
+        {
+            if (c != null)
+                c.close();
+        }
+        catch (Exception e)
+        {
+            logger.warn("Failed closing {}", c, e);
+        }
+    }
+
     public static void close(Closeable... cs) throws IOException
     {
         close(Arrays.asList(cs));
@@ -250,6 +266,22 @@ public class FileUtils
         }
         if (e != null)
             throw e;
+    }
+
+    public static void closeQuietly(Iterable<? extends AutoCloseable> cs)
+    {
+        for (AutoCloseable c : cs)
+        {
+            try
+            {
+                if (c != null)
+                    c.close();
+            }
+            catch (Exception ex)
+            {
+                logger.warn("Failed closing {}", c, ex);
+            }
+        }
     }
 
     public static String getCanonicalPath(String filename)
@@ -276,6 +308,29 @@ public class FileUtils
         }
     }
 
+    /** Return true if file is contained in folder */
+    public static boolean isContained(File folder, File file)
+    {
+        String folderPath = getCanonicalPath(folder);
+        String filePath = getCanonicalPath(file);
+
+        return filePath.startsWith(folderPath);
+    }
+
+    /** Convert absolute path into a path relative to the base path */
+    public static String getRelativePath(String basePath, String absolutePath)
+    {
+        try
+        {
+            return Paths.get(basePath).relativize(Paths.get(absolutePath)).toString();
+        }
+        catch(Exception ex)
+        {
+            String absDataPath = FileUtils.getCanonicalPath(basePath);
+            return Paths.get(absDataPath).relativize(Paths.get(absolutePath)).toString();
+        }
+    }
+
     public static boolean isCleanerAvailable()
     {
         return canCleanDirectBuffers;
@@ -284,7 +339,11 @@ public class FileUtils
     public static void clean(ByteBuffer buffer)
     {
         if (isCleanerAvailable() && buffer.isDirect())
-            ((DirectBuffer)buffer).cleaner().clean();
+        {
+            DirectBuffer db = (DirectBuffer) buffer;
+            if (db.cleaner() != null)
+                db.cleaner().clean();
+        }
     }
 
     public static void createDirectory(String directory)
@@ -379,6 +438,23 @@ public class FileUtils
         deleteWithConfirm(dir);
     }
 
+    /**
+     * Schedules deletion of all file and subdirectories under "dir" on JVM shutdown.
+     * @param dir Directory to be deleted
+     */
+    public static void deleteRecursiveOnExit(File dir)
+    {
+        if (dir.isDirectory())
+        {
+            String[] children = dir.list();
+            for (String child : children)
+                deleteRecursiveOnExit(new File(dir, child));
+        }
+
+        logger.debug("Scheduling deferred deletion of file: " + dir);
+        dir.deleteOnExit();
+    }
+
     public static void skipBytesFully(DataInput in, int bytes) throws IOException
     {
         int n = 0;
@@ -393,6 +469,9 @@ public class FileUtils
 
     public static void handleCorruptSSTable(CorruptSSTableException e)
     {
+        if (!StorageService.instance.isSetupCompleted())
+            handleStartupFSError(e);
+
         JVMStabilityInspector.inspectThrowable(e);
         switch (DatabaseDescriptor.getDiskFailurePolicy())
         {
@@ -404,6 +483,9 @@ public class FileUtils
     
     public static void handleFSError(FSError e)
     {
+        if (!StorageService.instance.isSetupCompleted())
+            handleStartupFSError(e);
+
         JVMStabilityInspector.inspectThrowable(e);
         switch (DatabaseDescriptor.getDiskFailurePolicy())
         {
@@ -429,6 +511,22 @@ public class FileUtils
         }
     }
 
+    private static void handleStartupFSError(Throwable t)
+    {
+        switch (DatabaseDescriptor.getDiskFailurePolicy())
+        {
+            case stop_paranoid:
+            case stop:
+            case die:
+                logger.error("Exiting forcefully due to file system exception on startup, disk failure policy \"{}\"",
+                             DatabaseDescriptor.getDiskFailurePolicy(),
+                             t);
+                JVMStabilityInspector.killCurrentJVM(t, true);
+                break;
+            default:
+                break;
+        }
+    }
     /**
      * Get the size of a directory in bytes
      * @param directory The directory for which we need size.
@@ -465,6 +563,61 @@ public class FileUtils
             int left = length - copiedBytes;
             in.readFully(buffer, 0, left);
             out.write(buffer, 0, left);
+        }
+    }
+
+    public static boolean isSubDirectory(File parent, File child) throws IOException
+    {
+        parent = parent.getCanonicalFile();
+        child = child.getCanonicalFile();
+
+        File toCheck = child;
+        while (toCheck != null)
+        {
+            if (parent.equals(toCheck))
+                return true;
+            toCheck = toCheck.getParentFile();
+        }
+        return false;
+    }
+
+    public static void append(File file, String ... lines)
+    {
+        if (file.exists())
+            write(file, StandardOpenOption.APPEND, lines);
+        else
+            write(file, StandardOpenOption.CREATE, lines);
+    }
+
+    public static void replace(File file, String ... lines)
+    {
+        write(file, StandardOpenOption.TRUNCATE_EXISTING, lines);
+    }
+
+    public static void write(File file, StandardOpenOption op, String ... lines)
+    {
+        try
+        {
+            Files.write(file.toPath(),
+                        Arrays.asList(lines),
+                        Charset.forName("utf-8"),
+                        op);
+        }
+        catch (IOException ex)
+        {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static List<String> readLines(File file)
+    {
+        try
+        {
+            return Files.readAllLines(file.toPath(), Charset.forName("utf-8"));
+        }
+        catch (IOException ex)
+        {
+            throw new RuntimeException(ex);
         }
     }
 }

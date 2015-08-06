@@ -33,6 +33,11 @@ public class DoubleType extends AbstractType<Double>
 
     DoubleType() {} // singleton
 
+    public boolean isEmptyValueMeaningless()
+    {
+        return true;
+    }
+
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
         if (!o1.hasRemaining() || !o2.hasRemaining())
@@ -91,5 +96,11 @@ public class DoubleType extends AbstractType<Double>
     public TypeSerializer<Double> getSerializer()
     {
         return DoubleSerializer.instance;
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return 8;
     }
 }

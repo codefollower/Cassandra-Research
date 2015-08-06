@@ -22,9 +22,6 @@ import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.codahale.metrics.*;
 import javax.management.*;
 
@@ -36,10 +33,9 @@ import javax.management.*;
  */
 public class CassandraMetricsRegistry extends MetricRegistry
 {
-    protected static final Logger logger = LoggerFactory.getLogger(CassandraMetricsRegistry.class);
-
     public static final CassandraMetricsRegistry Metrics = new CassandraMetricsRegistry();
-    private MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+    private final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
 
     private CassandraMetricsRegistry()
     {
@@ -54,11 +50,25 @@ public class CassandraMetricsRegistry extends MetricRegistry
         return counter;
     }
 
+    public Counter counter(MetricName name, MetricName alias)
+    {
+        Counter counter = counter(name);
+        registerAlias(name, alias);
+        return counter;
+    }
+
     public Meter meter(MetricName name)
     {
         Meter meter = meter(name.getMetricName());
         registerMBean(meter, name.getMBeanName());
 
+        return meter;
+    }
+
+    public Meter meter(MetricName name, MetricName alias)
+    {
+        Meter meter = meter(name);
+        registerAlias(name, alias);
         return meter;
     }
 
@@ -70,11 +80,25 @@ public class CassandraMetricsRegistry extends MetricRegistry
         return histogram;
     }
 
+    public Histogram histogram(MetricName name, MetricName alias)
+    {
+        Histogram histogram = histogram(name);
+        registerAlias(name, alias);
+        return histogram;
+    }
+
     public Timer timer(MetricName name)
     {
         Timer timer = register(name, new Timer(new EstimatedHistogramReservoir()));
         registerMBean(timer, name.getMBeanName());
 
+        return timer;
+    }
+
+    public Timer timer(MetricName name, MetricName alias)
+    {
+        Timer timer = timer(name);
+        registerAlias(name, alias);
         return timer;
     }
 
@@ -93,6 +117,13 @@ public class CassandraMetricsRegistry extends MetricRegistry
         }
     }
 
+    public <T extends Metric> T register(MetricName name, MetricName aliasName, T metric)
+    {
+        T ret = register(name, metric);
+        registerAlias(name, aliasName);
+        return ret;
+    }
+
     public boolean remove(MetricName name)
     {
         boolean removed = remove(name.getMetricName());
@@ -100,15 +131,22 @@ public class CassandraMetricsRegistry extends MetricRegistry
         try
         {
             mBeanServer.unregisterMBean(name.getMBeanName());
-        } catch (InstanceNotFoundException | MBeanRegistrationException e)
-        {
-            logger.debug("Unable to remove mbean");
-        }
+        } catch (Exception ignore) {}
 
         return removed;
     }
 
-    private void registerMBean(Metric metric, ObjectName name)
+    public boolean remove(MetricName name, MetricName alias)
+    {
+        if (remove(name))
+        {
+            removeAlias(alias);
+            return true;
+        }
+        return false;
+    }
+
+    public void registerMBean(Metric metric, ObjectName name)
     {
         AbstractBean mbean;
 
@@ -135,13 +173,23 @@ public class CassandraMetricsRegistry extends MetricRegistry
         try
         {
             mBeanServer.registerMBean(mbean, name);
-        } catch (InstanceAlreadyExistsException e)
+        } catch (Exception ignored) {}
+    }
+
+    private void registerAlias(MetricName existingName, MetricName aliasName)
+    {
+        Metric existing = Metrics.getMetrics().get(existingName.getMetricName());
+        assert existing != null : existingName + " not registered";
+
+        registerMBean(existing, aliasName.getMBeanName());
+    }
+
+    private void removeAlias(MetricName name)
+    {
+        try
         {
-            logger.debug("Metric bean already exists", e);
-        } catch (MBeanRegistrationException | NotCompliantMBeanException e)
-        {
-            logger.debug("Unable to register metric bean", e);
-        }
+            mBeanServer.unregisterMBean(name.getMBeanName());
+        } catch (Exception ignore) {}
     }
 
     public interface MetricMBean

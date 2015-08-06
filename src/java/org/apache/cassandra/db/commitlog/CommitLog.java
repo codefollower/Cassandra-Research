@@ -21,6 +21,7 @@ import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.zip.CRC32;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -29,23 +30,21 @@ import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.commons.lang3.StringUtils;
 
-import com.github.tjake.ICRC32;
+import org.apache.commons.lang3.StringUtils;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.compress.CompressionParameters;
+import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.io.compress.ICompressor;
 import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.metrics.CommitLogMetrics;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.utils.CRC32Factory;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
 import static org.apache.cassandra.db.commitlog.CommitLogSegment.*;
@@ -75,7 +74,7 @@ public class CommitLog implements CommitLogMBean
     public ParameterizedClass compressorClass;
     final public String location;
 
-    static private CommitLog construct()
+    private static CommitLog construct()
     {
         CommitLog log = new CommitLog(DatabaseDescriptor.getCommitLogLocation(), new CommitLogArchiver());
 
@@ -96,7 +95,7 @@ public class CommitLog implements CommitLogMBean
     {
         compressorClass = DatabaseDescriptor.getCommitLogCompression();
         this.location = location;
-        ICompressor compressor = compressorClass != null ? CompressionParameters.createCompressor(compressorClass) : null;
+        ICompressor compressor = compressorClass != null ? CompressionParams.createCompressor(compressorClass) : null;
         DatabaseDescriptor.createAllDirectories();
 
         this.compressor = compressor;
@@ -259,22 +258,34 @@ public class CommitLog implements CommitLogMBean
         }
 
         Allocation alloc = allocator.allocate(mutation, (int) totalSize);
-        try
+        CRC32 checksum = new CRC32();
+        final ByteBuffer buffer = alloc.getBuffer();
+        try (BufferedDataOutputStreamPlus dos = new DataOutputBufferFixed(buffer))
         {
-            ICRC32 checksum = CRC32Factory.instance.create();
-            final ByteBuffer buffer = alloc.getBuffer();
-            BufferedDataOutputStreamPlus dos = new DataOutputBufferFixed(buffer);
-
             // checksummed length
-            dos.writeInt((int) size); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的length
-            checksum.update(buffer, buffer.position() - 4, 4);
-            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的head checksum
+//<<<<<<< HEAD
+//            dos.writeInt((int) size); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的length
+//            checksum.update(buffer, buffer.position() - 4, 4);
+//            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的head checksum
+//=======
+            dos.writeInt((int) size);
 
-            int start = buffer.position();
+            ByteBuffer copy = buffer.duplicate();
+            copy.position(buffer.position() - 4);
+            copy.limit(buffer.position());
+            checksum.update(copy);
+            buffer.putInt((int) checksum.getValue());
+
             // checksummed mutation
+            copy = buffer.duplicate();
             Mutation.serializer.serialize(mutation, dos, MessagingService.current_version);
-            checksum.update(buffer, start, (int) size);
-            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
+//<<<<<<< HEAD
+//            checksum.update(buffer, start, (int) size);
+//            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
+//=======
+            copy.limit(copy.position() + (int) size);
+            checksum.update(copy);
+            buffer.putInt((int) checksum.getValue());
         }
         catch (IOException e)
         {
@@ -370,6 +381,30 @@ public class CommitLog implements CommitLogMBean
         return new ArrayList<>(archiver.archivePending.keySet());
     }
 
+    @Override
+    public long getActiveContentSize()
+    {
+        long size = 0;
+        for (CommitLogSegment segment : allocator.getActiveSegments())
+            size += segment.contentSize();
+        return size;
+    }
+
+    @Override
+    public long getActiveOnDiskSize()
+    {
+        return allocator.onDiskSize();
+    }
+
+    @Override
+    public Map<String, Double> getActiveSegmentCompressionRatios()
+    {
+        Map<String, Double> segmentRatios = new TreeMap<>();
+        for (CommitLogSegment segment : allocator.getActiveSegments())
+            segmentRatios.put(segment.getName(), 1.0 * segment.onDiskSize() / segment.contentSize());
+        return segmentRatios;
+    }
+
     /**
      * Shuts down the threads used by the commit log, blocking until completion.
      */
@@ -449,5 +484,4 @@ public class CommitLog implements CommitLogMBean
                 throw new AssertionError(DatabaseDescriptor.getCommitFailurePolicy());
         }
     }
-
 }

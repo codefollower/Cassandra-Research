@@ -24,9 +24,16 @@ import java.util.*;
 
 import com.google.common.collect.AbstractIterator;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.statements.SelectStatement;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.service.pager.QueryPager;
+import org.apache.cassandra.transport.Server;
+import org.apache.cassandra.utils.FBUtilities;
 
 /** a utility for doing internal cql-based queries */
 public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
@@ -95,7 +102,7 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 
         public List<ColumnSpecification> metadata()
         {
-            return cqlRows.metadata.names;
+            return cqlRows.metadata.requestNames();
         }
     }
 
@@ -174,11 +181,16 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 
                 protected Row computeNext()
                 {
+                    int nowInSec = FBUtilities.nowInSeconds();
                     while (currentPage == null || !currentPage.hasNext())
                     {
                         if (pager.isExhausted())
                             return endOfData();
-                        currentPage = select.process(pager.fetchPage(pageSize)).rows.iterator();
+
+                        try (ReadOrderGroup orderGroup = pager.startOrderGroup(); PartitionIterator iter = pager.fetchPageInternal(pageSize, orderGroup))
+                        {
+                            currentPage = select.process(iter, nowInSec).rows.iterator();
+                        }
                     }
                     return new Row(metadata, currentPage.next());
                 }
@@ -206,6 +218,37 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
             this.columns.addAll(names);
             for (int i = 0; i < names.size(); i++)
                 data.put(names.get(i).name.toString(), columns.get(i));
+        }
+
+        public static Row fromInternalRow(CFMetaData metadata, DecoratedKey key, org.apache.cassandra.db.rows.Row row)
+        {
+            Map<String, ByteBuffer> data = new HashMap<>();
+
+            ByteBuffer[] keyComponents = SelectStatement.getComponents(metadata, key);
+            for (ColumnDefinition def : metadata.partitionKeyColumns())
+                data.put(def.name.toString(), keyComponents[def.position()]);
+
+            Clustering clustering = row.clustering();
+            for (ColumnDefinition def : metadata.clusteringColumns())
+                data.put(def.name.toString(), clustering.get(def.position()));
+
+            for (ColumnDefinition def : metadata.partitionColumns())
+            {
+                if (def.isSimple())
+                {
+                    Cell cell = row.getCell(def);
+                    if (cell != null)
+                        data.put(def.name.toString(), cell.value());
+                }
+                else
+                {
+                    ComplexColumnData complexData = row.getComplexColumnData(def);
+                    if (complexData != null)
+                        data.put(def.name.toString(), ((CollectionType)def.type).serializeForNativeProtocol(def, complexData.iterator(), Server.VERSION_3));
+                }
+            }
+
+            return new Row(data);
         }
 
         public boolean has(String column)
@@ -290,6 +333,11 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
         {
             ByteBuffer raw = data.get(column);
             return raw == null ? null : MapType.getInstance(keyType, valueType, true).compose(raw);
+        }
+
+        public Map<String, String> getTextMap(String column)
+        {
+            return getMap(column, UTF8Type.instance, UTF8Type.instance);
         }
 
         public List<ColumnSpecification> getColumns()

@@ -29,38 +29,63 @@ import org.apache.commons.lang3.time.DateUtils;
 
 public class TimestampSerializer implements TypeSerializer<Date>
 {
+
+    //NOTE: This list is used below and if you change the order
+    //      you need to update the default format and json formats in the code below.
     private static final String[] dateStringPatterns = new String[] {
             "yyyy-MM-dd HH:mm",
             "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm z",
+            "yyyy-MM-dd HH:mm zz",
+            "yyyy-MM-dd HH:mm zzz",
             "yyyy-MM-dd HH:mmX",
             "yyyy-MM-dd HH:mmXX",  // DEFAULT_FORMAT
             "yyyy-MM-dd HH:mmXXX",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss z",
+            "yyyy-MM-dd HH:mm:ss zz",
+            "yyyy-MM-dd HH:mm:ss zzz",
             "yyyy-MM-dd HH:mm:ssX",
             "yyyy-MM-dd HH:mm:ssXX",
             "yyyy-MM-dd HH:mm:ssXXX",
-            "yyyy-MM-dd HH:mm:ss.SSS",  // TO_JSON_FORMAT
+            "yyyy-MM-dd HH:mm:ss.SSS",   // TO_JSON_FORMAT
+            "yyyy-MM-dd HH:mm:ss.SSS z",
+            "yyyy-MM-dd HH:mm:ss.SSS zz",
+            "yyyy-MM-dd HH:mm:ss.SSS zzz",
             "yyyy-MM-dd HH:mm:ss.SSSX",
             "yyyy-MM-dd HH:mm:ss.SSSXX",
             "yyyy-MM-dd HH:mm:ss.SSSXXX",
             "yyyy-MM-dd'T'HH:mm",
+            "yyyy-MM-dd'T'HH:mm z",
+            "yyyy-MM-dd'T'HH:mm zz",
+            "yyyy-MM-dd'T'HH:mm zzz",
             "yyyy-MM-dd'T'HH:mmX",
             "yyyy-MM-dd'T'HH:mmXX",
             "yyyy-MM-dd'T'HH:mmXXX",
             "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss z",
+            "yyyy-MM-dd'T'HH:mm:ss zz",
+            "yyyy-MM-dd'T'HH:mm:ss zzz",
             "yyyy-MM-dd'T'HH:mm:ssX",
             "yyyy-MM-dd'T'HH:mm:ssXX",
             "yyyy-MM-dd'T'HH:mm:ssXXX",
             "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS z",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS zz",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS zzz",
             "yyyy-MM-dd'T'HH:mm:ss.SSSX",
             "yyyy-MM-dd'T'HH:mm:ss.SSSXX",
             "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
             "yyyy-MM-dd",
+            "yyyy-MM-dd z",
+            "yyyy-MM-dd zz",
+            "yyyy-MM-dd zzz",
             "yyyy-MM-ddX",
             "yyyy-MM-ddXX",
             "yyyy-MM-ddXXX"
     };
 
-    private static final String DEFAULT_FORMAT = dateStringPatterns[3];
+    private static final String DEFAULT_FORMAT = dateStringPatterns[6];
     private static final Pattern timestampPattern = Pattern.compile("^-?\\d+$");
 
     private static final ThreadLocal<SimpleDateFormat> FORMATTER = new ThreadLocal<SimpleDateFormat>()
@@ -71,7 +96,7 @@ public class TimestampSerializer implements TypeSerializer<Date>
         }
     };
 
-    public static final SimpleDateFormat TO_JSON_FORMAT = new SimpleDateFormat(dateStringPatterns[8]);
+    public static final SimpleDateFormat TO_JSON_FORMAT = new SimpleDateFormat(dateStringPatterns[15]);
 
     public static final TimestampSerializer instance = new TimestampSerializer();
 

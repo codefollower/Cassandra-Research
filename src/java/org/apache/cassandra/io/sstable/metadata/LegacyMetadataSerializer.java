@@ -26,6 +26,7 @@ import com.google.common.collect.Maps;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -50,7 +51,7 @@ public class LegacyMetadataSerializer extends MetadataSerializer
 
         assert validation != null && stats != null && compaction != null && validation.partitioner != null;
 
-        EstimatedHistogram.serializer.serialize(stats.estimatedRowSize, out);
+        EstimatedHistogram.serializer.serialize(stats.estimatedPartitionSize, out);
         EstimatedHistogram.serializer.serialize(stats.estimatedColumnCount, out);
         ReplayPosition.serializer.serialize(stats.replayPosition, out);
         out.writeLong(stats.minTimestamp);
@@ -64,12 +65,12 @@ public class LegacyMetadataSerializer extends MetadataSerializer
             out.writeInt(g);
         StreamingHistogram.serializer.serialize(stats.estimatedTombstoneDropTime, out);
         out.writeInt(stats.sstableLevel);
-        out.writeInt(stats.minColumnNames.size());
-        for (ByteBuffer columnName : stats.minColumnNames)
-            ByteBufferUtil.writeWithShortLength(columnName, out);
-        out.writeInt(stats.maxColumnNames.size());
-        for (ByteBuffer columnName : stats.maxColumnNames)
-            ByteBufferUtil.writeWithShortLength(columnName, out);
+        out.writeInt(stats.minClusteringValues.size());
+        for (ByteBuffer value : stats.minClusteringValues)
+            ByteBufferUtil.writeWithShortLength(value, out);
+        out.writeInt(stats.maxClusteringValues.size());
+        for (ByteBuffer value : stats.maxClusteringValues)
+            ByteBufferUtil.writeWithShortLength(value, out);
     }
 
     /**
@@ -87,9 +88,9 @@ public class LegacyMetadataSerializer extends MetadataSerializer
         }
         else
         {
-            try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(statsFile))))
+            try (DataInputStreamPlus in = new DataInputStreamPlus(new BufferedInputStream(new FileInputStream(statsFile))))
             {
-                EstimatedHistogram rowSizes = EstimatedHistogram.serializer.deserialize(in);
+                EstimatedHistogram partitionSizes = EstimatedHistogram.serializer.deserialize(in);
                 EstimatedHistogram columnCounts = EstimatedHistogram.serializer.deserialize(in);
                 ReplayPosition replayPosition = ReplayPosition.serializer.deserialize(in);
                 long minTimestamp = in.readLong();
@@ -122,19 +123,24 @@ public class LegacyMetadataSerializer extends MetadataSerializer
                                    new ValidationMetadata(partitioner, bloomFilterFPChance));
                 if (types.contains(MetadataType.STATS))
                     components.put(MetadataType.STATS,
-                                   new StatsMetadata(rowSizes,
+                                   new StatsMetadata(partitionSizes,
                                                      columnCounts,
                                                      replayPosition,
                                                      minTimestamp,
                                                      maxTimestamp,
+                                                     Integer.MAX_VALUE,
                                                      maxLocalDeletionTime,
+                                                     0,
+                                                     Integer.MAX_VALUE,
                                                      compressionRatio,
                                                      tombstoneHistogram,
                                                      sstableLevel,
                                                      minColumnNames,
                                                      maxColumnNames,
                                                      true,
-                                                     ActiveRepairService.UNREPAIRED_SSTABLE));
+                                                     ActiveRepairService.UNREPAIRED_SSTABLE,
+                                                     -1,
+                                                     -1));
                 if (types.contains(MetadataType.COMPACTION))
                     components.put(MetadataType.COMPACTION,
                                    new CompactionMetadata(ancestors, null));

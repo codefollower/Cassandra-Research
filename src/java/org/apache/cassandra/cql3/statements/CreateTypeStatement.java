@@ -27,6 +27,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.transport.Event;
@@ -65,11 +66,11 @@ public class CreateTypeStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws RequestValidationException
     {
-        KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
+        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         if (ksm == null)
             throw new InvalidRequestException(String.format("Cannot add type in unknown keyspace %s", name.getKeyspace()));
 
-        if (ksm.userTypes.getType(name.getUserTypeName()) != null && !ifNotExists)
+        if (ksm.types.get(name.getUserTypeName()).isPresent() && !ifNotExists)
             throw new InvalidRequestException(String.format("A user type of name %s already exists", name));
 
         for (CQL3Type.Raw type : columnTypes)
@@ -118,11 +119,11 @@ public class CreateTypeStatement extends SchemaAlteringStatement
 
     public boolean announceMigration(boolean isLocalOnly) throws InvalidRequestException, ConfigurationException
     {
-        KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
+        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         assert ksm != null; // should haven't validate otherwise
 
         // Can happen with ifNotExists
-        if (ksm.userTypes.getType(name.getUserTypeName()) != null)
+        if (ksm.types.get(name.getUserTypeName()).isPresent())
             return false;
 
         UserType type = createType();

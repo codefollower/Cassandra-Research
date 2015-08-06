@@ -18,9 +18,11 @@
 package org.apache.cassandra.cql3.statements;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -33,7 +35,7 @@ import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.Event;
 
 /**
- * A <code>DROP AGGREGATE</code> statement parsed from a CQL query.
+ * A {@code DROP AGGREGATE} statement parsed from a CQL query.
  */
 public final class DropAggregateStatement extends SchemaAlteringStatement
 {
@@ -85,7 +87,7 @@ public final class DropAggregateStatement extends SchemaAlteringStatement
 
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
-        List<Function> olds = Functions.find(functionName);
+        Collection<Function> olds = Schema.instance.getFunctions(functionName);
 
         if (!argsPresent && olds != null && olds.size() > 1)
             throw new InvalidRequestException(String.format("'DROP AGGREGATE %s' matches multiple function definitions; " +
@@ -96,12 +98,12 @@ public final class DropAggregateStatement extends SchemaAlteringStatement
 
         List<AbstractType<?>> argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-            argTypes.add(rawType.prepare(functionName.keyspace).getType());
+            argTypes.add(prepareType("arguments", rawType));
 
         Function old;
         if (argsPresent)
         {
-            old = Functions.find(functionName, argTypes);
+            old = Schema.instance.findFunction(functionName, argTypes).orElse(null);
             if (old == null || !(old instanceof AggregateFunction))
             {
                 if (ifExists)
@@ -120,13 +122,13 @@ public final class DropAggregateStatement extends SchemaAlteringStatement
         }
         else
         {
-            if (olds == null || olds.isEmpty() || !(olds.get(0) instanceof AggregateFunction))
+            if (olds == null || olds.isEmpty() || !(olds.iterator().next() instanceof AggregateFunction))
             {
                 if (ifExists)
                     return false;
                 throw new InvalidRequestException(String.format("Cannot drop non existing aggregate '%s'", functionName));
             }
-            old = olds.get(0);
+            old = olds.iterator().next();
         }
 
         if (old.isNative())
@@ -138,5 +140,19 @@ public final class DropAggregateStatement extends SchemaAlteringStatement
         MigrationManager.announceAggregateDrop((UDAggregate)old, isLocalOnly);
 
         return true;
+    }
+
+    private AbstractType<?> prepareType(String typeName, CQL3Type.Raw rawType)
+    {
+        if (rawType.isFrozen())
+            throw new InvalidRequestException(String.format("The function %s should not be frozen; remove the frozen<> modifier", typeName));
+
+        // UDT are not supported non frozen but we do not allow the frozen keyword for argument. So for the moment we
+        // freeze them here
+        if (!rawType.canBeNonFrozen())
+            rawType.freeze();
+
+        AbstractType<?> type = rawType.prepare(functionName.keyspace).getType();
+        return type;
     }
 }

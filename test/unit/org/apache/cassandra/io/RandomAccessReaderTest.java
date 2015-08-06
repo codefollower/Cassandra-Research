@@ -3,9 +3,7 @@ package org.apache.cassandra.io;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
-import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -14,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
-import org.apache.cassandra.io.compress.*;
 import org.apache.cassandra.io.util.ChannelProxy;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.RandomAccessReader;
@@ -25,23 +22,61 @@ public class RandomAccessReaderTest
     @Test
     public void testReadFully() throws IOException
     {
+        testReadImpl(1, 0);
+    }
+
+    @Test
+    public void testReadLarge() throws IOException
+    {
+        testReadImpl(1000, 0);
+    }
+
+    @Test
+    public void testReadLargeWithSkip() throws IOException
+    {
+        testReadImpl(1000, 322);
+    }
+
+    @Test
+    public void testReadBufferSizeNotAligned() throws IOException
+    {
+        testReadImpl(1000, 0, 5122);
+    }
+
+    private void testReadImpl(int numIterations, int skipIterations) throws IOException
+    {
+        testReadImpl(numIterations, skipIterations, RandomAccessReader.DEFAULT_BUFFER_SIZE);
+    }
+
+    private void testReadImpl(int numIterations, int skipIterations, int bufferSize) throws IOException
+    {
         final File f = File.createTempFile("testReadFully", "1");
         final String expected = "The quick brown fox jumps over the lazy dog";
 
-        SequentialWriter writer = new SequentialWriter(f, CompressionParameters.DEFAULT_CHUNK_LENGTH, false);
-        writer.write(expected.getBytes());
+        SequentialWriter writer = SequentialWriter.open(f);
+        for (int i = 0; i < numIterations; i++)
+            writer.write(expected.getBytes());
         writer.finish();
 
         assert f.exists();
 
         ChannelProxy channel = new ChannelProxy(f);
-        RandomAccessReader reader = RandomAccessReader.open(channel);
+        RandomAccessReader reader = RandomAccessReader.open(channel, bufferSize, -1L);
         assertEquals(f.getAbsolutePath(), reader.getPath());
-        assertEquals(expected.length(), reader.length());
+        assertEquals(expected.length() * numIterations, reader.length());
+
+        if (skipIterations > 0)
+        {
+            reader.seek(skipIterations * expected.length());
+        }
 
         byte[] b = new byte[expected.length()];
-        reader.readFully(b);
-        assertEquals(expected, new String(b));
+        int n = numIterations - skipIterations;
+        for (int i = 0; i < n; i++)
+        {
+            reader.readFully(b);
+            assertEquals(expected, new String(b));
+        }
 
         assertTrue(reader.isEOF());
         assertEquals(0, reader.bytesRemaining());
@@ -56,7 +91,7 @@ public class RandomAccessReaderTest
         File f = File.createTempFile("testReadBytes", "1");
         final String expected = "The quick brown fox jumps over the lazy dog";
 
-        SequentialWriter writer = new SequentialWriter(f, CompressionParameters.DEFAULT_CHUNK_LENGTH, false);
+        SequentialWriter writer = SequentialWriter.open(f);
         writer.write(expected.getBytes());
         writer.finish();
 
@@ -84,7 +119,7 @@ public class RandomAccessReaderTest
         final String expected = "The quick brown fox jumps over the lazy dog";
         final int numIterations = 10;
 
-        SequentialWriter writer = new SequentialWriter(f, CompressionParameters.DEFAULT_CHUNK_LENGTH, false);
+        SequentialWriter writer = SequentialWriter.open(f);
         for (int i = 0; i < numIterations; i++)
             writer.write(expected.getBytes());
         writer.finish();
@@ -163,7 +198,7 @@ public class RandomAccessReaderTest
         }
         final int totalLength = len;
 
-        SequentialWriter writer = new SequentialWriter(f, CompressionParameters.DEFAULT_CHUNK_LENGTH, false);
+        SequentialWriter writer = SequentialWriter.open(f);
         for (int i = 0; i < expected.length; i++)
             writer.write(expected[i].getBytes());
         writer.finish();

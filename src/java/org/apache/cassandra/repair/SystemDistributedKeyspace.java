@@ -20,30 +20,37 @@ package org.apache.cassandra.repair;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetAddress;
-import java.util.Arrays;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.schema.Tables;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 public final class SystemDistributedKeyspace
 {
-    private static Logger logger = LoggerFactory.getLogger(SystemDistributedKeyspace.class);
+    private SystemDistributedKeyspace()
+    {
+    }
+
+    private static final Logger logger = LoggerFactory.getLogger(SystemDistributedKeyspace.class);
 
     public static final String NAME = "system_distributed";
 
@@ -91,37 +98,36 @@ public final class SystemDistributedKeyspace
                          .comment(description);
     }
 
-    public static KSMetaData definition()
+    public static KeyspaceMetadata metadata()
     {
-        List<CFMetaData> tables = Arrays.asList(RepairHistory, ParentRepairHistory);
-        return new KSMetaData(NAME, SimpleStrategy.class, ImmutableMap.of("replication_factor", "3"), true, tables);
+        return KeyspaceMetadata.create(NAME, KeyspaceParams.simple(3), Tables.of(RepairHistory, ParentRepairHistory));
     }
 
     public static void startParentRepair(UUID parent_id, String keyspaceName, String[] cfnames, Collection<Range<Token>> ranges)
     {
 
         String query = "INSERT INTO %s.%s (parent_id, keyspace_name, columnfamily_names, requested_ranges, started_at)"+
-                                 " VALUES (%s,        '%s',          { '%s' },           { '%s' },          dateOf(now()))";
-        String fmtQry = String.format(query, NAME, PARENT_REPAIR_HISTORY, parent_id.toString(), keyspaceName, Joiner.on("','").join(ranges), Joiner.on("','").join(cfnames));
-        executeInternalSilent(fmtQry);
+                                 " VALUES (%s,        '%s',          { '%s' },           { '%s' },          toTimestamp(now()))";
+        String fmtQry = String.format(query, NAME, PARENT_REPAIR_HISTORY, parent_id.toString(), keyspaceName, Joiner.on("','").join(cfnames), Joiner.on("','").join(ranges));
+        processSilent(fmtQry);
     }
 
     public static void failParentRepair(UUID parent_id, Throwable t)
     {
-        String query = "UPDATE %s.%s SET finished_at = dateOf(now()), exception_message=?, exception_stacktrace=? WHERE parent_id=%s";
+        String query = "UPDATE %s.%s SET finished_at = toTimestamp(now()), exception_message=?, exception_stacktrace=? WHERE parent_id=%s";
 
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);
         t.printStackTrace(pw);
         String fmtQuery = String.format(query, NAME, PARENT_REPAIR_HISTORY, parent_id.toString());
-        executeInternalSilent(fmtQuery, t.getMessage(), sw.toString());
+        processSilent(fmtQuery, t.getMessage(), sw.toString());
     }
 
     public static void successfulParentRepair(UUID parent_id, Collection<Range<Token>> successfulRanges)
     {
-        String query = "UPDATE %s.%s SET finished_at = dateOf(now()), successful_ranges = {'%s'} WHERE parent_id=%s";
+        String query = "UPDATE %s.%s SET finished_at = toTimestamp(now()), successful_ranges = {'%s'} WHERE parent_id=%s";
         String fmtQuery = String.format(query, NAME, PARENT_REPAIR_HISTORY, Joiner.on("','").join(successfulRanges), parent_id.toString());
-        executeInternalSilent(fmtQuery);
+        processSilent(fmtQuery);
     }
 
     public static void startRepairs(UUID id, UUID parent_id, String keyspaceName, String[] cfnames, Range<Token> range, Iterable<InetAddress> endpoints)
@@ -134,7 +140,7 @@ public final class SystemDistributedKeyspace
 
         String query =
                 "INSERT INTO %s.%s (keyspace_name, columnfamily_name, id, parent_id, range_begin, range_end, coordinator, participants, status, started_at) " +
-                        "VALUES (   '%s',          '%s',              %s, %s,        '%s',        '%s',      '%s',        { '%s' },     '%s',   dateOf(now()))";
+                        "VALUES (   '%s',          '%s',              %s, %s,        '%s',        '%s',      '%s',        { '%s' },     '%s',   toTimestamp(now()))";
 
         for (String cfname : cfnames)
         {
@@ -148,7 +154,7 @@ public final class SystemDistributedKeyspace
                                           coordinator,
                                           Joiner.on("', '").join(participants),
                     RepairState.STARTED.toString());
-            executeInternalSilent(fmtQry);
+            processSilent(fmtQry);
         }
     }
 
@@ -160,18 +166,18 @@ public final class SystemDistributedKeyspace
 
     public static void successfulRepairJob(UUID id, String keyspaceName, String cfname)
     {
-        String query = "UPDATE %s.%s SET status = '%s', finished_at = dateOf(now()) WHERE keyspace_name = '%s' AND columnfamily_name = '%s' AND id = %s";
+        String query = "UPDATE %s.%s SET status = '%s', finished_at = toTimestamp(now()) WHERE keyspace_name = '%s' AND columnfamily_name = '%s' AND id = %s";
         String fmtQuery = String.format(query, NAME, REPAIR_HISTORY,
                                         RepairState.SUCCESS.toString(),
                                         keyspaceName,
                                         cfname,
                                         id.toString());
-        executeInternalSilent(fmtQuery);
+        processSilent(fmtQuery);
     }
 
     public static void failedRepairJob(UUID id, String keyspaceName, String cfname, Throwable t)
     {
-        String query = "UPDATE %s.%s SET status = '%s', finished_at = dateOf(now()), exception_message=?, exception_stacktrace=? WHERE keyspace_name = '%s' AND columnfamily_name = '%s' AND id = %s";
+        String query = "UPDATE %s.%s SET status = '%s', finished_at = toTimestamp(now()), exception_message=?, exception_stacktrace=? WHERE keyspace_name = '%s' AND columnfamily_name = '%s' AND id = %s";
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);
         t.printStackTrace(pw);
@@ -180,14 +186,19 @@ public final class SystemDistributedKeyspace
                 keyspaceName,
                 cfname,
                 id.toString());
-        executeInternalSilent(fmtQry, t.getMessage(), sw.toString());
+        processSilent(fmtQry, t.getMessage(), sw.toString());
     }
 
-    private static void executeInternalSilent(String fmtQry, Object ... values)
+    private static void processSilent(String fmtQry, String... values)
     {
         try
         {
-            QueryProcessor.executeInternal(fmtQry, values);
+            List<ByteBuffer> valueList = new ArrayList<>();
+            for (String v : values)
+            {
+                valueList.add(ByteBufferUtil.bytes(v));
+            }
+            QueryProcessor.process(fmtQry, ConsistencyLevel.ONE, valueList);
         }
         catch (Throwable t)
         {

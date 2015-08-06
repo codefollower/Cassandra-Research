@@ -23,25 +23,35 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.locks.Lock;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.concurrent.Stage;
+import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.*;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.db.view.MaterializedViewManager;
+import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.service.pager.QueryPagers;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.concurrent.OpOrder;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.metrics.KeyspaceMetrics;
 
 /**
@@ -49,8 +59,6 @@ import org.apache.cassandra.metrics.KeyspaceMetrics;
  */
 public class Keyspace
 {
-    private static final int DEFAULT_PAGE_SIZE = 10000;
-
     private static final Logger logger = LoggerFactory.getLogger(Keyspace.class);
 
     private static final String TEST_FAIL_WRITES_KS = System.getProperty("cassandra.test.fail_writes_ks", "");
@@ -66,8 +74,11 @@ public class Keyspace
             DatabaseDescriptor.createAllDirectories();
     }
 
-    public final KSMetaData metadata;
-    public final OpOrder writeOrder = new OpOrder();
+    private volatile KeyspaceMetadata metadata;
+
+    //OpOrder is defined globally since we need to order writes across
+    //Keyspaces in the case of MaterializedViews (batchlog of MV mutations)
+    public static final OpOrder writeOrder = new OpOrder();
 
     /* ColumnFamilyStore per column family */
     private final ConcurrentMap<UUID, ColumnFamilyStore> columnFamilyStores = new ConcurrentHashMap<>();
@@ -82,6 +93,7 @@ public class Keyspace
     };
 
     private static volatile boolean initialized = false;
+
     public static void setInitialized()
     {
         initialized = true;
@@ -89,7 +101,7 @@ public class Keyspace
 
     public static Keyspace open(String keyspaceName)
     {
-        assert initialized || keyspaceName.equals(SystemKeyspace.NAME);
+        assert initialized || Schema.isSystemKeyspace(keyspaceName);
         return open(keyspaceName, Schema.instance, true);
     }
 
@@ -118,7 +130,7 @@ public class Keyspace
 
                     // keyspace has to be constructed and in the cache before cacheRow can be called
                     for (ColumnFamilyStore cfs : keyspaceInstance.getColumnFamilyStores())
-                        cfs.initRowCache();
+                        cfs.init();
                 }
             }
         }
@@ -145,6 +157,11 @@ public class Keyspace
         }
     }
 
+    public static ColumnFamilyStore openAndGetStore(CFMetaData cfm)
+    {
+        return open(cfm.ksName).getColumnFamilyStore(cfm.cfId);
+    }
+
     /**
      * Removes every SSTable in the directory from the appropriate Tracker's view.
      * @param directory the unreadable directory, possibly with SSTables in it, but not necessarily.
@@ -159,6 +176,17 @@ public class Keyspace
                     cfs.maybeRemoveUnreadableSSTables(directory);
             }
         }
+    }
+
+    public void setMetadata(KeyspaceMetadata metadata)
+    {
+        this.metadata = metadata;
+        createReplicationStrategy(metadata);
+    }
+
+    public KeyspaceMetadata getMetadata()
+    {
+        return metadata;
     }
 
     public Collection<ColumnFamilyStore> getColumnFamilyStores()
@@ -253,11 +281,11 @@ public class Keyspace
     /**
      * @return A list of open SSTableReaders
      */
-    public List<SSTableReader> getAllSSTables()
+    public List<SSTableReader> getAllSSTables(SSTableSet sstableSet)
     {
         List<SSTableReader> list = new ArrayList<>(columnFamilyStores.size());
         for (ColumnFamilyStore cfStore : columnFamilyStores.values())
-            list.addAll(cfStore.getSSTables());
+            Iterables.addAll(list, cfStore.getSSTables(sstableSet));
         return list;
     }
 
@@ -269,32 +297,32 @@ public class Keyspace
         createReplicationStrategy(metadata);
 
         this.metric = new KeyspaceMetrics(this);
-        for (CFMetaData cfm : new ArrayList<>(metadata.cfMetaData().values()))
+        for (CFMetaData cfm : metadata.tables)
         {
             logger.debug("Initializing {}.{}", getName(), cfm.cfName);
             initCf(cfm.cfId, cfm.cfName, loadSSTables);
         }
     }
 
-    private Keyspace(KSMetaData metadata)
+    private Keyspace(KeyspaceMetadata metadata)
     {
         this.metadata = metadata;
         createReplicationStrategy(metadata);
         this.metric = new KeyspaceMetrics(this);
     }
 
-    public static Keyspace mockKS(KSMetaData metadata)
+    public static Keyspace mockKS(KeyspaceMetadata metadata)
     {
         return new Keyspace(metadata);
     }
 
-    public void createReplicationStrategy(KSMetaData ksm)
+    private void createReplicationStrategy(KeyspaceMetadata ksm)
     {
         replicationStrategy = AbstractReplicationStrategy.createReplicationStrategy(ksm.name,
-                                                                                    ksm.strategyClass,
+                                                                                    ksm.params.replication.klass,
                                                                                     StorageService.instance.getTokenMetadata(),
                                                                                     DatabaseDescriptor.getEndpointSnitch(),
-                                                                                    ksm.strategyOptions);
+                                                                                    ksm.params.replication.options);
     }
 
     // best invoked on the compaction mananger.
@@ -305,7 +333,7 @@ public class Keyspace
         if (cfs == null)
             return;
 
-        cfs.getCompactionStrategy().shutdown();
+        cfs.getCompactionStrategyManager().shutdown();
         CompactionManager.instance.interruptCompactionForCFs(cfs.concatWithIndexes(), true);
         // wait for any outstanding reads/writes that might affect the CFS
         cfs.keyspace.writeOrder.awaitNewBarrier();
@@ -333,10 +361,14 @@ public class Keyspace
             // CFS being created for the first time, either on server startup or new CF being added.
             // We don't worry about races here; startup is safe, and adding multiple idential CFs
             // simultaneously is a "don't do that" scenario.
-            ColumnFamilyStore oldCfs = columnFamilyStores.putIfAbsent(cfId, ColumnFamilyStore.createColumnFamilyStore(this, cfName, loadSSTables));
+            ColumnFamilyStore newCfs = ColumnFamilyStore.createColumnFamilyStore(this, cfName, loadSSTables);
+
+            ColumnFamilyStore oldCfs = columnFamilyStores.putIfAbsent(cfId, newCfs);
             // CFS mbean instantiation will error out before we hit this, but in case that changes...
             if (oldCfs != null)
                 throw new IllegalStateException("added multiple mappings for cf id " + cfId);
+
+            newCfs.init();
         }
         else
         {
@@ -346,13 +378,6 @@ public class Keyspace
             cfs.metadata.reload();
             cfs.reload();
         }
-    }
-
-    public Row getRow(QueryFilter filter)
-    {
-        ColumnFamilyStore cfStore = getColumnFamilyStore(filter.getColumnFamilyName());
-        ColumnFamily columnFamily = cfStore.getColumnFamily(filter);
-        return new Row(filter.key, columnFamily);
     }
 
     public void apply(Mutation mutation, boolean writeCommitLog)
@@ -368,11 +393,42 @@ public class Keyspace
      * @param writeCommitLog false to disable commitlog append entirely
      * @param updateIndexes  false to disable index updates (used by CollationController "defragmenting")
      */
-    public void apply(Mutation mutation, boolean writeCommitLog, boolean updateIndexes)
+    public void apply(final Mutation mutation, final boolean writeCommitLog, boolean updateIndexes)
     {
         if (TEST_FAIL_WRITES && metadata.name.equals(TEST_FAIL_WRITES_KS))
             throw new RuntimeException("Testing write failures");
 
+        Lock lock = null;
+        boolean requiresViewUpdate = updateIndexes && MaterializedViewManager.updatesAffectView(Collections.singleton(mutation), false);
+
+        if (requiresViewUpdate)
+        {
+            lock = MaterializedViewManager.acquireLockFor(mutation.key().getKey());
+
+            if (lock == null)
+            {
+                if ((System.currentTimeMillis() - mutation.createdAt) > DatabaseDescriptor.getWriteRpcTimeout())
+                {
+                    logger.debug("Could not acquire lock for {}", ByteBufferUtil.bytesToHex(mutation.key().getKey()));
+                    Tracing.trace("Could not acquire MV lock");
+                    throw new WriteTimeoutException(WriteType.MATERIALIZED_VIEW, ConsistencyLevel.LOCAL_ONE, 0, 1);
+                }
+                else
+                {
+                    //This MV update can't happen right now. so rather than keep this thread busy
+                    // we will re-apply ourself to the queue and try again later
+                    StageManager.getStage(Stage.MUTATION).execute(() -> {
+                        if (writeCommitLog)
+                            mutation.apply();
+                        else
+                            mutation.applyUnsafe();
+                    });
+
+                    return;
+                }
+            }
+        }
+        int nowInSec = FBUtilities.nowInSeconds();
         try (OpOrder.Group opGroup = writeOrder.start())
         {
             // write the mutation to the commitlog and memtables
@@ -383,22 +439,42 @@ public class Keyspace
                 replayPosition = CommitLog.instance.add(mutation);
             }
 
-            DecoratedKey key = StorageService.getPartitioner().decorateKey(mutation.key());
-            for (ColumnFamily cf : mutation.getColumnFamilies())
+            for (PartitionUpdate upd : mutation.getPartitionUpdates())
             {
-                ColumnFamilyStore cfs = columnFamilyStores.get(cf.id());
+                ColumnFamilyStore cfs = columnFamilyStores.get(upd.metadata().cfId);
                 if (cfs == null)
                 {
-                    logger.error("Attempting to mutate non-existant table {}", cf.id());
+                    logger.error("Attempting to mutate non-existant table {} ({}.{})", upd.metadata().cfId, upd.metadata().ksName, upd.metadata().cfName);
                     continue;
                 }
 
-                Tracing.trace("Adding to {} memtable", cf.metadata().cfName);
+                if (requiresViewUpdate)
+                {
+                    try
+                    {
+                        Tracing.trace("Create materialized view mutations from replica");
+                        cfs.materializedViewManager.pushViewReplicaUpdates(upd.partitionKey().getKey(), upd);
+                    }
+                    catch (Exception e)
+                    {
+                        if (!(e instanceof WriteTimeoutException))
+                            logger.warn("Encountered exception when creating materialized view mutations", e);
+
+                        JVMStabilityInspector.inspectThrowable(e);
+                    }
+                }
+
+                Tracing.trace("Adding to {} memtable", upd.metadata().cfName);
                 SecondaryIndexManager.Updater updater = updateIndexes
-                                                      ? cfs.indexManager.updaterFor(key, cf, opGroup)
+                                                      ? cfs.indexManager.updaterFor(upd, opGroup, nowInSec)
                                                       : SecondaryIndexManager.nullUpdater;
-                cfs.apply(key, cf, updater, opGroup, replayPosition);
+                cfs.apply(upd, updater, opGroup, replayPosition);
             }
+        }
+        finally
+        {
+            if (lock != null)
+                lock.unlock();
         }
     }
 
@@ -409,30 +485,21 @@ public class Keyspace
 
     /**
      * @param key row to index
-     * @param cfs ColumnFamily to index row in
+     * @param cfs ColumnFamily to index partition in
      * @param idxNames columns to index, in comparator order
      */
-    public static void indexRow(DecoratedKey key, ColumnFamilyStore cfs, Set<String> idxNames)
+    public static void indexPartition(DecoratedKey key, ColumnFamilyStore cfs, Set<String> idxNames)
     {
         if (logger.isDebugEnabled())
-            logger.debug("Indexing row {} ", cfs.metadata.getKeyValidator().getString(key.getKey()));
+            logger.debug("Indexing partition {} ", cfs.metadata.getKeyValidator().getString(key.getKey()));
 
-        try (OpOrder.Group opGroup = cfs.keyspace.writeOrder.start())
+        Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
+        SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fullPartitionRead(cfs.metadata, FBUtilities.nowInSeconds(), key);
+
+        try (OpOrder.Group opGroup = cfs.keyspace.writeOrder.start();
+             UnfilteredRowIterator partition = cmd.queryMemtableAndDisk(cfs, opGroup))
         {
-            Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
-
-            Iterator<ColumnFamily> pager = QueryPagers.pageRowLocally(cfs, key.getKey(), DEFAULT_PAGE_SIZE);
-            while (pager.hasNext())
-            {
-                ColumnFamily cf = pager.next();
-                ColumnFamily cf2 = cf.cloneMeShallow();
-                for (Cell cell : cf)
-                {
-                    if (cfs.indexManager.indexes(cell.name(), indexes))
-                        cf2.addColumn(cell);
-                }
-                cfs.indexManager.indexRow(key.getKey(), cf2, opGroup);
-            }
+            cfs.indexManager.indexPartition(partition, opGroup, indexes, cmd.nowInSec());
         }
     }
 
@@ -526,7 +593,7 @@ public class Keyspace
 
     public static Iterable<Keyspace> system()
     {
-        return Iterables.transform(Collections.singleton(SystemKeyspace.NAME), keyspaceTransformer);
+        return Iterables.transform(Schema.SYSTEM_KEYSPACE_NAMES, keyspaceTransformer);
     }
 
     @Override

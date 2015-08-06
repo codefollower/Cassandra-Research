@@ -21,7 +21,9 @@ import org.apache.cassandra.auth.*;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.exceptions.*;
-import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.LocalStrategy;
+import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.Event;
@@ -30,9 +32,12 @@ import org.apache.cassandra.transport.Event;
 public class CreateKeyspaceStatement extends SchemaAlteringStatement
 {
     private final String name;
-    //org.apache.cassandra.cql3.CqlParser中会先new出一个KSPropDefs实例，然后解析CREATE KEYSPACE时
-    //碰到属性相关的配置则调用KSPropDefs的方法，最后再构造CreateKeyspaceStatement实例
-    private final KSPropDefs attrs;
+//<<<<<<< HEAD
+//    //org.apache.cassandra.cql3.CqlParser中会先new出一个KSPropDefs实例，然后解析CREATE KEYSPACE时
+//    //碰到属性相关的配置则调用KSPropDefs的方法，最后再构造CreateKeyspaceStatement实例
+//    private final KSPropDefs attrs;
+//=======
+    private final KeyspaceAttributes attrs;
     private final boolean ifNotExists;
 
     /**
@@ -42,7 +47,7 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
      * @param name the name of the keyspace to create
      * @param attrs map of the raw keyword arguments that followed the <code>WITH</code> keyword.
      */
-    public CreateKeyspaceStatement(String name, KSPropDefs attrs, boolean ifNotExists)
+    public CreateKeyspaceStatement(String name, KeyspaceAttributes attrs, boolean ifNotExists)
     {
         super();
         this.name = name;
@@ -86,19 +91,26 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
         // The strategy is validated through KSMetaData.validate() in announceNewKeyspace below.
         // However, for backward compatibility with thrift, this doesn't validate unexpected options yet,
         // so doing proper validation here.
-        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
-        AbstractReplicationStrategy.validateReplicationStrategy(name,
-                                                                AbstractReplicationStrategy.getClass(attrs.getReplicationStrategyClass()),
-                                                                StorageService.instance.getTokenMetadata(),
-                                                                DatabaseDescriptor.getEndpointSnitch(),
-                                                                attrs.getReplicationOptions());
+//<<<<<<< HEAD
+//        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
+//        AbstractReplicationStrategy.validateReplicationStrategy(name,
+//                                                                AbstractReplicationStrategy.getClass(attrs.getReplicationStrategyClass()),
+//                                                                StorageService.instance.getTokenMetadata(),
+//                                                                DatabaseDescriptor.getEndpointSnitch(),
+//                                                                attrs.getReplicationOptions());
+//=======
+        KeyspaceParams params = attrs.asNewKeyspaceParams();
+        params.validate(name);
+        if (params.replication.klass.equals(LocalStrategy.class))
+            throw new ConfigurationException("Unable to use given strategy class: LocalStrategy is reserved for internal use.");
     }
 
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
+        KeyspaceMetadata ksm = KeyspaceMetadata.create(name, attrs.asNewKeyspaceParams());
         try
         {
-            MigrationManager.announceNewKeyspace(attrs.asKSMetadata(name), isLocalOnly);
+            MigrationManager.announceNewKeyspace(ksm, isLocalOnly);
             return true;
         }
         catch (AlreadyExistsException e)

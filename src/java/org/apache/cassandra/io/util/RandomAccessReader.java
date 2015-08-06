@@ -20,15 +20,19 @@ package org.apache.cassandra.io.util;
 import java.io.*;
 import java.nio.ByteBuffer;
 
-import com.google.common.annotations.VisibleForTesting;
-
 import org.apache.cassandra.io.FSReadError;
+import org.apache.cassandra.io.compress.BufferType;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.memory.BufferPool;
 
 public class RandomAccessReader extends AbstractDataInput implements FileDataInput
 {
-    // default buffer size, 64Kb
-    public static final int DEFAULT_BUFFER_SIZE = 65536;
+    public static final int DEFAULT_BUFFER_SIZE = 4096;
+
+    // the IO channel to the file, we do not own a reference to this due to
+    // performance reasons (CASSANDRA-9379) so it's up to the owner of the RAR to
+    // ensure that the channel stays open and that it is closed afterwards
+    protected final ChannelProxy channel;
 
     // buffer which will cache file blocks
     protected ByteBuffer buffer;
@@ -37,79 +41,81 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     // `markedPointer` folds the offset of the last file mark
     protected long bufferOffset, markedPointer;
 
-    protected final ChannelProxy channel;
-
     // this can be overridden at construction to a value shorter than the true length of the file;
     // if so, it acts as an imposed limit on reads, rather than a convenience property
     private final long fileLength;
 
-    protected final PoolingSegmentedFile owner;
-
-    protected RandomAccessReader(ChannelProxy channel, int bufferSize, long overrideLength, boolean useDirectBuffer, PoolingSegmentedFile owner)
+    protected RandomAccessReader(ChannelProxy channel, int bufferSize, long overrideLength, BufferType bufferType)
     {
-        this.channel = channel.sharedCopy();
-        this.owner = owner;
+        this.channel = channel;
 
-        // allocating required size of the buffer
         if (bufferSize <= 0)
             throw new IllegalArgumentException("bufferSize must be positive");
 
         // we can cache file length in read-only mode
         fileLength = overrideLength <= 0 ? channel.size() : overrideLength;
 
-        buffer = allocateBuffer(bufferSize, useDirectBuffer);
+        buffer = allocateBuffer(getBufferSize(bufferSize), bufferType);
         buffer.limit(0);
     }
 
-    protected ByteBuffer allocateBuffer(int bufferSize, boolean useDirectBuffer)
+    /** The buffer size is typically already page aligned but if that is not the case
+     * make sure that it is a multiple of the page size, 4096.
+     * */
+    protected int getBufferSize(int size)
     {
-        int size = (int) Math.min(fileLength, bufferSize);
-        return useDirectBuffer
-                ? ByteBuffer.allocateDirect(size)
-                : ByteBuffer.allocate(size);
+        if ((size & ~4095) != size)
+        { // should already be a page size multiple but if that's not case round it up
+            size = (size + 4095) & ~4095;
+        }
+        return size;
     }
 
-    public static RandomAccessReader open(ChannelProxy channel, long overrideSize, PoolingSegmentedFile owner)
+    protected ByteBuffer allocateBuffer(int size, BufferType bufferType)
     {
-        return open(channel, DEFAULT_BUFFER_SIZE, overrideSize, owner);
+        return BufferPool.get(size, bufferType);
+    }
+
+    // A wrapper of the RandomAccessReader that closes the channel when done.
+    // For performance reasons RAR does not increase the reference count of
+    // a channel but assumes the owner will keep it open and close it,
+    // see CASSANDRA-9379, this thin class is just for those cases where we do
+    // not have a shared channel.
+    private static class RandomAccessReaderWithChannel extends RandomAccessReader
+    {
+        @SuppressWarnings("resource")
+        RandomAccessReaderWithChannel(File file)
+        {
+            super(new ChannelProxy(file), DEFAULT_BUFFER_SIZE, -1L, BufferType.OFF_HEAP);
+        }
+
+        @Override
+        public void close()
+        {
+            try
+            {
+                super.close();
+            }
+            finally
+            {
+                channel.close();
+            }
+        }
     }
 
     public static RandomAccessReader open(File file)
     {
-        try (ChannelProxy channel = new ChannelProxy(file))
-        {
-            return open(channel);
-        }
+        return new RandomAccessReaderWithChannel(file);
     }
 
     public static RandomAccessReader open(ChannelProxy channel)
     {
-        return open(channel, -1L);
+        return open(channel, DEFAULT_BUFFER_SIZE, -1L);
     }
 
-    public static RandomAccessReader open(ChannelProxy channel, long overrideSize)
+    public static RandomAccessReader open(ChannelProxy channel, int bufferSize, long overrideSize)
     {
-        return open(channel, DEFAULT_BUFFER_SIZE, overrideSize, null);
-    }
-
-    @VisibleForTesting
-    static RandomAccessReader open(ChannelProxy channel, int bufferSize, PoolingSegmentedFile owner)
-    {
-        return open(channel, bufferSize, -1L, owner);
-    }
-
-    private static RandomAccessReader open(ChannelProxy channel, int bufferSize, long overrideSize, PoolingSegmentedFile owner)
-    {
-        return new RandomAccessReader(channel, bufferSize, overrideSize, false, owner);
-    }
-
-    @VisibleForTesting
-    static RandomAccessReader open(SequentialWriter writer)
-    {
-        try (ChannelProxy channel = new ChannelProxy(writer.getPath()))
-        {
-            return open(channel, DEFAULT_BUFFER_SIZE, null);
-        }
+        return new RandomAccessReader(channel, bufferSize, overrideSize, BufferType.OFF_HEAP);
     }
 
     public ChannelProxy getChannel()
@@ -128,7 +134,14 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
         long position = bufferOffset;
         long limit = bufferOffset;
-        while (buffer.hasRemaining() && limit < fileLength)
+
+        long pageAligedPos = position & ~4095;
+        // Because the buffer capacity is a multiple of the page size, we read less
+        // the first time and then we should read at page boundaries only,
+        // unless the user seeks elsewhere
+        long upperLimit = Math.min(fileLength, pageAligedPos + buffer.capacity());
+        buffer.limit((int)(upperLimit - position));
+        while (buffer.hasRemaining() && limit < upperLimit)
         {
             int n = channel.read(buffer, position);
             if (n < 0)
@@ -213,28 +226,14 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     @Override
     public void close()
     {
-        if (owner == null || buffer == null)
-        {
-            // The buffer == null check is so that if the pool owner has deallocated us, calling close()
-            // will re-call deallocate rather than recycling a deallocated object.
-            // I'd be more comfortable if deallocate didn't have to handle being idempotent like that,
-            // but RandomAccessFile.close will call AbstractInterruptibleChannel.close which will
-            // re-call RAF.close -- in this case, [C]RAR.close since we are overriding that.
-            deallocate();
-        }
-        else
-        {
-            owner.recycle(this);
-        }
-    }
+	    //make idempotent
+        if (buffer == null)
+            return;
 
-    public void deallocate()
-    {
+
         bufferOffset += buffer.position();
-        FileUtils.clean(buffer);
-
-        buffer = null; // makes sure we don't use this after it's ostensibly closed
-        channel.close();
+        BufferPool.put(buffer);
+        buffer = null;
     }
 
     @Override
@@ -261,6 +260,9 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     {
         if (newPosition < 0)
             throw new IllegalArgumentException("new position should not be negative");
+
+        if (buffer == null)
+            throw new IllegalStateException("Attempted to seek in a closed RAR");
 
         if (newPosition >= length()) // it is save to call length() in read-only mode
         {
@@ -312,7 +314,7 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     public int read(byte[] buff, int offset, int length)
     {
         if (buffer == null)
-            throw new AssertionError("Attempted to read from closed RAR");
+            throw new IllegalStateException("Attempted to read from closed RAR");
 
         if (length == 0)
             return 0;
@@ -331,6 +333,10 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     public ByteBuffer readBytes(int length) throws EOFException
     {
         assert length >= 0 : "buffer length should not be negative: " + length;
+
+        if (buffer == null)
+            throw new IllegalStateException("Attempted to read from closed RAR");
+
         try
         {
             ByteBuffer result = ByteBuffer.allocate(length);
@@ -362,7 +368,7 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
     public long getPosition()
     {
-        return bufferOffset + buffer.position();
+        return bufferOffset + (buffer == null ? 0 : buffer.position());
     }
 
     public long getPositionLimit()

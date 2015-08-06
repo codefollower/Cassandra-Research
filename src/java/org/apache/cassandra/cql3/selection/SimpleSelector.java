@@ -19,6 +19,8 @@ package org.apache.cassandra.cql3.selection;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.selection.Selection.ResultSetBuilder;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -29,27 +31,33 @@ public final class SimpleSelector extends Selector
     private final int idx;
     private final AbstractType<?> type;
     private ByteBuffer current;
+    private boolean isSet;
 
-    public static Factory newFactory(final String columnName, final int idx, final AbstractType<?> type)
+    public static Factory newFactory(final ColumnDefinition def, final int idx)
     {
         return new Factory()
         {
             @Override
             protected String getColumnName()
             {
-                return columnName;
+                return def.name.toString();
             }
 
             @Override
             protected AbstractType<?> getReturnType()
             {
-                return type;
+                return def.type;
+            }
+
+            protected void addColumnMapping(SelectionColumnMapping mapping, ColumnSpecification resultColumn)
+            {
+               mapping.addMapping(resultColumn, def);
             }
 
             @Override
             public Selector newInstance()
             {
-                return new SimpleSelector(columnName, idx, type);
+                return new SimpleSelector(def.name.toString(), idx, def.type);
             }
         };
     }
@@ -57,7 +65,11 @@ public final class SimpleSelector extends Selector
     @Override
     public void addInput(int protocolVersion, ResultSetBuilder rs) throws InvalidRequestException
     {
-        current = rs.current.get(idx);
+        if (!isSet)
+        {
+            isSet = true;
+            current = rs.current.get(idx);
+        }
     }
 
     @Override
@@ -69,6 +81,7 @@ public final class SimpleSelector extends Selector
     @Override
     public void reset()
     {
+        isSet = false;
         current = null;
     }
 

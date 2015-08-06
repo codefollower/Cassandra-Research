@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,29 +20,32 @@ package org.apache.cassandra.db;
 
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
-import java.util.Collection;
+import java.util.Arrays;
+import java.util.Iterator;
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
-import org.apache.cassandra.cache.CachingOptions;
 import org.apache.cassandra.cache.RowCacheKey;
-import org.apache.cassandra.config.KSMetaData;
-import org.apache.cassandra.db.composites.*;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.IntegerType;
+import org.apache.cassandra.db.partitions.CachedPartition;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.dht.ByteOrderedPartitioner.BytesToken;
 import org.apache.cassandra.locator.TokenMetadata;
-import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.schema.CachingParams;
+import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import static org.junit.Assert.assertEquals;
+
+import static org.junit.Assert.*;
 
 public class RowCacheTest
 {
@@ -55,19 +58,63 @@ public class RowCacheTest
     {
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE_CACHED,
-                SimpleStrategy.class,
-                KSMetaData.optsWithRF(1),
-                SchemaLoader.standardCFMD(KEYSPACE_CACHED, CF_CACHED).caching(CachingOptions.ALL),
-                SchemaLoader.standardCFMD(KEYSPACE_CACHED, CF_CACHEDINT)
-                            .defaultValidator(IntegerType.instance)
-                            .caching(new CachingOptions(new CachingOptions.KeyCache(CachingOptions.KeyCache.Type.ALL),
-                                     new CachingOptions.RowCache(CachingOptions.RowCache.Type.HEAD, 100))));
+                                    KeyspaceParams.simple(1),
+                                    SchemaLoader.standardCFMD(KEYSPACE_CACHED, CF_CACHED).caching(CachingParams.CACHE_EVERYTHING),
+                                    SchemaLoader.standardCFMD(KEYSPACE_CACHED, CF_CACHEDINT, 1, IntegerType.instance)
+                                                .caching(new CachingParams(true, 100)));
     }
 
     @AfterClass
     public static void cleanup()
     {
         SchemaLoader.cleanupSavedCaches();
+    }
+
+    @Test
+    public void testRoundTrip() throws Exception
+    {
+        CompactionManager.instance.disableAutoCompaction();
+
+        Keyspace keyspace = Keyspace.open(KEYSPACE_CACHED);
+        String cf = "CachedIntCF";
+        ColumnFamilyStore cachedStore  = keyspace.getColumnFamilyStore(cf);
+        long startRowCacheHits = cachedStore.metric.rowCacheHit.getCount();
+        long startRowCacheOutOfRange = cachedStore.metric.rowCacheHitOutOfRange.getCount();
+        // empty the row cache
+        CacheService.instance.invalidateRowCache();
+
+        // set global row cache size to 1 MB
+        CacheService.instance.setRowCacheCapacityInMB(1);
+
+        ByteBuffer key = ByteBufferUtil.bytes("rowcachekey");
+        DecoratedKey dk = cachedStore.decorateKey(key);
+        RowCacheKey rck = new RowCacheKey(cachedStore.metadata.cfId, dk);
+
+        RowUpdateBuilder rub = new RowUpdateBuilder(cachedStore.metadata, System.currentTimeMillis(), key);
+        rub.clustering(String.valueOf(0));
+        rub.add("val", ByteBufferUtil.bytes("val" + 0));
+        rub.build().applyUnsafe();
+
+        // populate row cache, we should not get a row cache hit;
+        Util.getAll(Util.cmd(cachedStore, dk).withLimit(1).build());
+        assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
+
+        // do another query, limit is 20, which is < 100 that we cache, we should get a hit and it should be in range
+        Util.getAll(Util.cmd(cachedStore, dk).withLimit(1).build());
+        assertEquals(++startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
+        assertEquals(startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
+
+        CachedPartition cachedCf = (CachedPartition)CacheService.instance.rowCache.get(rck);
+        assertEquals(1, cachedCf.rowCount());
+        for (Unfiltered unfiltered : Util.once(cachedCf.unfilteredIterator(ColumnFilter.selection(cachedCf.columns()), Slices.ALL, false)))
+        {
+            Row r = (Row) unfiltered;
+            for (ColumnData c : r)
+            {
+                assertEquals(((Cell)c).value(), ByteBufferUtil.bytes("val" + 0));
+            }
+        }
+        cachedStore.truncateBlocking();
     }
 
     @Test
@@ -92,19 +139,25 @@ public class RowCacheTest
         {
             DecoratedKey key = Util.dk("key" + i);
 
-            cachedStore.getColumnFamily(key, Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
+            Util.getAll(Util.cmd(cachedStore, key).build());
             assert CacheService.instance.rowCache.size() == i + 1;
-            assert cachedStore.containsCachedRow(key); // current key should be stored in the cache
+            assert cachedStore.containsCachedParition(key); // current key should be stored in the cache
 
             // checking if cell is read correctly after cache
-            ColumnFamily cf = cachedStore.getColumnFamily(key, Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
-            Collection<Cell> cells = cf.getSortedColumns();
+            CachedPartition cp = cachedStore.getRawCachedPartition(key);
+            try (UnfilteredRowIterator ai = cp.unfilteredIterator(ColumnFilter.selection(cp.columns()), Slices.ALL, false))
+            {
+                assert ai.hasNext();
+                Row r = (Row)ai.next();
+                assertFalse(ai.hasNext());
 
-            Cell cell = cells.iterator().next();
+                Iterator<Cell> ci = r.cells().iterator();
+                assert(ci.hasNext());
+                Cell cell = ci.next();
 
-            assert cells.size() == 1;
-            assert cell.name().toByteBuffer().equals(ByteBufferUtil.bytes("col" + i));
-            assert cell.value().equals(ByteBufferUtil.bytes("val" + i));
+                assert cell.column().name.bytes.equals(ByteBufferUtil.bytes("val"));
+                assert cell.value().equals(ByteBufferUtil.bytes("val" + i));
+            }
         }
 
         // insert 10 more keys
@@ -114,25 +167,31 @@ public class RowCacheTest
         {
             DecoratedKey key = Util.dk("key" + i);
 
-            cachedStore.getColumnFamily(key, Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
-            assert cachedStore.containsCachedRow(key); // cache should be populated with the latest rows read (old ones should be popped)
+            Util.getAll(Util.cmd(cachedStore, key).build());
+            assert cachedStore.containsCachedParition(key); // cache should be populated with the latest rows read (old ones should be popped)
 
             // checking if cell is read correctly after cache
-            ColumnFamily cf = cachedStore.getColumnFamily(key, Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
-            Collection<Cell> cells = cf.getSortedColumns();
+            CachedPartition cp = cachedStore.getRawCachedPartition(key);
+            try (UnfilteredRowIterator ai = cp.unfilteredIterator(ColumnFilter.selection(cp.columns()), Slices.ALL, false))
+            {
+                assert ai.hasNext();
+                Row r = (Row)ai.next();
+                assertFalse(ai.hasNext());
 
-            Cell cell = cells.iterator().next();
+                Iterator<Cell> ci = r.cells().iterator();
+                assert(ci.hasNext());
+                Cell cell = ci.next();
 
-            assert cells.size() == 1;
-            assert cell.name().toByteBuffer().equals(ByteBufferUtil.bytes("col" + i));
-            assert cell.value().equals(ByteBufferUtil.bytes("val" + i));
+                assert cell.column().name.bytes.equals(ByteBufferUtil.bytes("val"));
+                assert cell.value().equals(ByteBufferUtil.bytes("val" + i));
+            }
         }
 
         // clear 100 rows from the cache
         int keysLeft = 109;
         for (int i = 109; i >= 10; i--)
         {
-            cachedStore.invalidateCachedRow(Util.dk("key" + i));
+            cachedStore.invalidateCachedPartition(Util.dk("key" + i));
             assert CacheService.instance.rowCache.size() == keysLeft;
             keysLeft--;
         }
@@ -177,6 +236,7 @@ public class RowCacheTest
         rowCacheLoad(100, 50, 0);
         CacheService.instance.setRowCacheCapacityInMB(0);
     }
+
     @Test
     public void testRowCacheRange()
     {
@@ -194,41 +254,35 @@ public class RowCacheTest
         CacheService.instance.setRowCacheCapacityInMB(1);
 
         ByteBuffer key = ByteBufferUtil.bytes("rowcachekey");
-        DecoratedKey dk = cachedStore.partitioner.decorateKey(key);
+        DecoratedKey dk = cachedStore.decorateKey(key);
         RowCacheKey rck = new RowCacheKey(cachedStore.metadata.cfId, dk);
-        Mutation mutation = new Mutation(KEYSPACE_CACHED, key);
+        String values[] = new String[200];
         for (int i = 0; i < 200; i++)
-            mutation.add(cf, Util.cellname(i), ByteBufferUtil.bytes("val" + i), System.currentTimeMillis());
-        mutation.applyUnsafe();
+        {
+            RowUpdateBuilder rub = new RowUpdateBuilder(cachedStore.metadata, System.currentTimeMillis(), key);
+            rub.clustering(String.valueOf(i));
+            values[i] = "val" + i;
+            rub.add("val", ByteBufferUtil.bytes(values[i]));
+            rub.build().applyUnsafe();
+        }
+        Arrays.sort(values);
 
         // populate row cache, we should not get a row cache hit;
-        cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
-                                                                Composites.EMPTY,
-                                                                Composites.EMPTY,
-                                                                false, 10, System.currentTimeMillis()));
+        Util.getAll(Util.cmd(cachedStore, dk).withLimit(10).build());
         assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
 
         // do another query, limit is 20, which is < 100 that we cache, we should get a hit and it should be in range
-        cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
-                                                                Composites.EMPTY,
-                                                                Composites.EMPTY,
-                                                                false, 20, System.currentTimeMillis()));
+        Util.getAll(Util.cmd(cachedStore, dk).withLimit(10).build());
         assertEquals(++startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
         assertEquals(startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
 
         // get a slice from 95 to 105, 95->99 are in cache, we should not get a hit and then row cache is out of range
-        cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
-                                                               CellNames.simpleDense(ByteBufferUtil.bytes(95)),
-                                                               CellNames.simpleDense(ByteBufferUtil.bytes(105)),
-                                                               false, 10, System.currentTimeMillis()));
+        Util.getAll(Util.cmd(cachedStore, dk).fromIncl(String.valueOf(210)).toExcl(String.valueOf(215)).build());
         assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
         assertEquals(++startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
 
         // get a slice with limit > 100, we should get a hit out of range.
-        cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
-                                                               Composites.EMPTY,
-                                                               Composites.EMPTY,
-                                                               false, 101, System.currentTimeMillis()));
+        Util.getAll(Util.cmd(cachedStore, dk).withLimit(101).build());
         assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
         assertEquals(++startRowCacheOutOfRange, cachedStore.metric.rowCacheHitOutOfRange.getCount());
 
@@ -236,19 +290,28 @@ public class RowCacheTest
         CacheService.instance.invalidateRowCache();
 
         // try to populate row cache with a limit > rows to cache, we should still populate row cache;
-        cachedStore.getColumnFamily(QueryFilter.getSliceFilter(dk, cf,
-                                                                Composites.EMPTY,
-                                                                Composites.EMPTY,
-                                                                false, 105, System.currentTimeMillis()));
+        Util.getAll(Util.cmd(cachedStore, dk).withLimit(105).build());
         assertEquals(startRowCacheHits, cachedStore.metric.rowCacheHit.getCount());
+
         // validate the stuff in cache;
-        ColumnFamily cachedCf = (ColumnFamily)CacheService.instance.rowCache.get(rck);
-        assertEquals(cachedCf.getColumnCount(), 100);
+        CachedPartition cachedCf = (CachedPartition)CacheService.instance.rowCache.get(rck);
+        assertEquals(cachedCf.rowCount(), 100);
         int i = 0;
-        for(Cell c : cachedCf)
+
+        for (Unfiltered unfiltered : Util.once(cachedCf.unfilteredIterator(ColumnFilter.selection(cachedCf.columns()), Slices.ALL, false)))
         {
-            assertEquals(c.name(), Util.cellname(i++));
+            Row r = (Row) unfiltered;
+
+            assertEquals(r.clustering().get(0), ByteBufferUtil.bytes(values[i].substring(3)));
+
+            for (ColumnData c : r)
+            {
+                assertEquals(((Cell)c).value(), ByteBufferUtil.bytes(values[i]));
+            }
+            i++;
         }
+
+        cachedStore.truncateBlocking();
     }
 
     public void rowCacheLoad(int totalKeys, int keysToSave, int offset) throws Exception
@@ -263,7 +326,7 @@ public class RowCacheTest
 
         // insert data and fill the cache
         SchemaLoader.insertData(KEYSPACE_CACHED, CF_CACHED, offset, totalKeys);
-        SchemaLoader.readData(KEYSPACE_CACHED, CF_CACHED, offset, totalKeys);
+        readData(KEYSPACE_CACHED, CF_CACHED, offset, totalKeys);
         assertEquals(totalKeys, CacheService.instance.rowCache.size());
 
         // force the cache to disk
@@ -273,5 +336,18 @@ public class RowCacheTest
         CacheService.instance.invalidateRowCache();
         assertEquals(0, CacheService.instance.rowCache.size());
         assertEquals(keysToSave == Integer.MAX_VALUE ? totalKeys : keysToSave, CacheService.instance.rowCache.loadSaved(store));
+    }
+
+    private static void readData(String keyspace, String columnFamily, int offset, int numberOfRows)
+    {
+        ColumnFamilyStore store = Keyspace.open(keyspace).getColumnFamilyStore(columnFamily);
+        CFMetaData cfm = Schema.instance.getCFMetaData(keyspace, columnFamily);
+
+        for (int i = offset; i < offset + numberOfRows; i++)
+        {
+            DecoratedKey key = Util.dk("key" + i);
+            Clustering cl = new Clustering(ByteBufferUtil.bytes("col" + i));
+            Util.getAll(Util.cmd(store, key).build());
+        }
     }
 }

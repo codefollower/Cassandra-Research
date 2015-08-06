@@ -42,6 +42,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.metrics.StorageMetrics;
 import org.apache.cassandra.notifications.*;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
 import static com.google.common.base.Predicates.and;
@@ -131,7 +132,7 @@ public class Tracker
 
     Throwable updateSizeTracking(Iterable<SSTableReader> oldSSTables, Iterable<SSTableReader> newSSTables, Throwable accumulate)
     {
-        if (cfstore == null)
+        if (isDummy())
             return accumulate;
 
         long add = 0;
@@ -162,9 +163,11 @@ public class Tracker
                 accumulate = merge(accumulate, t);
             }
         }
+
         StorageMetrics.load.inc(add - subtract);
         cfstore.metric.liveDiskSpaceUsed.inc(add - subtract);
-        // we don't subtract from total until the sstable is deleted
+
+        // we don't subtract from total until the sstable is deleted, see TransactionLogs.SSTableTidier
         cfstore.metric.totalDiskSpaceUsed.inc(add);
         return accumulate;
     }
@@ -173,7 +176,8 @@ public class Tracker
 
     public void addInitialSSTables(Iterable<SSTableReader> sstables)
     {
-        maybeFail(setupDeleteNotification(sstables, this, null));
+        if (!isDummy())
+            setupOnline(sstables);
         apply(updateLiveSet(emptySet(), sstables));
         maybeFail(updateSizeTracking(emptySet(), sstables, null));
         // no notifications or backup necessary
@@ -194,16 +198,16 @@ public class Tracker
     public void reset()
     {
         view.set(new View(
-                         cfstore != null ? ImmutableList.of(new Memtable(cfstore)) : Collections.<Memtable>emptyList(),
+                         !isDummy() ? ImmutableList.of(new Memtable(cfstore)) : Collections.<Memtable>emptyList(),
                          ImmutableList.<Memtable>of(),
                          Collections.<SSTableReader, SSTableReader>emptyMap(),
-                         Collections.<SSTableReader>emptySet(),
+                         Collections.<SSTableReader, SSTableReader>emptyMap(),
                          SSTableIntervalTree.empty()));
     }
 
     public Throwable dropSSTablesIfInvalid(Throwable accumulate)
     {
-        if (cfstore != null && !cfstore.isValid())
+        if (!isDummy() && !cfstore.isValid())
             accumulate = dropSSTables(accumulate);
         return accumulate;
     }
@@ -223,28 +227,46 @@ public class Tracker
      */
     public Throwable dropSSTables(final Predicate<SSTableReader> remove, OperationType operationType, Throwable accumulate)
     {
-        Pair<View, View> result = apply(new Function<View, View>()
+        try (TransactionLogs txnLogs = new TransactionLogs(operationType, cfstore.metadata, this))
         {
-            public View apply(View view)
-            {
+            Pair<View, View> result = apply(view -> {
                 Set<SSTableReader> toremove = copyOf(filter(view.sstables, and(remove, notIn(view.compacting))));
                 return updateLiveSet(toremove, emptySet()).apply(view);
+            });
+
+            Set<SSTableReader> removed = Sets.difference(result.left.sstables, result.right.sstables);
+            assert Iterables.all(removed, remove);
+
+            // It is important that any method accepting/returning a Throwable never throws an exception, and does its best
+            // to complete the instructions given to it
+            List<TransactionLogs.Obsoletion> obsoletions = new ArrayList<>();
+            accumulate = prepareForObsoletion(removed, txnLogs, obsoletions, accumulate);
+            try
+            {
+                txnLogs.finish();
+                if (!removed.isEmpty())
+                {
+                    accumulate = markObsolete(obsoletions, accumulate);
+                    accumulate = updateSizeTracking(removed, emptySet(), accumulate);
+                    accumulate = release(selfRefs(removed), accumulate);
+                    // notifySSTablesChanged -> LeveledManifest.promote doesn't like a no-op "promotion"
+                    accumulate = notifySSTablesChanged(removed, Collections.<SSTableReader>emptySet(), txnLogs.getType(), accumulate);
+                }
             }
-        });
-
-        Set<SSTableReader> removed = Sets.difference(result.left.sstables, result.right.sstables);
-        assert Iterables.all(removed, remove);
-
-        if (!removed.isEmpty())
-        {
-            // notifySSTablesChanged -> LeveledManifest.promote doesn't like a no-op "promotion"
-            accumulate = notifySSTablesChanged(removed, Collections.<SSTableReader>emptySet(), operationType, accumulate);
-            accumulate = updateSizeTracking(removed, emptySet(), accumulate);
-            accumulate = markObsolete(removed, accumulate);
-            accumulate = release(selfRefs(removed), accumulate);
+            catch (Throwable t)
+            {
+                accumulate = abortObsoletion(obsoletions, accumulate);
+                accumulate = Throwables.merge(accumulate, t);
+            }
         }
+        catch (Throwable t)
+        {
+            accumulate = Throwables.merge(accumulate, t);
+        }
+
         return accumulate;
     }
+
 
     /**
      * Removes every SSTable in the directory from the Tracker's view.
@@ -310,6 +332,7 @@ public class Tracker
 
     public void replaceFlushed(Memtable memtable, SSTableReader sstable)
     {
+        assert !isDummy();
         if (sstable == null)
         {
             // sstable may be null if we flushed batchlog and nothing needed to be retained
@@ -318,8 +341,7 @@ public class Tracker
             return;
         }
 
-        sstable.setupDeleteNotification(this);
-        sstable.setupKeyCache();
+        sstable.setupOnline();
         // back up before creating a new Snapshot (which makes the new one eligible for compaction)
         maybeIncrementallyBackup(sstable);
 
@@ -330,7 +352,7 @@ public class Tracker
         // TODO: if we're invalidated, should we notifyadded AND removed, or just skip both?
         fail = notifyAdded(sstable, fail);
 
-        if (cfstore != null && !cfstore.isValid())
+        if (!isDummy() && !cfstore.isValid())
             dropSSTables();
 
         maybeFail(fail);
@@ -340,19 +362,14 @@ public class Tracker
 
     // MISCELLANEOUS public utility calls
 
-    public Set<SSTableReader> getSSTables()
-    {
-        return view.get().sstables;
-    }
-
     public Set<SSTableReader> getCompacting()
     {
         return view.get().compacting;
     }
 
-    public Set<SSTableReader> getUncompacting()
+    public Iterable<SSTableReader> getUncompacting()
     {
-        return view.get().nonCompactingSStables();
+        return view.get().sstables(SSTableSet.NONCOMPACTING);
     }
 
     public Iterable<SSTableReader> getUncompacting(Iterable<SSTableReader> candidates)
@@ -368,14 +385,6 @@ public class Tracker
         File backupsDir = Directories.getBackupsDirectory(sstable.descriptor);
         sstable.createLinks(FileUtils.getCanonicalPath(backupsDir));
     }
-
-    public void spaceReclaimed(long size)
-    {
-        if (cfstore != null)
-            cfstore.metric.totalDiskSpaceUsed.dec(size);
-    }
-
-
 
     // NOTIFICATION
 
@@ -444,6 +453,11 @@ public class Tracker
         INotification notification = new TruncationNotification(truncatedAt);
         for (INotificationConsumer subscriber : subscribers)
             subscriber.handleNotification(notification, this);
+    }
+
+    public boolean isDummy()
+    {
+        return cfstore == null;
     }
 
     public void subscribe(INotificationConsumer consumer)

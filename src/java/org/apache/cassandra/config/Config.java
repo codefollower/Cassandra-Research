@@ -17,9 +17,6 @@
  */
 package org.apache.cassandra.config;
 
-import java.io.IOException;
-import java.io.StringReader;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -27,9 +24,6 @@ import com.google.common.collect.Sets;
 
 import org.apache.cassandra.config.EncryptionOptions.ClientEncryptionOptions;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
-import org.apache.cassandra.exceptions.ConfigurationException;
-import org.supercsv.io.CsvListReader;
-import org.supercsv.prefs.CsvPreference;
 
 /**
  * A class that contains configuration properties for the cassandra node it runs within.
@@ -60,9 +54,8 @@ public class Config
     public String partitioner;
 
     public Boolean auto_bootstrap = true;
-    public volatile boolean hinted_handoff_enabled_global = true;
-    public String hinted_handoff_enabled;
-    public Set<String> hinted_handoff_enabled_by_dc = Sets.newConcurrentHashSet();
+    public volatile boolean hinted_handoff_enabled = true;
+    public Set<String> hinted_handoff_disabled_datacenters = Sets.newConcurrentHashSet();
     public volatile Integer max_hint_window_in_ms = 3 * 3600 * 1000; // three hours
 
     public ParameterizedClass seed_provider;
@@ -77,6 +70,8 @@ public class Config
     /* initial token in the ring */
     public String initial_token;
     public Integer num_tokens = 1;
+    /** Triggers automatic allocation of tokens if set, using the replication strategy of the referenced keyspace */
+    public String allocate_tokens_for_keyspace = null;
 
     public volatile Long request_timeout_in_ms = 10000L;
 
@@ -101,6 +96,8 @@ public class Config
     public Integer concurrent_reads = 32;
     public Integer concurrent_writes = 32;
     public Integer concurrent_counter_writes = 32;
+    public Integer concurrent_batchlog_writes = 32;
+    public Integer concurrent_materialized_view_writes = 32;
 
     @Deprecated
     public Integer concurrent_replicates = null; //已不再使用，只在DatabaseDescriptor.applyConfig(Config)中用于警告
@@ -156,13 +153,14 @@ public class Config
     public volatile int batch_size_fail_threshold_in_kb = 50;
     public Integer concurrent_compactors;
     public volatile Integer compaction_throughput_mb_per_sec = 16;
+    public volatile Integer compaction_large_partition_warning_threshold_mb = 100;
 
     public Integer max_streaming_retries = 3;
 
     public volatile Integer stream_throughput_outbound_megabits_per_sec = 200;
     public volatile Integer inter_dc_stream_throughput_outbound_megabits_per_sec = 0;
 
-    public String[] data_file_directories;
+    public String[] data_file_directories = new String[0];
 
     public String saved_caches_directory;
 
@@ -175,7 +173,8 @@ public class Config
     public int commitlog_segment_size_in_mb = 32;
     public ParameterizedClass commitlog_compression;
     public int commitlog_max_compression_buffers_in_pool = 3;
- 
+    public TransparentDataEncryptionOptions transparent_data_encryption_options = new TransparentDataEncryptionOptions();
+
     @Deprecated
     public int commitlog_periodic_queue_size = -1;
 
@@ -227,7 +226,15 @@ public class Config
 
     private static boolean isClientMode = false;
 
-    public Integer file_cache_size_in_mb;
+    public Integer file_cache_size_in_mb = 512;
+
+    public boolean buffer_pool_use_heap_if_exhausted = true;
+
+    public DiskOptimizationStrategy disk_optimization_strategy = DiskOptimizationStrategy.ssd;
+
+    public double disk_optimization_estimate_percentile = 0.95;
+
+    public double disk_optimization_page_cross_chance = 0.1;
 
     public boolean inter_dc_tcp_nodelay = true;
 
@@ -240,9 +247,6 @@ public class Config
 
     public volatile Long index_summary_capacity_in_mb;
     public volatile int index_summary_resize_interval_in_minutes = 60;
-
-    private static final CsvPreference STANDARD_SURROUNDING_SPACES_NEED_QUOTES = new CsvPreference.Builder(CsvPreference.STANDARD_PREFERENCE)
-                                                                                                  .surroundingSpacesNeedQuotes(true).build();
 
     // TTL for different types of trace events.
     public int tracetype_query_ttl = (int) TimeUnit.DAYS.toSeconds(1);
@@ -264,7 +268,40 @@ public class Config
     public static final int otc_coalescing_window_us_default = 200;
     public int otc_coalescing_window_us = otc_coalescing_window_us_default;
 
+    public int windows_timer_interval = 0;
+
     public boolean enable_user_defined_functions = false;
+    public boolean enable_scripted_user_defined_functions = false;
+    /**
+     * Optionally disable asynchronous UDF execution.
+     * Disabling asynchronous UDF execution also implicitly disables the security-manager!
+     * By default, async UDF execution is enabled to be able to detect UDFs that run too long / forever and be
+     * able to fail fast - i.e. stop the Cassandra daemon, which is currently the only appropriate approach to
+     * "tell" a user that there's something really wrong with the UDF.
+     * When you disable async UDF execution, users MUST pay attention to read-timeouts since these may indicate
+     * UDFs that run too long or forever - and this can destabilize the cluster.
+     */
+    public boolean enable_user_defined_functions_threads = true;
+    /**
+     * Time in milliseconds after a warning will be emitted to the log and to the client that a UDF runs too long.
+     * (Only valid, if enable_user_defined_functions_threads==true)
+     */
+    public long user_defined_function_warn_timeout = 500;
+    /**
+     * Time in milliseconds after a fatal UDF run-time situation is detected and action according to
+     * user_function_timeout_policy will take place.
+     * (Only valid, if enable_user_defined_functions_threads==true)
+     */
+    public long user_defined_function_fail_timeout = 1500;
+    /**
+     * Defines what to do when a UDF ran longer than user_defined_function_fail_timeout.
+     * Possible options are:
+     * - 'die' - i.e. it is able to emit a warning to the client before the Cassandra Daemon will shut down.
+     * - 'die_immediate' - shut down C* daemon immediately (effectively prevent the chance that the client will receive a warning).
+     * - 'ignore' - just log - the most dangerous option.
+     * (Only valid, if enable_user_defined_functions_threads==true)
+     */
+    public UserFunctionTimeoutPolicy user_function_timeout_policy = UserFunctionTimeoutPolicy.die;
 
     public static boolean getOutboundBindAny()
     {
@@ -286,51 +323,17 @@ public class Config
         isClientMode = clientMode;
     }
 
-    public void configHintedHandoff() throws ConfigurationException
-    {
-        if (hinted_handoff_enabled != null && !hinted_handoff_enabled.isEmpty())
-        {
-            if (hinted_handoff_enabled.equalsIgnoreCase("true"))
-            {
-                hinted_handoff_enabled_global = true;
-            }
-            else if (hinted_handoff_enabled.equalsIgnoreCase("false"))
-            {
-                hinted_handoff_enabled_global = false;
-            }
-            else
-            {
-                try
-                {
-                    hinted_handoff_enabled_by_dc.addAll(parseHintedHandoffEnabledDCs(hinted_handoff_enabled));
-                }
-                catch (IOException e)
-                {
-                    throw new ConfigurationException("Invalid hinted_handoff_enabled parameter " + hinted_handoff_enabled, e);
-                }
-            }
-        }
-    }
-
-    public static List<String> parseHintedHandoffEnabledDCs(final String dcNames) throws IOException
-    {
-        try (final CsvListReader csvListReader = new CsvListReader(new StringReader(dcNames), STANDARD_SURROUNDING_SPACES_NEED_QUOTES))
-        {
-        	return csvListReader.read();
-        }
-    }
-
-    public static enum CommitLogSync
+    public enum CommitLogSync
     {
         periodic,
         batch
     }
-    public static enum InternodeCompression
+    public enum InternodeCompression
     {
         all, none, dc
     }
 
-    public static enum DiskAccessMode
+    public enum DiskAccessMode
     {
         auto,
         mmap,
@@ -338,7 +341,7 @@ public class Config
         standard,
     }
 
-    public static enum MemtableAllocationType
+    public enum MemtableAllocationType
     {
         unslabbed_heap_buffers,
         heap_buffers,
@@ -346,7 +349,7 @@ public class Config
         offheap_objects
     }
 
-    public static enum DiskFailurePolicy
+    public enum DiskFailurePolicy
     {
         best_effort,
         stop,
@@ -355,7 +358,7 @@ public class Config
         die
     }
 
-    public static enum CommitFailurePolicy
+    public enum CommitFailurePolicy
     {
         stop,
         stop_commit,
@@ -363,8 +366,21 @@ public class Config
         die,
     }
 
-    public static enum RequestSchedulerId
+    public enum UserFunctionTimeoutPolicy
+    {
+        ignore,
+        die,
+        die_immediate
+    }
+
+    public enum RequestSchedulerId
     {
         keyspace
+    }
+
+    public enum DiskOptimizationStrategy
+    {
+        ssd,
+        spinning
     }
 }

@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -82,6 +84,7 @@ public class SizeEstimatesRecorder extends MigrationListener implements Runnable
         }
     }
 
+    @SuppressWarnings("resource")
     private void recordSizeEstimates(ColumnFamilyStore table, Collection<Range<Token>> localRanges)
     {
         // for each local primary range, estimate (crudely) mean partition size and partitions count.
@@ -90,22 +93,24 @@ public class SizeEstimatesRecorder extends MigrationListener implements Runnable
         {
             // filter sstables that have partitions in this range.
             Refs<SSTableReader> refs = null;
-            while (refs == null)
-            {
-                ColumnFamilyStore.ViewFragment view = table.select(table.viewFilter(Range.makeRowRange(range)));
-                refs = Refs.tryRef(view.sstables);
-            }
-
             long partitionsCount, meanPartitionSize;
+
             try
             {
+                while (refs == null)
+                {
+                    ColumnFamilyStore.ViewFragment view = table.select(View.select(SSTableSet.CANONICAL, Range.makeRowRange(range)));
+                    refs = Refs.tryRef(view.sstables);
+                }
+
                 // calculate the estimates.
                 partitionsCount = estimatePartitionsCount(refs, range);
                 meanPartitionSize = estimateMeanPartitionSize(refs);
             }
             finally
             {
-                refs.release();
+                if (refs != null)
+                    refs.release();
             }
 
             estimates.put(range, Pair.create(partitionsCount, meanPartitionSize));
@@ -128,8 +133,8 @@ public class SizeEstimatesRecorder extends MigrationListener implements Runnable
         long sum = 0, count = 0;
         for (SSTableReader sstable : sstables)
         {
-            long n = sstable.getEstimatedRowSize().count();
-            sum += sstable.getEstimatedRowSize().mean() * n;
+            long n = sstable.getEstimatedPartitionSize().count();
+            sum += sstable.getEstimatedPartitionSize().mean() * n;
             count += n;
         }
         return count > 0 ? sum / count : 0;

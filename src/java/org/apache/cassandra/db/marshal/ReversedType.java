@@ -62,6 +62,11 @@ public class ReversedType<T> extends AbstractType<T>
         this.baseType = baseType;
     }
 
+    public boolean isEmptyValueMeaningless()
+    {
+        return baseType.isEmptyValueMeaningless();
+    }
+
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
         // An empty byte buffer is always smaller
@@ -75,6 +80,12 @@ public class ReversedType<T> extends AbstractType<T>
         }
 
         return baseType.compare(o2, o1);
+    }
+
+    @Override
+    public int compareForCQL(ByteBuffer v1, ByteBuffer v2)
+    {
+        return baseType.compare(v1, v2);
     }
 
     public String getString(ByteBuffer bytes)
@@ -123,6 +134,12 @@ public class ReversedType<T> extends AbstractType<T>
     public TypeSerializer<T> getSerializer()
     {
         return baseType.getSerializer();
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return baseType.valueLengthIfFixed();
     }
 
     @Override

@@ -22,6 +22,7 @@ import java.io.IOError;
 import java.io.IOException;
 import java.net.InetAddress;
 
+import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.io.util.FastByteArrayInputStream;
 import org.apache.cassandra.net.*;
 import org.apache.cassandra.tracing.Tracing;
@@ -47,10 +48,17 @@ public class MutationVerbHandler implements IVerbHandler<Mutation>
                 replyTo = InetAddress.getByAddress(from);
             }
 
+        try
+        {
             message.payload.apply();
             WriteResponse response = new WriteResponse();
             Tracing.trace("Enqueuing response to {}", replyTo);
             MessagingService.instance().sendReply(response.createMessage(), id, replyTo);
+        }
+        catch (WriteTimeoutException wto)
+        {
+            Tracing.trace("Payload application resulted in WriteTimeout, not replying");
+        }
     }
 
     /**
@@ -59,18 +67,20 @@ public class MutationVerbHandler implements IVerbHandler<Mutation>
      */
     private void forwardToLocalNodes(Mutation mutation, MessagingService.Verb verb, byte[] forwardBytes, InetAddress from) throws IOException
     {
-        DataInputStream in = new DataInputStream(new FastByteArrayInputStream(forwardBytes));
-        int size = in.readInt();
-
-        // tell the recipients who to send their ack to
-        MessageOut<Mutation> message = new MessageOut<>(verb, mutation, Mutation.serializer).withParameter(Mutation.FORWARD_FROM, from.getAddress());
-        // Send a message to each of the addresses on our Forward List
-        for (int i = 0; i < size; i++)
+        try (DataInputStream in = new DataInputStream(new FastByteArrayInputStream(forwardBytes)))
         {
-            InetAddress address = CompactEndpointSerializationHelper.deserialize(in);
-            int id = in.readInt();
-            Tracing.trace("Enqueuing forwarded write to {}", address);
-            MessagingService.instance().sendOneWay(message, id, address);
+            int size = in.readInt();
+
+            // tell the recipients who to send their ack to
+            MessageOut<Mutation> message = new MessageOut<>(verb, mutation, Mutation.serializer).withParameter(Mutation.FORWARD_FROM, from.getAddress());
+            // Send a message to each of the addresses on our Forward List
+            for (int i = 0; i < size; i++)
+            {
+                InetAddress address = CompactEndpointSerializationHelper.deserialize(in);
+                int id = in.readInt();
+                Tracing.trace("Enqueuing forwarded write to {}", address);
+                MessagingService.instance().sendOneWay(message, id, address);
+            }
         }
     }
 }

@@ -18,10 +18,12 @@
 package org.apache.cassandra.io.sstable;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArraySet;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Sets;
@@ -38,7 +40,6 @@ import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.concurrent.RefCounted;
 import org.apache.cassandra.utils.memory.HeapAllocator;
 import org.apache.cassandra.utils.Pair;
 
@@ -63,31 +64,29 @@ public abstract class SSTable
     public final Descriptor descriptor;
     protected final Set<Component> components;
     public final CFMetaData metadata;
-    public final IPartitioner partitioner;
     public final boolean compression;
 
     public DecoratedKey first;
     public DecoratedKey last;
 
-    protected SSTable(Descriptor descriptor, CFMetaData metadata, IPartitioner partitioner)
+    protected SSTable(Descriptor descriptor, CFMetaData metadata)
     {
-        this(descriptor, new HashSet<Component>(), metadata, partitioner);
+        this(descriptor, new HashSet<>(), metadata);
     }
 
-    protected SSTable(Descriptor descriptor, Set<Component> components, CFMetaData metadata, IPartitioner partitioner)
+    protected SSTable(Descriptor descriptor, Set<Component> components, CFMetaData metadata)
     {
         // In almost all cases, metadata shouldn't be null, but allowing null allows to create a mostly functional SSTable without
         // full schema definition. SSTableLoader use that ability
         assert descriptor != null;
         assert components != null;
-        assert partitioner != null;
+        assert metadata != null;
 
         this.descriptor = descriptor;
         Set<Component> dataComponents = new HashSet<>(components);
         this.compression = dataComponents.contains(Component.COMPRESSION_INFO);
         this.components = new CopyOnWriteArraySet<>(dataComponents);
         this.metadata = metadata;
-        this.partitioner = partitioner;
     }
 
     /**
@@ -113,10 +112,22 @@ public abstract class SSTable
 
             FileUtils.deleteWithConfirm(desc.filenameFor(component));
         }
-        FileUtils.delete(desc.filenameFor(Component.SUMMARY));
+
+        if (components.contains(Component.SUMMARY))
+            FileUtils.delete(desc.filenameFor(Component.SUMMARY));
 
         logger.debug("Deleted {}", desc);
         return true;
+    }
+
+    public IPartitioner getPartitioner()
+    {
+        return metadata.partitioner;
+    }
+
+    public DecoratedKey decorateKey(ByteBuffer key)
+    {
+        return getPartitioner().decorateKey(key);
     }
 
     /**
@@ -148,6 +159,15 @@ public abstract class SSTable
     public String getKeyspaceName()
     {
         return descriptor.ksname;
+    }
+
+    @VisibleForTesting
+    public List<String> getAllFilePaths()
+    {
+        List<String> ret = new ArrayList<>();
+        for (Component component : components)
+            ret.add(descriptor.filenameFor(component));
+        return ret;
     }
 
     /**
@@ -270,20 +290,14 @@ public abstract class SSTable
     protected static void appendTOC(Descriptor descriptor, Collection<Component> components)
     {
         File tocFile = new File(descriptor.filenameFor(Component.TOC));
-        PrintWriter w = null;
-        try
+        try (PrintWriter w = new PrintWriter(new FileWriter(tocFile, true)))
         {
-            w = new PrintWriter(new FileWriter(tocFile, true));
             for (Component component : components)
                 w.println(component.name);
         }
         catch (IOException e)
         {
             throw new FSWriteError(e, tocFile);
-        }
-        finally
-        {
-            FileUtils.closeQuietly(w);
         }
     }
 

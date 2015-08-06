@@ -59,6 +59,7 @@ public class StressProfile implements Serializable
 {
     private String keyspaceCql;
     private String tableCql;
+    private List<String> extraSchemaDefinitions;
     private String seedStr;
 
     public String keyspaceName;
@@ -74,6 +75,7 @@ public class StressProfile implements Serializable
     transient volatile BatchStatement.Type batchType;
     transient volatile DistributionFactory partitions;
     transient volatile RatioDistributionFactory selectchance;
+    transient volatile RatioDistributionFactory rowPopulation;
     transient volatile PreparedStatement insertStatement;
     transient volatile Integer thriftInsertId;
     transient volatile List<ValidatingSchemaQuery.Factory> validationFactories;
@@ -91,6 +93,8 @@ public class StressProfile implements Serializable
         seedStr = "seed for stress";
         queries = yaml.queries;
         insert = yaml.insert;
+
+        extraSchemaDefinitions = yaml.extra_definitions;
 
         assert keyspaceName != null : "keyspace name is required in yaml file";
         assert tableName != null : "table name is required in yaml file";
@@ -168,7 +172,7 @@ public class StressProfile implements Serializable
             }
         }
 
-        client.execute("use "+keyspaceName, org.apache.cassandra.db.ConsistencyLevel.ONE);
+        client.execute("use " + keyspaceName, org.apache.cassandra.db.ConsistencyLevel.ONE);
 
         if (tableCql != null)
         {
@@ -181,6 +185,24 @@ public class StressProfile implements Serializable
             }
 
             System.out.println(String.format("Created schema. Sleeping %ss for propagation.", settings.node.nodes.size()));
+            Uninterruptibles.sleepUninterruptibly(settings.node.nodes.size(), TimeUnit.SECONDS);
+        }
+
+        if (extraSchemaDefinitions != null)
+        {
+            for (String extraCql : extraSchemaDefinitions)
+            {
+
+                try
+                {
+                    client.execute(extraCql, org.apache.cassandra.db.ConsistencyLevel.ONE);
+                }
+                catch (AlreadyExistsException e)
+                {
+                }
+            }
+
+            System.out.println(String.format("Created extra schema. Sleeping %ss for propagation.", settings.node.nodes.size()));
             Uninterruptibles.sleepUninterruptibly(settings.node.nodes.size(), TimeUnit.SECONDS);
         }
 
@@ -348,6 +370,7 @@ public class StressProfile implements Serializable
 
                     partitions = select(settings.insert.batchsize, "partitions", "fixed(1)", insert, OptionDistribution.BUILDER);
                     selectchance = select(settings.insert.selectRatio, "select", "fixed(1)/1", insert, OptionRatioDistribution.BUILDER);
+                    rowPopulation = select(settings.insert.rowPopulationRatio, "row-population", "fixed(1)/1", insert, OptionRatioDistribution.BUILDER);
                     batchType = settings.insert.batchType != null
                                 ? settings.insert.batchType
                                 : !insert.containsKey("batchtype")
@@ -398,7 +421,7 @@ public class StressProfile implements Serializable
             }
         }
 
-        return new SchemaInsert(timer, settings, generator, seedManager, partitions.get(), selectchance.get(), thriftInsertId, insertStatement, ThriftConversion.fromThrift(settings.command.consistencyLevel), batchType);
+        return new SchemaInsert(timer, settings, generator, seedManager, partitions.get(), selectchance.get(), rowPopulation.get(), thriftInsertId, insertStatement, ThriftConversion.fromThrift(settings.command.consistencyLevel), batchType);
     }
 
     public List<ValidatingSchemaQuery> getValidate(Timer timer, PartitionGenerator generator, SeedManager seedManager, StressSettings settings)
@@ -429,6 +452,7 @@ public class StressProfile implements Serializable
             return first;
         if (val != null && val.trim().length() > 0)
             return builder.apply(val);
+        
         return builder.apply(defValue);
     }
 

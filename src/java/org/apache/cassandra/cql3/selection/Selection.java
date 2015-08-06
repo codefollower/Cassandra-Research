@@ -29,9 +29,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.functions.Function;
-import org.apache.cassandra.db.Cell;
-import org.apache.cassandra.db.CounterCell;
-import org.apache.cassandra.db.ExpiringCell;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -51,20 +49,22 @@ public abstract class Selection
     };
 
     private final CFMetaData cfm;
-    private final Collection<ColumnDefinition> columns;
+    private final List<ColumnDefinition> columns;
+    private final SelectionColumnMapping columnMapping;
     private final ResultSet.ResultMetadata metadata;
     private final boolean collectTimestamps;
     private final boolean collectTTLs;
 
     protected Selection(CFMetaData cfm,
-                        Collection<ColumnDefinition> columns,
-                        List<ColumnSpecification> metadata,
+                        List<ColumnDefinition> columns,
+                        SelectionColumnMapping columnMapping,
                         boolean collectTimestamps,
                         boolean collectTTLs)
     {
         this.cfm = cfm;
         this.columns = columns;
-        this.metadata = new ResultSet.ResultMetadata(metadata);
+        this.columnMapping = columnMapping;
+        this.metadata = new ResultSet.ResultMetadata(columnMapping.getColumnSpecifications());
         this.collectTimestamps = collectTimestamps;
         this.collectTTLs = collectTTLs;
     }
@@ -118,9 +118,6 @@ public abstract class Selection
      */
     public boolean containsACollection()
     {
-        if (!cfm.comparator.hasCollections())
-            return false;
-
         for (ColumnDefinition def : getColumns())
             if (def.type.isCollection() && def.type.isMultiCell())
                 return true;
@@ -157,13 +154,16 @@ public abstract class Selection
 
     public static Selection wildcard(CFMetaData cfm)
     {
-        //all一开始是空的，把cfm.allColumnsInSelectOrder()中的东西加到all中
-        List<ColumnDefinition> all = new ArrayList<ColumnDefinition>(cfm.allColumns().size());
+//<<<<<<< HEAD
+//        //all一开始是空的，把cfm.allColumnsInSelectOrder()中的东西加到all中
+//        List<ColumnDefinition> all = new ArrayList<ColumnDefinition>(cfm.allColumns().size());
+//=======
+        List<ColumnDefinition> all = new ArrayList<>(cfm.allColumns().size());
         Iterators.addAll(all, cfm.allColumnsInSelectOrder());
         return new SimpleSelection(cfm, all, true);
     }
 
-    public static Selection forColumns(CFMetaData cfm, Collection<ColumnDefinition> columns)
+    public static Selection forColumns(CFMetaData cfm, List<ColumnDefinition> columns)
     {
         return new SimpleSelection(cfm, columns, false);
     }
@@ -192,29 +192,31 @@ public abstract class Selection
 
     public static Selection fromSelectors(CFMetaData cfm, List<RawSelector> rawSelectors) throws InvalidRequestException
     {
-        List<ColumnDefinition> defs = new ArrayList<ColumnDefinition>();
+        List<ColumnDefinition> defs = new ArrayList<>();
 
         SelectorFactories factories =
                 SelectorFactories.createFactoriesAndCollectColumnDefinitions(RawSelector.toSelectables(rawSelectors, cfm), cfm, defs);
-        List<ColumnSpecification> metadata = collectMetadata(cfm, rawSelectors, factories);
+        SelectionColumnMapping mapping = collectColumnMappings(cfm, rawSelectors, factories);
 
-        return processesSelection(rawSelectors) ? new SelectionWithProcessing(cfm, defs, metadata, factories)
-                                                : new SimpleSelection(cfm, defs, metadata, false);
+        return (processesSelection(rawSelectors) || rawSelectors.size() != defs.size())
+               ? new SelectionWithProcessing(cfm, defs, mapping, factories)
+               : new SimpleSelection(cfm, defs, mapping, false);
     }
 
-    private static List<ColumnSpecification> collectMetadata(CFMetaData cfm,
-                                                             List<RawSelector> rawSelectors,
-                                                             SelectorFactories factories)
+    private static SelectionColumnMapping collectColumnMappings(CFMetaData cfm,
+                                                                List<RawSelector> rawSelectors,
+                                                                SelectorFactories factories)
     {
-        List<ColumnSpecification> metadata = new ArrayList<ColumnSpecification>(rawSelectors.size());
+        SelectionColumnMapping selectionColumns = SelectionColumnMapping.newMapping();
         Iterator<RawSelector> iter = rawSelectors.iterator();
         for (Selector.Factory factory : factories)
         {
             ColumnSpecification colSpec = factory.getColumnSpecification(cfm);
             ColumnIdentifier alias = iter.next().alias;
-            metadata.add(alias == null ? colSpec : colSpec.withAlias(alias));
+            factory.addColumnMapping(selectionColumns,
+                                     alias == null ? colSpec : colSpec.withAlias(alias));
         }
-        return metadata;
+        return selectionColumns;
     }
 
     protected abstract Selectors newSelectors() throws InvalidRequestException;
@@ -222,14 +224,22 @@ public abstract class Selection
     /**
      * @return the list of CQL3 columns value this SelectionClause needs.
      */
-    public Collection<ColumnDefinition> getColumns()
+    public List<ColumnDefinition> getColumns()
     {
         return columns;
     }
 
-    public ResultSetBuilder resultSetBuilder(long now, boolean isJson) throws InvalidRequestException
+    /**
+     * @return the mappings between resultset columns and the underlying columns
+     */
+    public SelectionColumns getColumnMapping()
     {
-        return new ResultSetBuilder(now, isJson);
+        return columnMapping;
+    }
+
+    public ResultSetBuilder resultSetBuilder(boolean isJons) throws InvalidRequestException
+    {
+        return new ResultSetBuilder(isJons);
     }
 
     public abstract boolean isAggregate();
@@ -239,6 +249,7 @@ public abstract class Selection
     {
         return Objects.toStringHelper(this)
                 .add("columns", columns)
+                .add("columnMapping", columnMapping)
                 .add("metadata", metadata)
                 .add("collectTimestamps", collectTimestamps)
                 .add("collectTTLs", collectTTLs)
@@ -266,18 +277,22 @@ public abstract class Selection
         List<ByteBuffer> current;
         final long[] timestamps;
         final int[] ttls;
-        final long now;
 
         private final boolean isJson;
 
-        private ResultSetBuilder(long now, boolean isJson) throws InvalidRequestException
+        private ResultSetBuilder(boolean isJson) throws InvalidRequestException
         {
             this.resultSet = new ResultSet(getResultMetadata(isJson).copy(), new ArrayList<List<ByteBuffer>>());
             this.selectors = newSelectors();
             this.timestamps = collectTimestamps ? new long[columns.size()] : null;
             this.ttls = collectTTLs ? new int[columns.size()] : null;
-            this.now = now;
             this.isJson = isJson;
+
+            // We use MIN_VALUE to indicate no timestamp and -1 for no ttl
+            if (timestamps != null)
+                Arrays.fill(timestamps, Long.MIN_VALUE);
+            if (ttls != null)
+                Arrays.fill(ttls, -1);
         }
 
         public void add(ByteBuffer v)
@@ -285,25 +300,37 @@ public abstract class Selection
             current.add(v);
         }
 
-        public void add(Cell c)
+        public void add(Cell c, int nowInSec)
         {
-            current.add(isDead(c) ? null : value(c));
+            if (c == null)
+            {
+                current.add(null);
+                return;
+            }
+
+            current.add(value(c));
+
             if (timestamps != null)
-            {
-                timestamps[current.size() - 1] = isDead(c) ? Long.MIN_VALUE : c.timestamp();
-            }
+                timestamps[current.size() - 1] = c.timestamp();
+
             if (ttls != null)
-            {
-                int ttl = -1;
-                if (!isDead(c) && c instanceof ExpiringCell)
-                    ttl = c.getLocalDeletionTime() - (int) (now / 1000);
-                ttls[current.size() - 1] = ttl;
-            }
+                ttls[current.size() - 1] = remainingTTL(c, nowInSec);
         }
 
-        private boolean isDead(Cell c)
+        private int remainingTTL(Cell c, int nowInSec)
         {
-            return c == null || !c.isLive(now);
+            if (!c.isExpiring())
+                return -1;
+
+            int remaining = c.localDeletionTime() - nowInSec;
+            return remaining >= 0 ? remaining : -1;
+        }
+
+        private ByteBuffer value(Cell c)
+        {
+            return c.isCounterCell()
+                 ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value()))
+                 : c.value();
         }
 
         public void newRow(int protocolVersion) throws InvalidRequestException
@@ -367,13 +394,6 @@ public abstract class Selection
             sb.append("}");
             return Collections.singletonList(UTF8Type.instance.getSerializer().serialize(sb.toString()));
         }
-
-        private ByteBuffer value(Cell c)
-        {
-            return (c instanceof CounterCell)
-                ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value()))
-                : c.value();
-        }
     }
 
     private static interface Selectors
@@ -398,14 +418,14 @@ public abstract class Selection
     {
         private final boolean isWildcard;
 
-        public SimpleSelection(CFMetaData cfm, Collection<ColumnDefinition> columns, boolean isWildcard)
+        public SimpleSelection(CFMetaData cfm, List<ColumnDefinition> columns, boolean isWildcard)
         {
-            this(cfm, columns, new ArrayList<ColumnSpecification>(columns), isWildcard);
+            this(cfm, columns, SelectionColumnMapping.simpleMapping(columns), isWildcard);
         }
 
         public SimpleSelection(CFMetaData cfm,
-                               Collection<ColumnDefinition> columns,
-                               List<ColumnSpecification> metadata,
+                               List<ColumnDefinition> columns,
+                               SelectionColumnMapping metadata,
                                boolean isWildcard)
         {
             /*
@@ -462,8 +482,8 @@ public abstract class Selection
         private final SelectorFactories factories;
 
         public SelectionWithProcessing(CFMetaData cfm,
-                                       Collection<ColumnDefinition> columns,
-                                       List<ColumnSpecification> metadata,
+                                       List<ColumnDefinition> columns,
+                                       SelectionColumnMapping metadata,
                                        SelectorFactories factories) throws InvalidRequestException
         {
             super(cfm,
@@ -473,9 +493,6 @@ public abstract class Selection
                   factories.containsTTLSelectorFactory());
 
             this.factories = factories;
-
-            if (factories.doesAggregation() && !factories.containsOnlyAggregateFunctions())
-                throw new InvalidRequestException("the select clause must either contain only aggregates or no aggregate");
         }
 
         @Override
@@ -494,7 +511,7 @@ public abstract class Selection
 
         public boolean isAggregate()
         {
-            return factories.containsOnlyAggregateFunctions();
+            return factories.doesAggregation();
         }
 
         protected Selectors newSelectors() throws InvalidRequestException
@@ -511,7 +528,7 @@ public abstract class Selection
 
                 public boolean isAggregate()
                 {
-                    return factories.containsOnlyAggregateFunctions();
+                    return factories.doesAggregation();
                 }
 
                 public List<ByteBuffer> getOutputRow(int protocolVersion) throws InvalidRequestException

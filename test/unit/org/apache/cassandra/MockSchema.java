@@ -21,18 +21,14 @@ package org.apache.cassandra;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 
-import org.apache.cassandra.cache.CachingOptions;
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.SimpleSparseCellNameType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.io.sstable.Component;
@@ -44,9 +40,13 @@ import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.BufferedSegmentedFile;
 import org.apache.cassandra.io.util.ChannelProxy;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.Memory;
+import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.io.util.SegmentedFile;
-import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.schema.CachingParams;
+import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.AlwaysPresentFilter;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -59,39 +59,37 @@ public class MockSchema
         indexSummary = new IndexSummary(Murmur3Partitioner.instance, offsets, 0, Memory.allocate(4), 0, 0, 0, 1);
     }
     private static final AtomicInteger id = new AtomicInteger();
-    public static final Keyspace ks = Keyspace.mockKS(new KSMetaData("mockks", SimpleStrategy.class, ImmutableMap.of("replication_factor", "1"), false));
-    public static final ColumnFamilyStore cfs = newCFS();
+    public static final Keyspace ks = Keyspace.mockKS(KeyspaceMetadata.create("mockks", KeyspaceParams.simpleTransient(1)));
 
-    private static final IndexSummary indexSummary;
-    private static final SegmentedFile segmentedFile = new BufferedSegmentedFile(new ChannelProxy(temp("mocksegmentedfile")), 0);
+    public static final IndexSummary indexSummary;
+    private static final SegmentedFile segmentedFile = new BufferedSegmentedFile(new ChannelProxy(temp("mocksegmentedfile")), RandomAccessReader.DEFAULT_BUFFER_SIZE, 0);
 
-    public static Memtable memtable()
+    public static Memtable memtable(ColumnFamilyStore cfs)
     {
         return new Memtable(cfs.metadata);
     }
 
-    public static SSTableReader sstable(int generation)
+    public static SSTableReader sstable(int generation, ColumnFamilyStore cfs)
     {
-        return sstable(generation, false);
+        return sstable(generation, false, cfs);
     }
 
-    public static SSTableReader sstable(int generation, boolean keepRef)
+    public static SSTableReader sstable(int generation, boolean keepRef, ColumnFamilyStore cfs)
     {
-        return sstable(generation, 0, keepRef);
+        return sstable(generation, 0, keepRef, cfs);
     }
 
-    public static SSTableReader sstable(int generation, int size)
+    public static SSTableReader sstable(int generation, int size, ColumnFamilyStore cfs)
     {
-        return sstable(generation, size, false);
+        return sstable(generation, size, false, cfs);
     }
 
-    public static SSTableReader sstable(int generation, int size, boolean keepRef)
-    {
-        return sstable(generation, size, keepRef, cfs);
-    }
     public static SSTableReader sstable(int generation, int size, boolean keepRef, ColumnFamilyStore cfs)
     {
-        Descriptor descriptor = new Descriptor(temp("mockcfdir").getParentFile(), "mockks", "mockcf", generation, Descriptor.Type.FINAL);
+        Descriptor descriptor = new Descriptor(cfs.directories.getDirectoryForNewSSTables(),
+                                               cfs.keyspace.getName(),
+                                               cfs.getColumnFamilyName(),
+                                               generation);
         Set<Component> components = ImmutableSet.of(Component.DATA, Component.PRIMARY_INDEX, Component.FILTER, Component.TOC);
         for (Component component : components)
         {
@@ -103,7 +101,6 @@ public class MockSchema
             catch (IOException e)
             {
             }
-            file.deleteOnExit();
         }
         if (size > 0)
         {
@@ -120,12 +117,13 @@ public class MockSchema
                 throw new RuntimeException(e);
             }
         }
+        SerializationHeader header = SerializationHeader.make(cfs.metadata, Collections.emptyList());
         StatsMetadata metadata = (StatsMetadata) new MetadataCollector(cfs.metadata.comparator)
-                                                 .finalizeMetadata(Murmur3Partitioner.instance.getClass().getCanonicalName(), 0.01f, -1)
+                                                 .finalizeMetadata(cfs.metadata.partitioner.getClass().getCanonicalName(), 0.01f, -1, header)
                                                  .get(MetadataType.STATS);
-        SSTableReader reader = SSTableReader.internalOpen(descriptor, components, cfs.metadata, Murmur3Partitioner.instance,
+        SSTableReader reader = SSTableReader.internalOpen(descriptor, components, cfs.metadata,
                                                           segmentedFile.sharedCopy(), segmentedFile.sharedCopy(), indexSummary.sharedCopy(),
-                                                          new AlwaysPresentFilter(), 1L, metadata, SSTableReader.OpenReason.NORMAL);
+                                                          new AlwaysPresentFilter(), 1L, metadata, SSTableReader.OpenReason.NORMAL, header);
         reader.first = reader.last = readerBounds(generation);
         if (!keepRef)
             reader.selfRef().release();
@@ -134,15 +132,25 @@ public class MockSchema
 
     public static ColumnFamilyStore newCFS()
     {
-        String cfname = "mockcf" + (id.incrementAndGet());
-        CFMetaData metadata = newCFMetaData(cfname);
-        return new ColumnFamilyStore(ks, cfname, Murmur3Partitioner.instance, 0, metadata, new Directories(metadata), false, false);
+        return newCFS(ks.getName());
     }
 
-    private static CFMetaData newCFMetaData(String cfname)
+    public static ColumnFamilyStore newCFS(String ksname)
     {
-        CFMetaData metadata = new CFMetaData("mockks", cfname, ColumnFamilyType.Standard, new SimpleSparseCellNameType(UTF8Type.instance));
-        metadata.caching(CachingOptions.NONE);
+        String cfname = "mockcf" + (id.incrementAndGet());
+        CFMetaData metadata = newCFMetaData(ksname, cfname);
+        return new ColumnFamilyStore(ks, cfname, 0, metadata, new Directories(metadata), false, false);
+    }
+
+    private static CFMetaData newCFMetaData(String ksname, String cfname)
+    {
+        CFMetaData metadata = CFMetaData.Builder.create(ksname, cfname)
+                                                .addPartitionKey("key", UTF8Type.instance)
+                                                .addClusteringColumn("col", UTF8Type.instance)
+                                                .addRegularColumn("value", UTF8Type.instance)
+                                                .withPartitioner(Murmur3Partitioner.instance)
+                                                .build();
+        metadata.caching(CachingParams.CACHE_NOTHING);
         return metadata;
     }
 
@@ -162,6 +170,20 @@ public class MockSchema
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void cleanup()
+    {
+        // clean up data directory which are stored as data directory/keyspace/data files
+        for (String dirName : DatabaseDescriptor.getAllDataFileLocations())
+        {
+            File dir = new File(dirName);
+            if (!dir.exists())
+                continue;
+            String[] children = dir.list();
+            for (String child : children)
+                FileUtils.deleteRecursive(new File(dir, child));
         }
     }
 }

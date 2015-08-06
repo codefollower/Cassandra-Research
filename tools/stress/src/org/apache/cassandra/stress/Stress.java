@@ -22,6 +22,8 @@ import java.net.Socket;
 import java.net.SocketException;
 
 import org.apache.cassandra.stress.settings.StressSettings;
+import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.WindowsTimer;
 
 public final class Stress
 {
@@ -52,64 +54,81 @@ public final class Stress
 
     public static void main(String[] arguments) throws Exception
     {
-        final StressSettings settings;
+        if (FBUtilities.isWindows())
+            WindowsTimer.startTimerPeriod(1);
+
         try
         {
-            settings = StressSettings.parse(arguments);
-        }
-        catch (IllegalArgumentException e)
-        {
-            printHelpMessage();
-            e.printStackTrace();
-            return;
-        }
 
-        PrintStream logout = settings.log.getOutput();
-
-        if (settings.sendToDaemon != null)
-        {
-            Socket socket = new Socket(settings.sendToDaemon, 2159);
-
-            ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-            BufferedReader inp = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-            Runtime.getRuntime().addShutdownHook(new ShutDown(socket, out));
-
-            out.writeObject(settings);
-
-            String line;
-
+            final StressSettings settings;
             try
             {
-                while (!socket.isClosed() && (line = inp.readLine()) != null)
-                {
-                    if (line.equals("END") || line.equals("FAILURE"))
-                    {
-                        out.writeInt(1);
-                        break;
-                    }
-
-                    logout.println(line);
-                }
+                settings = StressSettings.parse(arguments);
             }
-            catch (SocketException e)
+            catch (IllegalArgumentException e)
             {
-                if (!stopped)
-                    e.printStackTrace();
+                printHelpMessage();
+                e.printStackTrace();
+                return;
             }
 
-            out.close();
-            inp.close();
+            PrintStream logout = settings.log.getOutput();
 
-            socket.close();
+            if (settings.sendToDaemon != null)
+            {
+                Socket socket = new Socket(settings.sendToDaemon, 2159);
+
+                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+                BufferedReader inp = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+                Runtime.getRuntime().addShutdownHook(new ShutDown(socket, out));
+
+                out.writeObject(settings);
+
+                String line;
+
+                try
+                {
+                    while (!socket.isClosed() && (line = inp.readLine()) != null)
+                    {
+                        if (line.equals("END") || line.equals("FAILURE"))
+                        {
+                            out.writeInt(1);
+                            break;
+                        }
+
+                        logout.println(line);
+                    }
+                }
+                catch (SocketException e)
+                {
+                    if (!stopped)
+                        e.printStackTrace();
+                }
+
+                out.close();
+                inp.close();
+
+                socket.close();
+            }
+            else
+            {
+                StressAction stressAction = new StressAction(settings, logout);
+                stressAction.run();
+            }
+
         }
-        else
+        catch (Throwable t)
         {
-            StressAction stressAction = new StressAction(settings, logout);
-            stressAction.run();
+            t.printStackTrace();
+        }
+        finally
+        {
+            if (FBUtilities.isWindows())
+                WindowsTimer.endTimerPeriod(1);
+            System.exit(0);
         }
 
-        System.exit(0);
     }
 
     /**

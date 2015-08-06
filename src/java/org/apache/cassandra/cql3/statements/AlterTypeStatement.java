@@ -23,9 +23,9 @@ import java.util.*;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.*;
-import org.apache.cassandra.db.composites.CellNames;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.transport.Event;
@@ -103,14 +103,13 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
 
     public boolean announceMigration(boolean isLocalOnly) throws InvalidRequestException, ConfigurationException
     {
-        KSMetaData ksm = Schema.instance.getKSMetaData(name.getKeyspace());
+        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         if (ksm == null)
             throw new InvalidRequestException(String.format("Cannot alter type in unknown keyspace %s", name.getKeyspace()));
 
-        UserType toUpdate = ksm.userTypes.getType(name.getUserTypeName());
-        // Shouldn't happen, unless we race with a drop
-        if (toUpdate == null)
-            throw new InvalidRequestException(String.format("No user type named %s exists.", name));
+        UserType toUpdate =
+            ksm.types.get(name.getUserTypeName())
+                     .orElseThrow(() -> new InvalidRequestException(String.format("No user type named %s exists.", name)));
 
         UserType updated = makeUpdatedType(toUpdate);
 
@@ -118,7 +117,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         // but we also need to find all existing user types and CF using it and change them.
         MigrationManager.announceTypeUpdate(updated, isLocalOnly);
 
-        for (CFMetaData cfm : ksm.cfMetaData().values())
+        for (CFMetaData cfm : ksm.tables)
         {
             CFMetaData copy = cfm.copy();
             boolean modified = false;
@@ -129,7 +128,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         }
 
         // Other user types potentially using the updated type
-        for (UserType ut : ksm.userTypes.getAllTypes().values())
+        for (UserType ut : ksm.types)
         {
             // Re-updating the type we've just updated would be harmless but useless so we avoid it.
             // Besides, we use the occasion to drop the old version of the type if it's a type rename
@@ -162,28 +161,6 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
 
         // We need to update this validator ...
         cfm.addOrReplaceColumnDefinition(def.withNewType(t));
-
-        // ... but if it's part of the comparator or key validator, we need to go update those too.
-        switch (def.kind)
-        {
-            case PARTITION_KEY:
-                cfm.keyValidator(updateWith(cfm.getKeyValidator(), keyspace, toReplace, updated));
-                break;
-            case CLUSTERING_COLUMN:
-                cfm.comparator = CellNames.fromAbstractType(updateWith(cfm.comparator.asAbstractType(), keyspace, toReplace, updated), cfm.comparator.isDense());
-                break;
-            default:
-                // If it's a collection, we still want to modify the comparator because the collection is aliased in it
-                if (def.type instanceof CollectionType && def.type.isMultiCell())
-                {
-                    t = updateWith(cfm.comparator.asAbstractType(), keyspace, toReplace, updated);
-                    // If t == null, all relevant comparators were updated via updateWith, which reaches into types and
-                    // collections
-                    if (t != null)
-                        cfm.comparator = CellNames.fromAbstractType(t, cfm.comparator.isDense());
-                }
-                break;
-        }
         return true;
     }
 
@@ -214,23 +191,6 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
             CompositeType ct = (CompositeType)type;
             List<AbstractType<?>> updatedTypes = updateTypes(ct.types, keyspace, toReplace, updated);
             return updatedTypes == null ? null : CompositeType.getInstance(updatedTypes);
-        }
-        else if (type instanceof ColumnToCollectionType)
-        {
-            ColumnToCollectionType ctct = (ColumnToCollectionType)type;
-            Map<ByteBuffer, CollectionType> updatedTypes = null;
-            for (Map.Entry<ByteBuffer, CollectionType> entry : ctct.defined.entrySet())
-            {
-                AbstractType<?> t = updateWith(entry.getValue(), keyspace, toReplace, updated);
-                if (t == null)
-                    continue;
-
-                if (updatedTypes == null)
-                    updatedTypes = new HashMap<>(ctct.defined);
-
-                updatedTypes.put(entry.getKey(), (CollectionType)t);
-            }
-            return updatedTypes == null ? null : ColumnToCollectionType.getInstance(updatedTypes);
         }
         else if (type instanceof CollectionType)
         {

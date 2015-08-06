@@ -36,7 +36,8 @@ import org.apache.cassandra.config.Config;
 import org.xerial.snappy.SnappyInputStream;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.UnknownColumnFamilyException;
-import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.NIODataInputStream;
 
 public class IncomingTcpConnection extends Thread implements Closeable
@@ -106,7 +107,7 @@ public class IncomingTcpConnection extends Thread implements Closeable
             close();
         }
     }
-    
+
     @Override
     public void close()
     {
@@ -136,7 +137,7 @@ public class IncomingTcpConnection extends Thread implements Closeable
         // to connect with, the other node will disconnect
         out.writeInt(MessagingService.current_version);
         out.flush();
-        DataInput in = new DataInputStream(socket.getInputStream());
+        DataInputPlus in = new DataInputStreamPlus(socket.getInputStream());
         int maxVersion = in.readInt();
         // outbound side will reconnect if necessary to upgrade version
         assert version <= MessagingService.current_version;
@@ -150,13 +151,13 @@ public class IncomingTcpConnection extends Thread implements Closeable
             logger.debug("Upgrading incoming connection to be compressed");
             if (version < MessagingService.VERSION_21)
             {
-                in = new DataInputStream(new SnappyInputStream(socket.getInputStream()));
+                in = new DataInputStreamPlus(new SnappyInputStream(socket.getInputStream()));
             }
             else
             {
                 LZ4FastDecompressor decompressor = LZ4Factory.fastestInstance().fastDecompressor();
                 Checksum checksum = XXHashFactory.fastestInstance().newStreamingHash32(OutboundTcpConnection.LZ4_HASH_SEED).asChecksum();
-                in = new DataInputStream(new LZ4BlockInputStream(socket.getInputStream(),
+                in = new DataInputStreamPlus(new LZ4BlockInputStream(socket.getInputStream(),
                                                                  decompressor,
                                                                  checksum));
             }
@@ -173,8 +174,11 @@ public class IncomingTcpConnection extends Thread implements Closeable
         }
     }
 
-    //对应OutboundTcpConnection.writeInternal(MessageOut, int)
-    private InetAddress receiveMessage(DataInput input, int version) throws IOException
+//<<<<<<< HEAD
+//    //对应OutboundTcpConnection.writeInternal(MessageOut, int)
+//    private InetAddress receiveMessage(DataInput input, int version) throws IOException
+//=======
+    private InetAddress receiveMessage(DataInputPlus input, int version) throws IOException
     {
         int id;
         if (version < MessagingService.VERSION_20)
@@ -183,10 +187,15 @@ public class IncomingTcpConnection extends Thread implements Closeable
             id = input.readInt();
 
         long timestamp = System.currentTimeMillis();
+        boolean isCrossNodeTimestamp = false;
         // make sure to readInt, even if cross_node_to is not enabled
         int partial = input.readInt(); //读timestamp
         if (DatabaseDescriptor.hasCrossNodeTimeout())
-            timestamp = (timestamp & 0xFFFFFFFF00000000L) | (((partial & 0xFFFFFFFFL) << 2) >> 2);
+        {
+            long crossNodeTimestamp = (timestamp & 0xFFFFFFFF00000000L) | (((partial & 0xFFFFFFFFL) << 2) >> 2);
+            isCrossNodeTimestamp = (timestamp != crossNodeTimestamp);
+            timestamp = crossNodeTimestamp;
+        }
 
         MessageIn message = MessageIn.read(input, version, id);
         if (message == null)
@@ -196,7 +205,7 @@ public class IncomingTcpConnection extends Thread implements Closeable
         }
         if (version <= MessagingService.current_version)
         {
-            MessagingService.instance().receive(message, id, timestamp);
+            MessagingService.instance().receive(message, id, timestamp, isCrossNodeTimestamp);
         }
         else
         {

@@ -18,14 +18,16 @@
 package org.apache.cassandra.io.util;
 
 import java.io.Closeable;
-import java.io.DataInput;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.SeekableByteChannel;
+
+import org.apache.cassandra.utils.vint.VIntCoding;
 
 import com.google.common.base.Preconditions;
 
@@ -41,20 +43,65 @@ import com.google.common.base.Preconditions;
  *
  * NIODataInputStream is not thread safe.
  */
-public class NIODataInputStream extends InputStream implements DataInput, Closeable
+public class NIODataInputStream extends InputStream implements DataInputPlus, Closeable
 {
     private final ReadableByteChannel rbc;
     private final ByteBuffer buf;
 
+    /*
+     *  Used when wrapping a fixed buffer of data instead of a channel. Should never attempt
+     *  to read from it.
+     */
+    private static final ReadableByteChannel emptyReadableByteChannel = new ReadableByteChannel()
+    {
+
+        @Override
+        public boolean isOpen()
+        {
+            return true;
+        }
+
+        @Override
+        public void close() throws IOException
+        {
+        }
+
+        @Override
+        public int read(ByteBuffer dst) throws IOException
+        {
+            throw new AssertionError();
+        }
+
+    };
 
     public NIODataInputStream(ReadableByteChannel rbc, int bufferSize)
     {
         Preconditions.checkNotNull(rbc);
-        Preconditions.checkArgument(bufferSize >= 8, "Buffer size must be large enough to accomadate a long/double");
+        Preconditions.checkArgument(bufferSize >= 9, "Buffer size must be large enough to accomadate a varint");
         this.rbc = rbc;
         buf = ByteBuffer.allocateDirect(bufferSize);
         buf.position(0);
         buf.limit(0);
+    }
+
+    protected NIODataInputStream(ByteBuffer buf, boolean duplicate)
+    {
+        Preconditions.checkNotNull(buf);
+        if (duplicate)
+            this.buf = buf.duplicate();
+        else
+            this.buf = buf;
+
+        this.rbc = emptyReadableByteChannel;
+    }
+
+    /*
+     * The decision to duplicate or not really needs to conscious since it a real impact
+     * in terms of thread safety so don't expose this constructor with an implicit default.
+     */
+    protected NIODataInputStream(ByteBuffer buf)
+    {
+        this(buf, false);
     }
 
     @Override
@@ -113,10 +160,10 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     /*
      * Refill the buffer, preserving any unread bytes remaining in the buffer
      */
-    private int readNext() throws IOException
+    protected int readNext() throws IOException
     {
         Preconditions.checkState(buf.remaining() != buf.capacity());
-        assert(buf.remaining() < 8);
+        assert(buf.remaining() < 9);
 
         /*
          * If there is data already at the start of the buffer, move the position to the end
@@ -132,9 +179,12 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         }
         else if (buf.hasRemaining())
         {
-            ByteBuffer dup = buf.duplicate();
+            //FastByteOperations.copy failed to do the copy so inline a simple one here
+            int position = buf.position();
+            int remaining  = buf.remaining();
             buf.clear();
-            buf.put(dup);
+            for (int ii = 0; ii < remaining; ii++)
+                buf.put(buf.get(position + ii));
         }
         else
         {
@@ -152,7 +202,7 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     }
 
     /*
-     * Read at least minimum bytes and throw EOF if that fails
+     * Read the minimum number of bytes and throw EOF if the minimum could not be read
      */
     private void readMinimum(int minimum) throws IOException
     {
@@ -171,11 +221,12 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     }
 
     /*
-     * Ensure the buffer contains the minimum number of readable bytes
+     * Ensure the buffer contains the minimum number of readable bytes, throws EOF if enough bytes aren't available
      */
     private void prepareReadPrimitive(int minimum) throws IOException
     {
-        if (buf.remaining() < minimum) readMinimum(minimum);
+        if (buf.remaining() < minimum)
+            readMinimum(minimum);
     }
 
     @Override
@@ -246,6 +297,42 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     {
         prepareReadPrimitive(8);
         return buf.getLong();
+    }
+
+    public long readVInt() throws IOException
+    {
+        return VIntCoding.decodeZigZag64(readUnsignedVInt());
+    }
+
+    public long readUnsignedVInt() throws IOException
+    {
+        //If 9 bytes aren't available use the slow path in VIntCoding
+        if (buf.remaining() < 9)
+            return VIntCoding.readUnsignedVInt(this);
+
+        byte firstByte = buf.get();
+
+        //Bail out early if this is one byte, necessary or it fails later
+        if (firstByte >= 0)
+            return firstByte;
+
+        int extraBytes = VIntCoding.numberOfExtraBytesToRead(firstByte);
+
+        int position = buf.position();
+        int extraBits = extraBytes * 8;
+
+        long retval = buf.getLong(position);
+        if (buf.order() == ByteOrder.LITTLE_ENDIAN)
+            retval = Long.reverseBytes(retval);
+        buf.position(position + extraBytes);
+
+        // truncate the bytes we read in excess of those we needed
+        retval >>>= 64 - extraBits;
+        // remove the non-value bits from the first byte
+        firstByte &= VIntCoding.firstByteValueMask(extraBytes);
+        // shift the first byte up to its correct position
+        retval |= (long) firstByte << extraBits;
+        return retval;
     }
 
     @Override

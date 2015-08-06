@@ -18,25 +18,28 @@
 package org.apache.cassandra.cql3.statements;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import com.google.common.base.Joiner;
 
 import org.apache.cassandra.auth.FunctionResource;
 import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
+import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.Event;
 
 /**
- * A <code>DROP FUNCTION</code> statement parsed from a CQL query.
+ * A {@code DROP FUNCTION} statement parsed from a CQL query.
  */
 public final class DropFunctionStatement extends SchemaAlteringStatement
 {
@@ -64,7 +67,17 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
     {
         argTypes = new ArrayList<>(argRawTypes.size());
         for (CQL3Type.Raw rawType : argRawTypes)
-            argTypes.add(rawType.prepare(typeKeyspace(rawType)).getType());
+        {
+            if (rawType.isFrozen())
+                throw new InvalidRequestException("The function arguments should not be frozen; remove the frozen<> modifier");
+
+            // UDT are not supported non frozen but we do not allow the frozen keyword for argument. So for the moment we
+            // freeze them here
+            if (!rawType.canBeNonFrozen())
+                rawType.freeze();
+
+            argTypes.add(rawType.prepare(functionName.keyspace).getType());
+        }
         return super.prepare();
     }
 
@@ -103,7 +116,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
     @Override
     public void validate(ClientState state)
     {
-        List<Function> olds = Functions.find(functionName);
+        Collection<Function> olds = Schema.instance.getFunctions(functionName);
 
         if (!argsPresent && olds != null && olds.size() > 1)
             throw new InvalidRequestException(String.format("'DROP FUNCTION %s' matches multiple function definitions; " +
@@ -132,9 +145,10 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException(getMissingFunctionError());
         }
 
-        List<Function> references = Functions.getReferencesTo(old);
-        if (!references.isEmpty())
-            throw new InvalidRequestException(String.format("Function '%s' still referenced by %s", old, references));
+        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(old.name().keyspace);
+        Collection<UDAggregate> referrers = ksm.functions.aggregatesUsingFunction(old);
+        if (!referrers.isEmpty())
+            throw new InvalidRequestException(String.format("Function '%s' still referenced by %s", old, referrers));
 
         MigrationManager.announceFunctionDrop((UDFunction) old, isLocalOnly);
 
@@ -148,16 +162,8 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         sb.append(functionName);
         if (argsPresent)
             sb.append(Joiner.on(", ").join(argRawTypes));
-        sb.append("'");
+        sb.append('\'');
         return sb.toString();
-    }
-
-    private String typeKeyspace(CQL3Type.Raw rawType)
-    {
-        String ks = rawType.keyspace();
-        if (ks != null)
-            return ks;
-        return functionName.keyspace;
     }
 
     private Function findFunction()
@@ -165,7 +171,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         Function old;
         if (argsPresent)
         {
-            old = Functions.find(functionName, argTypes);
+            old = Schema.instance.findFunction(functionName, argTypes).orElse(null);
             if (old == null || !(old instanceof ScalarFunction))
             {
                 return null;
@@ -173,11 +179,11 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         }
         else
         {
-            List<Function> olds = Functions.find(functionName);
-            if (olds == null || olds.isEmpty() || !(olds.get(0) instanceof ScalarFunction))
+            Collection<Function> olds = Schema.instance.getFunctions(functionName);
+            if (olds == null || olds.isEmpty() || !(olds.iterator().next() instanceof ScalarFunction))
                 return null;
 
-            old = olds.get(0);
+            old = olds.iterator().next();
         }
         return old;
     }

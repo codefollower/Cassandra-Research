@@ -24,19 +24,18 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import junit.framework.Assert;
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.FBUtilities;
 
 import static org.junit.Assert.assertEquals;
@@ -52,8 +51,7 @@ public class StreamTransferTaskTest
     {
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE1,
-                                    SimpleStrategy.class,
-                                    KSMetaData.optsWithRF(1),
+                                    KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD));
     }
 
@@ -76,7 +74,7 @@ public class StreamTransferTaskTest
 
         // create streaming task that streams those two sstables
         StreamTransferTask task = new StreamTransferTask(session, cfs.metadata.cfId);
-        for (SSTableReader sstable : cfs.getSSTables())
+        for (SSTableReader sstable : cfs.getLiveSSTables())
         {
             List<Range<Token>> ranges = new ArrayList<>();
             ranges.add(new Range<>(sstable.first.getToken(), sstable.last.getToken()));
@@ -89,7 +87,7 @@ public class StreamTransferTaskTest
         f.get();
 
         // when timeout runs on second file, task should be completed
-        f = task.scheduleTimeout(1, 1, TimeUnit.MILLISECONDS);
+        f = task.scheduleTimeout(1, 10, TimeUnit.MILLISECONDS);
         task.complete(1);
         try
         {
@@ -99,6 +97,7 @@ public class StreamTransferTaskTest
         catch (CancellationException ex)
         {
         }
+
         assertEquals(StreamSession.State.WAIT_COMPLETE, session.state());
 
         // when all streaming are done, time out task should not be scheduled.

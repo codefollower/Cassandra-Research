@@ -105,19 +105,7 @@ final class SelectorFactories implements Iterable<Selector.Factory>
      */
     public void addSelectorForOrdering(ColumnDefinition def, int index)
     {
-        factories.add(SimpleSelector.newFactory(def.name.toString(), index, def.type));
-    }
-
-    /**
-     * Checks if this <code>SelectorFactories</code> contains only factories for aggregates.
-     *
-     * @return <code>true</code> if this <code>SelectorFactories</code> contains only factories for aggregates,
-     * <code>false</code> otherwise.
-     */
-    public boolean containsOnlyAggregateFunctions()
-    {
-        int size = factories.size();
-        return  size != 0 && numberOfAggregateFactories == size;
+        factories.add(SimpleSelector.newFactory(def, index));
     }
 
     /**

@@ -24,9 +24,12 @@ import java.util.Map;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.config.MaterializedViewDefinition;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.transport.Event;
@@ -35,7 +38,7 @@ import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
 
 public class AlterTableStatement extends SchemaAlteringStatement
 {
-    public static enum Type
+    public enum Type
     {
         ADD, ALTER, DROP, OPTS, RENAME
     }
@@ -43,7 +46,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
     public final Type oType;
     public final CQL3Type.Raw validator;
     public final ColumnIdentifier.Raw rawColumnName;
-    private final CFPropDefs cfProps;
+    private final TableAttributes attrs;
     private final Map<ColumnIdentifier.Raw, ColumnIdentifier.Raw> renames;
     private final boolean isStatic; // Only for ALTER ADD
 
@@ -51,7 +54,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                                Type type,
                                ColumnIdentifier.Raw columnName,
                                CQL3Type.Raw validator,
-                               CFPropDefs cfProps,
+                               TableAttributes attrs,
                                Map<ColumnIdentifier.Raw, ColumnIdentifier.Raw> renames,
                                boolean isStatic)
     {
@@ -59,7 +62,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         this.oType = type;
         this.rawColumnName = columnName;
         this.validator = validator; // used only for ADD/ALTER commands
-        this.cfProps = cfProps;
+        this.attrs = attrs;
         this.renames = renames;
         this.isStatic = isStatic;
     }
@@ -78,6 +81,9 @@ public class AlterTableStatement extends SchemaAlteringStatement
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
         CFMetaData meta = validateColumnFamily(keyspace(), columnFamily());
+        if (meta.isMaterializedView())
+            throw new InvalidRequestException("Cannot use ALTER TABLE on Materialized View");
+
         CFMetaData cfm = meta.copy();
 
         //ALTER COLUMN FAMILY <CF> WITH时columnName为null，其他都不为null
@@ -91,16 +97,18 @@ public class AlterTableStatement extends SchemaAlteringStatement
             def = cfm.getColumnDefinition(columnName);
         }
 
+        List<CFMetaData> materializedViewUpdates = null;
+
         switch (oType)
         {
             case ADD:
                 assert columnName != null;
-                if (cfm.comparator.isDense())
+                if (cfm.isDense())
                     throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table");
 
                 if (isStatic)
                 {
-                    if (!cfm.comparator.isCompound())
+                    if (!cfm.isCompound())
                         throw new InvalidRequestException("Static columns are not allowed in COMPACT STORAGE tables");
                     if (cfm.clusteringColumns().isEmpty())
                         throw new InvalidRequestException("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
@@ -111,7 +119,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     switch (def.kind)
                     {
                         case PARTITION_KEY:
-                        case CLUSTERING_COLUMN:
+                        case CLUSTERING:
                             throw new InvalidRequestException(String.format("Invalid column name %s because it conflicts with a PRIMARY KEY part", columnName));
                         default:
                             throw new InvalidRequestException(String.format("Invalid column name %s because it conflicts with an existing column", columnName));
@@ -119,35 +127,52 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 }
 
                 // Cannot re-add a dropped counter column. See #7831.
-                if (meta.isCounter() && meta.getDroppedColumns().containsKey(columnName))
+                if (meta.isCounter() && meta.getDroppedColumns().containsKey(columnName.bytes))
                     throw new InvalidRequestException(String.format("Cannot re-add previously dropped counter column %s", columnName));
 
                 AbstractType<?> type = validator.getType();
                 if (type.isCollection() && type.isMultiCell())
                 {
-                    if (!cfm.comparator.supportCollections())
-                        throw new InvalidRequestException("Cannot use non-frozen collections with a non-composite PRIMARY KEY");
+                    if (!cfm.isCompound())
+                        throw new InvalidRequestException("Cannot use non-frozen collections in COMPACT STORAGE tables");
                     if (cfm.isSuper())
                         throw new InvalidRequestException("Cannot use non-frozen collections with super column families");
 
-                    // If there used to be a collection column with the same name (that has been dropped), it will
-                    // still be appear in the ColumnToCollectionType because or reasons explained on #6276. The same
-                    // reason mean that we can't allow adding a new collection with that name (see the ticket for details).
-                    if (cfm.comparator.hasCollections())
+                    // If there used to be a non-frozen collection column with the same name (that has been dropped),
+                    // we could still have some data using the old type, and so we can't allow adding a collection
+                    // with the same name unless the types are compatible (see #6276).
+                    CFMetaData.DroppedColumn dropped = cfm.getDroppedColumns().get(columnName.bytes);
+                    if (dropped != null && dropped.type instanceof CollectionType
+                        && dropped.type.isMultiCell() && !type.isCompatibleWith(dropped.type))
                     {
-                        CollectionType previous = cfm.comparator.collectionType() == null ? null : cfm.comparator.collectionType().defined.get(columnName.bytes);
-                        if (previous != null && !type.isCompatibleWith(previous))
-                            throw new InvalidRequestException(String.format("Cannot add a collection with the name %s " +
-                                        "because a collection with the same name and a different type has already been used in the past", columnName));
+                        String message =
+                            String.format("Cannot add a collection with the name %s because a collection with the same name"
+                                          + " and a different type (%s) has already been used in the past",
+                                          columnName,
+                                          dropped.type.asCQL3Type());
+                        throw new InvalidRequestException(message);
                     }
-
-                    cfm.comparator = cfm.comparator.addOrUpdateCollection(columnName, (CollectionType)type);
                 }
 
-                Integer componentIndex = cfm.comparator.isCompound() ? cfm.comparator.clusteringPrefixSize() : null;
                 cfm.addColumnDefinition(isStatic
-                                        ? ColumnDefinition.staticDef(cfm, columnName.bytes, type, componentIndex)
-                                        : ColumnDefinition.regularDef(cfm, columnName.bytes, type, componentIndex));
+                                        ? ColumnDefinition.staticDef(cfm, columnName.bytes, type)
+                                        : ColumnDefinition.regularDef(cfm, columnName.bytes, type));
+
+                // Adding a column to a table which has an include all materialized view requires the column to be added
+                // to the materialized view as well
+                for (MaterializedViewDefinition mv : cfm.getMaterializedViews())
+                {
+                    if (mv.includeAll)
+                    {
+                        CFMetaData indexCfm = Schema.instance.getCFMetaData(keyspace(), mv.viewName).copy();
+                        indexCfm.addColumnDefinition(isStatic
+                                                     ? ColumnDefinition.staticDef(indexCfm, columnName.bytes, type)
+                                                     : ColumnDefinition.regularDef(indexCfm, columnName.bytes, type));
+                        if (materializedViewUpdates == null)
+                            materializedViewUpdates = new ArrayList<>();
+                        materializedViewUpdates.add(indexCfm);
+                    }
+                }
                 break;
 
             case ALTER:
@@ -161,30 +186,15 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     case PARTITION_KEY:
                         if (validatorType instanceof CounterColumnType)
                             throw new InvalidRequestException(String.format("counter type is not supported for PRIMARY KEY part %s", columnName));
-                        if (cfm.getKeyValidator() instanceof CompositeType)
-                        {
-                            List<AbstractType<?>> oldTypes = ((CompositeType) cfm.getKeyValidator()).types;
-                            if (!validatorType.isValueCompatibleWith(oldTypes.get(def.position())))
-                                throw new ConfigurationException(String.format("Cannot change %s from type %s to type %s: types are incompatible.",
-                                                                               columnName,
-                                                                               oldTypes.get(def.position()).asCQL3Type(),
-                                                                               validator));
 
-                            List<AbstractType<?>> newTypes = new ArrayList<AbstractType<?>>(oldTypes);
-                            newTypes.set(def.position(), validatorType);
-                            cfm.keyValidator(CompositeType.getInstance(newTypes));
-                        }
-                        else
-                        {
-                            if (!validatorType.isValueCompatibleWith(cfm.getKeyValidator()))
-                                throw new ConfigurationException(String.format("Cannot change %s from type %s to type %s: types are incompatible.",
-                                                                               columnName,
-                                                                               cfm.getKeyValidator().asCQL3Type(),
-                                                                               validator));
-                            cfm.keyValidator(validatorType);
-                        }
+                        AbstractType<?> currentType = cfm.getKeyValidatorAsClusteringComparator().subtype(def.position());
+                        if (!validatorType.isValueCompatibleWith(currentType))
+                            throw new ConfigurationException(String.format("Cannot change %s from type %s to type %s: types are incompatible.",
+                                                                           columnName,
+                                                                           currentType.asCQL3Type(),
+                                                                           validator));
                         break;
-                    case CLUSTERING_COLUMN:
+                    case CLUSTERING:
                         AbstractType<?> oldType = cfm.comparator.subtype(def.position());
                         // Note that CFMetaData.validateCompatibility already validate the change we're about to do. However, the error message it
                         // sends is a bit cryptic for a CQL3 user, so validating here for a sake of returning a better error message
@@ -195,16 +205,6 @@ public class AlterTableStatement extends SchemaAlteringStatement
                                                                            oldType.asCQL3Type(),
                                                                            validator));
 
-                        cfm.comparator = cfm.comparator.setSubtype(def.position(), validatorType);
-                        break;
-                    case COMPACT_VALUE:
-                        // See below
-                        if (!validatorType.isValueCompatibleWith(cfm.getDefaultValidator()))
-                            throw new ConfigurationException(String.format("Cannot change %s from type %s to type %s: types are incompatible.",
-                                                                           columnName,
-                                                                           cfm.getDefaultValidator().asCQL3Type(),
-                                                                           validator));
-                        cfm.defaultValidator(validatorType);
                         break;
                     case REGULAR:
                     case STATIC:
@@ -218,23 +218,28 @@ public class AlterTableStatement extends SchemaAlteringStatement
                                                                            columnName,
                                                                            def.type.asCQL3Type(),
                                                                            validator));
-
-                        // For collections, if we alter the type, we need to update the comparator too since it includes
-                        // the type too (note that isValueCompatibleWith above has validated that the new type doesn't
-                        // change the underlying sorting order, but we still don't want to have a discrepancy between the type
-                        // in the comparator and the one in the ColumnDefinition as that would be dodgy).
-                        if (validatorType.isCollection() && validatorType.isMultiCell())
-                            cfm.comparator = cfm.comparator.addOrUpdateCollection(def.name, (CollectionType)validatorType);
-
                         break;
                 }
                 // In any case, we update the column definition
                 cfm.addOrReplaceColumnDefinition(def.withNewType(validatorType));
+
+                // We have to alter the schema of the materialized view table as well; it doesn't affect the definition however
+                for (MaterializedViewDefinition mv : cfm.getMaterializedViews())
+                {
+                    if (!mv.includes(columnName)) continue;
+                    // We have to use the pre-adjusted CFM, otherwise we can't resolve the Index
+                    CFMetaData indexCfm = Schema.instance.getCFMetaData(keyspace(), mv.viewName).copy();
+                    indexCfm.addOrReplaceColumnDefinition(def.withNewType(validatorType));
+
+                    if (materializedViewUpdates == null)
+                        materializedViewUpdates = new ArrayList<>();
+                    materializedViewUpdates.add(indexCfm);
+                }
                 break;
 
             case DROP:
                 assert columnName != null;
-                if (!cfm.isCQL3Table())
+                if (!cfm.isCQLTable())
                     throw new InvalidRequestException("Cannot drop columns from a non-CQL3 table");
                 if (def == null)
                     throw new InvalidRequestException(String.format("Column %s was not found in table %s", columnName, columnFamily()));
@@ -242,12 +247,12 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 switch (def.kind)
                 {
                     case PARTITION_KEY:
-                    case CLUSTERING_COLUMN:
+                    case CLUSTERING:
                         throw new InvalidRequestException(String.format("Cannot drop PRIMARY KEY part %s", columnName));
                     case REGULAR:
                     case STATIC:
                         ColumnDefinition toDelete = null;
-                        for (ColumnDefinition columnDef : cfm.regularAndStaticColumns())
+                        for (ColumnDefinition columnDef : cfm.partitionColumns())
                         {
                             if (columnDef.name.equals(columnName))
                             {
@@ -260,18 +265,44 @@ public class AlterTableStatement extends SchemaAlteringStatement
                         cfm.recordColumnDrop(toDelete);
                         break;
                 }
+
+                // If a column is dropped which is the target of a materialized view,
+                // then we need to drop the view.
+                // If a column is dropped which was selected into a materialized view,
+                // we need to drop that column from the included materialzied view table
+                // and definition.
+                boolean rejectAlter = false;
+                StringBuilder builder = new StringBuilder();
+                for (MaterializedViewDefinition mv : cfm.getMaterializedViews())
+                {
+                    if (!mv.includes(columnName)) continue;
+                    if (rejectAlter)
+                        builder.append(',');
+                    rejectAlter = true;
+                    builder.append(mv.viewName);
+                }
+                if (rejectAlter)
+                    throw new InvalidRequestException(String.format("Cannot drop column %s, depended on by materialized views (%s.{%s})",
+                                                                    columnName.toString(),
+                                                                    keyspace(),
+                                                                    builder.toString()));
                 break;
             case OPTS:
-                //在CqlParser中传进来的不会为null，也不可能是empty
-                if (cfProps == null)
+//<<<<<<< HEAD
+//                //在CqlParser中传进来的不会为null，也不可能是empty
+//                if (cfProps == null)
+//=======
+                if (attrs == null)
                     throw new InvalidRequestException("ALTER TABLE WITH invoked, but no parameters found");
+                attrs.validate();
 
-                cfProps.validate();
+                TableParams params = attrs.asAlteredTableParams(cfm.params);
 
-                if (meta.isCounter() && cfProps.getDefaultTimeToLive() > 0)
+                if (meta.isCounter() && params.defaultTimeToLive > 0)
                     throw new InvalidRequestException("Cannot set default_time_to_live on a table with counters");
 
-                cfProps.applyToCFMetadata(cfm);
+                cfm.params(params);
+
                 break;
             case RENAME:
                 for (Map.Entry<ColumnIdentifier.Raw, ColumnIdentifier.Raw> entry : renames.entrySet())
@@ -279,8 +310,34 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     ColumnIdentifier from = entry.getKey().prepare(cfm);
                     ColumnIdentifier to = entry.getValue().prepare(cfm);
                     cfm.renameColumn(from, to);
+
+                    // If the materialized view includes a renamed column, it must be renamed in the index table and the definition.
+                    for (MaterializedViewDefinition mv : cfm.getMaterializedViews())
+                    {
+                        if (!mv.includes(from)) continue;
+
+                        CFMetaData indexCfm = Schema.instance.getCFMetaData(keyspace(), mv.viewName).copy();
+                        ColumnIdentifier indexFrom = entry.getKey().prepare(indexCfm);
+                        ColumnIdentifier indexTo = entry.getValue().prepare(indexCfm);
+                        indexCfm.renameColumn(indexFrom, indexTo);
+
+                        MaterializedViewDefinition mvCopy = new MaterializedViewDefinition(mv);
+                        mvCopy.renameColumn(from, to);
+
+                        cfm.materializedViews(cfm.getMaterializedViews().replace(mvCopy));
+
+                        if (materializedViewUpdates == null)
+                            materializedViewUpdates = new ArrayList<>();
+                        materializedViewUpdates.add(indexCfm);
+                    }
                 }
                 break;
+        }
+
+        if (materializedViewUpdates != null)
+        {
+            for (CFMetaData mvUpdates : materializedViewUpdates)
+                MigrationManager.announceColumnFamilyUpdate(mvUpdates, false, isLocalOnly);
         }
 
         MigrationManager.announceColumnFamilyUpdate(cfm, false, isLocalOnly);

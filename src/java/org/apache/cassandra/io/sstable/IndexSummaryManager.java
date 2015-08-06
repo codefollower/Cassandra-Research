@@ -28,6 +28,7 @@ import javax.management.ObjectName;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.*;
 
+import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -192,7 +193,7 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
         for (Keyspace ks : Keyspace.all())
         {
             for (ColumnFamilyStore cfStore: ks.getColumnFamilyStores())
-                result.addAll(cfStore.getSSTables());
+                result.addAll(cfStore.getLiveSSTables());
         }
 
         return result;
@@ -202,6 +203,7 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
      * Returns a Pair of all compacting and non-compacting sstables.  Non-compacting sstables will be marked as
      * compacting.
      */
+    @SuppressWarnings("resource")
     private Pair<List<SSTableReader>, Map<UUID, LifecycleTransaction>> getCompactingAndNonCompactingSSTables()
     {
         List<SSTableReader> allCompacting = new ArrayList<>();
@@ -215,7 +217,7 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
                 do
                 {
                     View view = cfStore.getTracker().getView();
-                    allSSTables = view.sstables;
+                    allSSTables = ImmutableSet.copyOf(view.sstables(SSTableSet.CANONICAL));
                     nonCompacting = ImmutableSet.copyOf(view.getUncompacting(allSSTables));
                 }
                 while (null == (txn = cfStore.getTracker().tryModify(nonCompacting, OperationType.UNKNOWN)));
@@ -258,11 +260,12 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
         {
             for (SSTableReader sstable : ImmutableList.copyOf(txn.originals()))
             {
-                // We can't change the sampling level of sstables with the old format, because the serialization format
-                // doesn't include the sampling level.  Leave this one as it is.  (See CASSANDRA-8993 for details.)
-                logger.trace("SSTable {} cannot be re-sampled due to old sstable format", sstable);
                 if (!sstable.descriptor.version.hasSamplingLevel())
                 {
+                    // We can't change the sampling level of sstables with the old format, because the serialization format
+                    // doesn't include the sampling level.  Leave this one as it is.  (See CASSANDRA-8993 for details.)
+                    logger.trace("SSTable {} cannot be re-sampled due to old sstable format", sstable);
+
                     oldFormatSSTables.add(sstable);
                     txn.cancel(sstable);
                 }
@@ -329,8 +332,8 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
         long remainingSpace = memoryPoolCapacity;
         for (SSTableReader sstable : sstables)
         {
-            int minIndexInterval = sstable.metadata.getMinIndexInterval();
-            int maxIndexInterval = sstable.metadata.getMaxIndexInterval();
+            int minIndexInterval = sstable.metadata.params.minIndexInterval;
+            int maxIndexInterval = sstable.metadata.params.maxIndexInterval;
 
             double readsPerSec = sstable.getReadMeter() == null ? 0.0 : sstable.getReadMeter().fifteenMinuteRate();
             long idealSpace = Math.round(remainingSpace * (readsPerSec / totalReadsPerSec));

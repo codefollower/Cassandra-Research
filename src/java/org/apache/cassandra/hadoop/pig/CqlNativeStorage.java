@@ -34,9 +34,6 @@ import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.TableMetadata;
 import com.datastax.driver.core.exceptions.NoHostAvailableException;
-import org.apache.cassandra.db.BufferCell;
-import org.apache.cassandra.db.Cell;
-import org.apache.cassandra.db.composites.CellNames;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -95,7 +92,6 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
     private String nativePort;
     private String nativeCoreConnections;
     private String nativeMaxConnections;
-    private String nativeMinSimultReqs;
     private String nativeMaxSimultReqs;
     private String nativeConnectionTimeout;
     private String nativeReadConnectionTimeout;
@@ -160,9 +156,9 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
                 ByteBuffer columnValue = row.getBytesUnsafe(cdef.getName());
                 if (columnValue != null)
                 {
-                    Cell cell = new BufferCell(CellNames.simpleDense(ByteBufferUtil.bytes(cdef.getName())), columnValue);
                     AbstractType<?> validator = getValidatorMap(tableMetadata).get(ByteBufferUtil.bytes(cdef.getName()));
-                    setTupleValue(tuple, i, cqlColumnToObj(cell, tableMetadata), validator);
+                    setTupleValue(tuple, i, cqlColumnToObj(ByteBufferUtil.bytes(cdef.getName()), columnValue,
+                                                           tableMetadata), validator);
                 }
                 else
                     tuple.set(i, null);
@@ -177,12 +173,11 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
     }
 
     /** convert a cql column to an object */
-    private Object cqlColumnToObj(Cell col, TableInfo cfDef) throws IOException
+    private Object cqlColumnToObj(ByteBuffer name, ByteBuffer columnValue, TableInfo cfDef) throws IOException
     {
         // standard
         Map<ByteBuffer,AbstractType> validators = getValidatorMap(cfDef);
-        ByteBuffer cellName = col.name().toByteBuffer();
-        return StorageHelper.cassandraToObj(validators.get(cellName), col.value(), nativeProtocolVersion);
+        return StorageHelper.cassandraToObj(validators.get(name), columnValue, nativeProtocolVersion);
     }
 
     /** set the value to the position of the tuple */
@@ -577,8 +572,6 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
             CqlConfigHelper.setInputCoreConnections(conf, nativeCoreConnections);
         if (nativeMaxConnections != null)
             CqlConfigHelper.setInputMaxConnections(conf, nativeMaxConnections);
-        if (nativeMinSimultReqs != null)
-            CqlConfigHelper.setInputMinSimultReqPerConnections(conf, nativeMinSimultReqs);
         if (nativeMaxSimultReqs != null)
             CqlConfigHelper.setInputMaxSimultReqPerConnections(conf, nativeMaxSimultReqs);
         if (nativeConnectionTimeout != null)
@@ -699,9 +692,8 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
         // Only get the schema if we haven't already gotten it
         if (!properties.containsKey(signature))
         {
-            try
+            try (Session client = CqlConfigHelper.getInputCluster(ConfigHelper.getInputInitialAddress(conf), conf).connect())
             {
-                Session client = CqlConfigHelper.getInputCluster(ConfigHelper.getInputInitialAddress(conf), conf).connect();
                 client.execute("USE " + keyspace);
 
                 // compose the CfDef for the columfamily
@@ -729,9 +721,11 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
     {
         TableInfo tableInfo = new TableInfo(cfDef);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream oos = new ObjectOutputStream( baos );
-        oos.writeObject( tableInfo );
-        oos.close();
+        try (ObjectOutputStream oos = new ObjectOutputStream( baos ))
+        {
+            oos.writeObject(tableInfo);
+        }
+
         return new String( Base64Coder.encode(baos.toByteArray()) );
     }
 
@@ -739,11 +733,11 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
     protected static TableInfo cfdefFromString(String st) throws IOException, ClassNotFoundException
     {
         byte [] data = Base64Coder.decode( st );
-        ObjectInputStream ois = new ObjectInputStream(
-                new ByteArrayInputStream(  data ) );
-        Object o  = ois.readObject();
-        ois.close();
-        return (TableInfo)o;
+        try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data)))
+        {
+            Object o = ois.readObject();
+            return (TableInfo)o;
+        }
     }
 
     /** decompose the query to store the parameters in a map */
@@ -795,8 +789,6 @@ public class CqlNativeStorage extends LoadFunc implements StoreFuncInterface, Lo
                     nativeCoreConnections = urlQuery.get("core_conns");
                 if (urlQuery.containsKey("max_conns"))
                     nativeMaxConnections = urlQuery.get("max_conns");
-                if (urlQuery.containsKey("min_simult_reqs"))
-                    nativeMinSimultReqs = urlQuery.get("min_simult_reqs");
                 if (urlQuery.containsKey("max_simult_reqs"))
                     nativeMaxSimultReqs = urlQuery.get("max_simult_reqs");
                 if (urlQuery.containsKey("native_timeout"))

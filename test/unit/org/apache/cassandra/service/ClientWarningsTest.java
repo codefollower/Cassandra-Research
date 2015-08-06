@@ -22,8 +22,9 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.QueryOptions;
+import org.apache.cassandra.cql3.CQLTester;
+import org.apache.cassandra.dht.ByteOrderedPartitioner;
 import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.transport.Server;
 import org.apache.cassandra.transport.SimpleClient;

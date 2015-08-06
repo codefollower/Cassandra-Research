@@ -132,7 +132,7 @@ public class MultiColumnRelation extends Relation
     {
         List<ColumnDefinition> receivers = receivers(cfm);
         Term term = toTerm(receivers, getValue(), cfm.ksName, boundNames);
-        return new MultiColumnRestriction.EQ(receivers, term);
+        return new MultiColumnRestriction.EQRestriction(receivers, term);
     }
 
     @Override
@@ -144,9 +144,9 @@ public class MultiColumnRelation extends Relation
         if (terms == null)
         {
             Term term = toTerm(receivers, getValue(), cfm.ksName, boundNames);
-            return new MultiColumnRestriction.InWithMarker(receivers, (AbstractMarker) term);
+            return new MultiColumnRestriction.InRestrictionWithMarker(receivers, (AbstractMarker) term);
         }
-        return new MultiColumnRestriction.InWithValues(receivers, terms);
+        return new MultiColumnRestriction.InRestrictionWithValues(receivers, terms);
     }
 
     @Override
@@ -157,7 +157,7 @@ public class MultiColumnRelation extends Relation
     {
         List<ColumnDefinition> receivers = receivers(cfm);
         Term term = toTerm(receivers(cfm), getValue(), cfm.ksName, boundNames);
-        return new MultiColumnRestriction.Slice(receivers, bound, inclusive, term);
+        return new MultiColumnRestriction.SliceRestriction(receivers, bound, inclusive, term);
     }
 
     @Override

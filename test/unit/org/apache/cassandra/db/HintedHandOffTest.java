@@ -1,5 +1,5 @@
 /*
- * 
+ *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -7,16 +7,16 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
  * KIND, either express or implied.  See the License for the
  * specific language governing permissions and limitations
  * under the License.
- * 
+ *
  */
 package org.apache.cassandra.db;
 
@@ -24,40 +24,44 @@ import java.net.InetAddress;
 import java.util.Map;
 import java.util.UUID;
 
+import com.google.common.collect.Iterators;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import com.google.common.collect.Iterators;
-
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.Util;
-import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.cql3.UntypedResultSet;
-import org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 
-import static org.junit.Assert.assertEquals;
 import static org.apache.cassandra.cql3.QueryProcessor.executeInternal;
+import static org.junit.Assert.assertEquals;
 
 public class HintedHandOffTest
 {
 
     public static final String KEYSPACE4 = "HintedHandOffTest4";
     public static final String STANDARD1_CF = "Standard1";
-    public static final String COLUMN1 = "column1";
 
     @BeforeClass
     public static void defineSchema() throws ConfigurationException
     {
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE4,
-                                    SimpleStrategy.class,
-                                    KSMetaData.optsWithRF(1),
+                                    KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE4, STANDARD1_CF));
+    }
+
+    @Before
+    public void clearHints()
+    {
+        Keyspace systemKeyspace = Keyspace.open("system");
+        ColumnFamilyStore hintStore = systemKeyspace.getColumnFamilyStore(SystemKeyspace.HINTS);
+        hintStore.clearUnsafe();
     }
 
     // Test compaction of hints column family. It shouldn't remove all columns on compaction.
@@ -69,13 +73,10 @@ public class HintedHandOffTest
         ColumnFamilyStore hintStore = systemKeyspace.getColumnFamilyStore(SystemKeyspace.HINTS);
         hintStore.clearUnsafe();
         hintStore.metadata.gcGraceSeconds(36000); // 10 hours
-        hintStore.setCompactionStrategyClass(SizeTieredCompactionStrategy.class.getCanonicalName());
         hintStore.disableAutoCompaction();
 
         // insert 1 hint
-        Mutation rm = new Mutation(KEYSPACE4, ByteBufferUtil.bytes(1));
-        rm.add(STANDARD1_CF, Util.cellname(COLUMN1), ByteBufferUtil.EMPTY_BYTE_BUFFER, System.currentTimeMillis());
-
+        Mutation rm = mutation();
         HintedHandOffManager.instance.hintFor(rm,
                                               System.currentTimeMillis(),
                                               HintedHandOffManager.calculateHintTTL(rm),
@@ -84,14 +85,14 @@ public class HintedHandOffTest
 
         // flush data to disk
         hintStore.forceBlockingFlush();
-        assertEquals(1, hintStore.getSSTables().size());
+        assertEquals(1, hintStore.getLiveSSTables().size());
 
         // submit compaction
         HintedHandOffManager.instance.compact();
 
         // single row should not be removed because of gc_grace_seconds
         // is 10 hours and there are no any tombstones in sstable
-        assertEquals(1, hintStore.getSSTables().size());
+        assertEquals(1, hintStore.getLiveSSTables().size());
     }
 
     @Test
@@ -109,14 +110,8 @@ public class HintedHandOffTest
     @Test(timeout = 5000)
     public void testTruncateHints() throws Exception
     {
-        Keyspace systemKeyspace = Keyspace.open("system");
-        ColumnFamilyStore hintStore = systemKeyspace.getColumnFamilyStore(SystemKeyspace.HINTS);
-        hintStore.clearUnsafe();
-
         // insert 1 hint
-        Mutation rm = new Mutation(KEYSPACE4, ByteBufferUtil.bytes(1));
-        rm.add(STANDARD1_CF, Util.cellname(COLUMN1), ByteBufferUtil.EMPTY_BYTE_BUFFER, System.currentTimeMillis());
-
+        Mutation rm = mutation();
         HintedHandOffManager.instance.hintFor(rm,
                                               System.currentTimeMillis(),
                                               HintedHandOffManager.calculateHintTTL(rm),
@@ -133,6 +128,17 @@ public class HintedHandOffTest
         }
 
         assert getNoOfHints() == 0;
+    }
+
+    private Mutation mutation()
+    {
+        // get a random mutation to write a hint for
+        return new RowUpdateBuilder(Keyspace.open(KEYSPACE4).getColumnFamilyStore(STANDARD1_CF).metadata,
+                                    FBUtilities.timestampMicros(),
+                                    ByteBufferUtil.bytes(1))
+               .clustering("cluster_col0")
+               .add("val", "value0")
+               .build();
     }
 
     private int getNoOfHints()
