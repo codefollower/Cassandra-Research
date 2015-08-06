@@ -56,6 +56,7 @@ public final class ReplicationParams
         // Attempt to instantiate the ARS, which will throw a ConfigurationException if the options aren't valid.
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
         IEndpointSnitch eps = DatabaseDescriptor.getEndpointSnitch();
+        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
         AbstractReplicationStrategy.validateReplicationStrategy(name, klass, tmd, eps, options);
     }
 

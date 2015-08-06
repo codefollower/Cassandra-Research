@@ -26,6 +26,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 
 import static java.lang.String.format;
 
+//主要用于读，见org.apache.cassandra.service.AbstractReadExecutor.getReadExecutor(ReadCommand, ConsistencyLevel)
 public final class SpeculativeRetryParam
 {
     public enum Kind
@@ -88,6 +89,7 @@ public final class SpeculativeRetryParam
 
     public static SpeculativeRetryParam fromString(String value)
     {
+        //例如: WITH speculative_retry = '60ms'
         if (value.toLowerCase().endsWith("ms"))
         {
             try
@@ -100,6 +102,7 @@ public final class SpeculativeRetryParam
             }
         }
 
+        //例如: WITH speculative_retry = '90percentile'
         if (value.toUpperCase().endsWith(Kind.PERCENTILE.toString()))
         {
             double threshold;
@@ -120,6 +123,8 @@ public final class SpeculativeRetryParam
                                                     TableParams.Option.SPECULATIVE_RETRY));
         }
 
+        //例如: WITH speculative_retry = 'ALWAYS'
+        //或 WITH speculative_retry = 'NONE'
         if (value.equals(Kind.NONE.toString()))
             return NONE;
 

@@ -18,10 +18,8 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.List;
 import java.util.Locale;
-import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentMap;
 
 import com.google.common.collect.MapMaker;
@@ -35,7 +33,6 @@ import org.apache.cassandra.cql3.selection.SimpleSelector;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.db.marshal.UTF8Type;
-import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
@@ -44,17 +41,10 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  * Represents an identifer for a CQL column definition.
  * TODO : should support light-weight mode without text representation for when not interned
  */
-//<<<<<<< HEAD
-////表示一个列名
-//public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Selectable implements IMeasurableMemory
-//{
-//    public final ByteBuffer bytes; //列名字节形式
-//    private final String text; //列名文本形式
-//=======
 public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Selectable implements IMeasurableMemory, Comparable<ColumnIdentifier>
 {
-    public final ByteBuffer bytes;
-    private final String text;
+    public final ByteBuffer bytes; //列名字节形式
+    private final String text; //列名文本形式
     /**
      * since these objects are compared frequently, we stash an efficiently compared prefix of the bytes, in the expectation
      * that the majority of comparisons can be answered by this value only

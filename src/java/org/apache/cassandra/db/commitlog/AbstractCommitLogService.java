@@ -125,7 +125,7 @@ public abstract class AbstractCommitLogService
                             boolean logged = NoSpamLogger.log(
                                     logger,
                                     NoSpamLogger.Level.WARN,
-                                    5,
+                                    60,//5, //我改过了
                                     TimeUnit.MINUTES,
                                     "Out of {} commit log syncs over the past {}s with average duration of {}ms, {} have exceeded the configured commit interval by an average of {}ms",
                                                       syncCount, (now - firstLagAt) / 1000, String.format("%.2f", (double) totalSyncDuration / syncCount), lagCount, String.format("%.2f", (double) syncExceededIntervalBy / lagCount));

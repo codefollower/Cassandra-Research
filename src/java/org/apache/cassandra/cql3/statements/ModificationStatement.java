@@ -575,11 +575,8 @@ public abstract class ModificationStatement implements CQLStatement
         return false;
     }
 
-//<<<<<<< HEAD
-//   //在executeWithoutCondition时使用，但是在executeWithCondition时不使用
-//   //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex需要读
-//    protected Map<ByteBuffer, CQL3Row> readRequiredRows(Collection<ByteBuffer> partitionKeys, Composite clusteringPrefix, boolean local, ConsistencyLevel cl)
-//=======
+    //在executeWithoutCondition时使用，但是在executeWithCondition时不使用
+    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex需要读
     protected Map<DecoratedKey, Partition> readRequiredLists(Collection<ByteBuffer> partitionKeys, CBuilder cbuilder, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {

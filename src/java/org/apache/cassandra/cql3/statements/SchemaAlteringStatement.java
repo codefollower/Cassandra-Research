@@ -92,7 +92,7 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
      */
     public abstract boolean announceMigration(boolean isLocalOnly) throws RequestValidationException;
 
-    //没有子类覆盖此方法
+    //只有DropIndexStatement子类覆盖了此方法
     public ResultMessage execute(QueryState state, QueryOptions options) throws RequestValidationException
     {
         // If an IF [NOT] EXISTS clause was used, this may not result in an actual schema change.  To avoid doing

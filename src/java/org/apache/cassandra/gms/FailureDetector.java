@@ -246,7 +246,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         lastInterpret = now;
         if (diff > MAX_LOCAL_PAUSE_IN_NANOS)
         {
-            logger.warn("Not marking nodes down due to local pause of {} > {}", diff, MAX_LOCAL_PAUSE_IN_NANOS);
+            //logger.warn("Not marking nodes down due to local pause of {} > {}", diff, MAX_LOCAL_PAUSE_IN_NANOS);
             wasPaused = true;
             return;
         }

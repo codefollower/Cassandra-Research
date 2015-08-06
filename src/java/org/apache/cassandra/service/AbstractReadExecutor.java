@@ -143,13 +143,8 @@ public abstract class AbstractReadExecutor
      */
     public static AbstractReadExecutor getReadExecutor(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel) throws UnavailableException
     {
-//<<<<<<< HEAD
-//        Keyspace keyspace = Keyspace.open(command.ksName);
-//        //getLiveSortedEndpoints会得到一个最合适的节点列表
-//        List<InetAddress> allReplicas = StorageProxy.getLiveSortedEndpoints(keyspace, command.key);
-//        ReadRepairDecision repairDecision = Schema.instance.getCFMetaData(command.ksName, command.cfName).newReadRepairDecision();
-//=======
         Keyspace keyspace = Keyspace.open(command.metadata().ksName);
+        //getLiveSortedEndpoints会得到一个最合适的节点列表
         List<InetAddress> allReplicas = StorageProxy.getLiveSortedEndpoints(keyspace, command.partitionKey());
         ReadRepairDecision repairDecision = command.metadata().newReadRepairDecision();
         List<InetAddress> targetReplicas = consistencyLevel.filterForQuery(keyspace, allReplicas, repairDecision);

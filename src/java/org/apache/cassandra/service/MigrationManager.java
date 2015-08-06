@@ -248,10 +248,7 @@ public class MigrationManager
         announceNewKeyspace(ksm, false);
     }
 
-//<<<<<<< HEAD
-//    //通告有新的Keyspace了，会更新本地和其它节点
-//    public static void announceNewKeyspace(KSMetaData ksm, boolean announceLocally) throws ConfigurationException
-//=======
+    //通告有新的Keyspace了，会更新本地和其它节点
     public static void announceNewKeyspace(KeyspaceMetadata ksm, boolean announceLocally) throws ConfigurationException
     {
         announceNewKeyspace(ksm, FBUtilities.timestampMicros(), announceLocally); //获得当前时间，按微妙算

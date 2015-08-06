@@ -32,11 +32,8 @@ import org.apache.cassandra.transport.Event;
 public class CreateKeyspaceStatement extends SchemaAlteringStatement
 {
     private final String name;
-//<<<<<<< HEAD
-//    //org.apache.cassandra.cql3.CqlParser中会先new出一个KSPropDefs实例，然后解析CREATE KEYSPACE时
-//    //碰到属性相关的配置则调用KSPropDefs的方法，最后再构造CreateKeyspaceStatement实例
-//    private final KSPropDefs attrs;
-//=======
+    //org.apache.cassandra.cql3.CqlParser中会先new出一个KeyspaceAttributes实例，然后解析CREATE KEYSPACE时
+    //碰到属性相关的配置则调用KeyspaceAttributes的方法，最后再构造CreateKeyspaceStatement实例
     private final KeyspaceAttributes attrs;
     private final boolean ifNotExists;
 
@@ -91,14 +88,6 @@ public class CreateKeyspaceStatement extends SchemaAlteringStatement
         // The strategy is validated through KSMetaData.validate() in announceNewKeyspace below.
         // However, for backward compatibility with thrift, this doesn't validate unexpected options yet,
         // so doing proper validation here.
-//<<<<<<< HEAD
-//        //验证ReplicationStrategy相关的参数是否正确，不同子类支持不同的参数
-//        AbstractReplicationStrategy.validateReplicationStrategy(name,
-//                                                                AbstractReplicationStrategy.getClass(attrs.getReplicationStrategyClass()),
-//                                                                StorageService.instance.getTokenMetadata(),
-//                                                                DatabaseDescriptor.getEndpointSnitch(),
-//                                                                attrs.getReplicationOptions());
-//=======
         KeyspaceParams params = attrs.asNewKeyspaceParams();
         params.validate(name);
         if (params.replication.klass.equals(LocalStrategy.class))
