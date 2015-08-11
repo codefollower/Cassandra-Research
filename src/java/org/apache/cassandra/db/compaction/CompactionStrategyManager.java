@@ -21,6 +21,7 @@ package org.apache.cassandra.db.compaction;
 import java.util.*;
 import java.util.concurrent.Callable;
 
+import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +52,14 @@ public class CompactionStrategyManager implements INotificationConsumer
     private volatile boolean enabled = true;
     public boolean isActive = true;
     private volatile CompactionParams params;
+    /*
+        We keep a copy of the schema compaction parameters here to be able to decide if we
+        should update the compaction strategy in maybeReloadCompactionStrategy() due to an ALTER.
+
+        If a user changes the local compaction strategy and then later ALTERs a compaction parameter,
+        we will use the new compaction parameters.
+     */
+    private CompactionParams schemaCompactionParams;
 
     public CompactionStrategyManager(ColumnFamilyStore cfs)
     {
@@ -147,10 +156,8 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public synchronized void maybeReload(CFMetaData metadata)
     {
-        if (repaired != null && repaired.getClass().equals(metadata.params.compaction.klass())
-                && unrepaired != null && unrepaired.getClass().equals(metadata.params.compaction.klass())
-                && repaired.options.equals(metadata.params.compaction.options()) // todo: assumes all have the same options
-                && unrepaired.options.equals(metadata.params.compaction.options()))
+        // compare the old schema configuration to the new one, ignore any locally set changes.
+        if (metadata.params.compaction.equals(schemaCompactionParams))
             return;
         reload(metadata);
     }
@@ -164,13 +171,9 @@ public class CompactionStrategyManager implements INotificationConsumer
     public synchronized void reload(CFMetaData metadata)
     {
         boolean disabledWithJMX = !enabled && shouldBeEnabled();
-        if (repaired != null)
-            repaired.shutdown();
-        if (unrepaired != null)
-            unrepaired.shutdown();
-        repaired = metadata.createCompactionStrategyInstance(cfs);
-        unrepaired = metadata.createCompactionStrategyInstance(cfs);
-        params = metadata.params.compaction;
+        setStrategy(metadata.params.compaction);
+        schemaCompactionParams = metadata.params.compaction;
+
         if (disabledWithJMX || !shouldBeEnabled())
             disable();
         else
@@ -340,7 +343,7 @@ public class CompactionStrategyManager implements INotificationConsumer
      * @return
      */
     @SuppressWarnings("resource")
-    public synchronized AbstractCompactionStrategy.ScannerList getScanners(Collection<SSTableReader> sstables, Range<Token> range)
+    public synchronized AbstractCompactionStrategy.ScannerList getScanners(Collection<SSTableReader> sstables,  Collection<Range<Token>> ranges)
     {
         List<SSTableReader> repairedSSTables = new ArrayList<>();
         List<SSTableReader> unrepairedSSTables = new ArrayList<>();
@@ -352,19 +355,26 @@ public class CompactionStrategyManager implements INotificationConsumer
                 unrepairedSSTables.add(sstable);
         }
 
+        Set<ISSTableScanner> scanners = new HashSet<>(sstables.size());
 
-        AbstractCompactionStrategy.ScannerList repairedScanners = repaired.getScanners(repairedSSTables, range);
-        AbstractCompactionStrategy.ScannerList unrepairedScanners = unrepaired.getScanners(unrepairedSSTables, range);
+        for (Range<Token> range : ranges)
+        {
+            AbstractCompactionStrategy.ScannerList repairedScanners = repaired.getScanners(repairedSSTables, range);
+            AbstractCompactionStrategy.ScannerList unrepairedScanners = unrepaired.getScanners(unrepairedSSTables, range);
 
-        List<ISSTableScanner> scanners = new ArrayList<>(repairedScanners.scanners.size() + unrepairedScanners.scanners.size());
-        scanners.addAll(repairedScanners.scanners);
-        scanners.addAll(unrepairedScanners.scanners);
-        return new AbstractCompactionStrategy.ScannerList(scanners);
+            for (ISSTableScanner scanner : Iterables.concat(repairedScanners.scanners, unrepairedScanners.scanners))
+            {
+                if (!scanners.add(scanner))
+                    scanner.close();
+            }
+        }
+
+        return new AbstractCompactionStrategy.ScannerList(new ArrayList<>(scanners));
     }
 
     public synchronized AbstractCompactionStrategy.ScannerList getScanners(Collection<SSTableReader> sstables)
     {
-        return getScanners(sstables, null);
+        return getScanners(sstables, Collections.singleton(null));
     }
 
     public Collection<Collection<SSTableReader>> groupSSTablesForAntiCompaction(Collection<SSTableReader> sstablesToGroup)
@@ -441,5 +451,32 @@ public class CompactionStrategyManager implements INotificationConsumer
     public List<AbstractCompactionStrategy> getStrategies()
     {
         return Arrays.asList(repaired, unrepaired);
+    }
+
+    public synchronized void setNewLocalCompactionStrategy(CompactionParams params)
+    {
+        logger.info("Switching local compaction strategy from {} to {}}", this.params, params);
+        setStrategy(params);
+        if (shouldBeEnabled())
+            enable();
+        else
+            disable();
+        startup();
+    }
+
+    private void setStrategy(CompactionParams params)
+    {
+        if (repaired != null)
+            repaired.shutdown();
+        if (unrepaired != null)
+            unrepaired.shutdown();
+        repaired = CFMetaData.createCompactionStrategyInstance(cfs, params);
+        unrepaired = CFMetaData.createCompactionStrategyInstance(cfs, params);
+        this.params = params;
+    }
+
+    public CompactionParams getCompactionParams()
+    {
+        return params;
     }
 }

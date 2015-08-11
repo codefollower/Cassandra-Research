@@ -58,7 +58,11 @@ Upgrading
      be done by setting the new option `enabled` to `false`.
    - Only map syntax is now allowed for caching options. ALL/NONE/KEYS_ONLY/ROWS_ONLY syntax
      has been deprecated since 2.1.0 and is being removed in 3.0.0.
-
+   - Batchlog entries are now stored in a new table - system.batches.
+     The old one has been deprecated.
+   - JMX methods set/getCompactionStrategyClass have been removed, use
+     set/getCompactionParameters or set/getCompactionParametersJson instead.
+   - SizeTieredCompactionStrategy parameter cold_reads_to_omit has been removed.
 
 2.2
 ===
@@ -146,7 +150,34 @@ New features
      to convert from timestamp into date type and bigint raw value.
    - The toTimestamp(date) and toUnixTimestamp(date) functions have been added to allow
      to convert from date into timestamp type and bigint raw value.
+   - SizeTieredCompactionStrategy parameter cold_reads_to_omit has been removed.
 
+
+2.1.9
+=====
+
+Upgrading
+---------
+    - cqlsh will now display timestamps with a UTC timezone. Previously,
+      timestamps were displayed with the local timezone.
+    - Commit log files are no longer recycled by default, due to negative
+      performance implications. This can be enabled again with the 
+      commitlog_segment_recycling option in your cassandra.yaml 
+    - JMX methods set/getCompactionStrategyClass have been deprecated, use
+      set/getCompactionParameters/set/getCompactionParametersJson instead
+
+
+2.1.8
+=====
+
+Upgrading
+---------
+    - Nothing specific to this release, but please see 2.1 if you are upgrading
+      from a previous version.
+
+
+2.1.7
+=====
 
 Upgrading
 ---------

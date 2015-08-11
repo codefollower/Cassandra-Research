@@ -242,13 +242,11 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
                 final DataResolver repairResolver = new DataResolver(keyspace, command, consistencyLevel, endpoints.size());
                 AsyncRepairCallback repairHandler = new AsyncRepairCallback(repairResolver, endpoints.size());
 
-//<<<<<<< HEAD
-//                MessageOut<ReadCommand> message = ((ReadCommand) command).createMessage();
-//                //如果某个key对应三个节点，endpoints并不是所有这3个节点，可能是两个
-//=======
-                MessageOut<ReadCommand> message = command.createMessage();
-                for (InetAddress endpoint : endpoints)
+                for (InetAddress endpoint : endpoints) //如果某个key对应三个节点，endpoints并不是所有这3个节点，可能是两个
+                {
+                    MessageOut<ReadCommand> message = command.createMessage(MessagingService.instance().getVersion(endpoint));
                     MessagingService.instance().sendRR(message, endpoint, repairHandler);
+                }
             }
         }
     }

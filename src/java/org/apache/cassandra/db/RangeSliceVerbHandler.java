@@ -15,12 +15,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.concurrent;
+package org.apache.cassandra.db;
 
-/**
- * @see org.apache.cassandra.metrics.ThreadPoolMetrics
- */
-@Deprecated
-public interface JMXEnabledScheduledThreadPoolExecutorMBean extends JMXEnabledThreadPoolExecutorMBean
+import org.apache.cassandra.io.IVersionedSerializer;
+
+public class RangeSliceVerbHandler extends ReadCommandVerbHandler
 {
+    @Override
+    protected IVersionedSerializer<ReadResponse> serializer()
+    {
+        return ReadResponse.legacyRangeSliceReplySerializer;
+    }
 }

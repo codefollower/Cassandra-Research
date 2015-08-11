@@ -479,7 +479,7 @@ public class TransactionLogs extends Transactional.AbstractTransactional impleme
         }
         catch (NoSuchFileException e)
         {
-            logger.warn("Unable to delete {} as it does not exist", file);
+            logger.error("Unable to delete {} as it does not exist", file);
         }
         catch (IOException e)
         {
@@ -592,7 +592,7 @@ public class TransactionLogs extends Transactional.AbstractTransactional impleme
                 return;
             }
 
-            if (tracker != null && !wasNew)
+            if (tracker != null && tracker.cfstore != null && !wasNew)
                 tracker.cfstore.metric.totalDiskSpaceUsed.dec(sizeOnDisk);
 
             // release the referent to the parent so that the all transaction files can be released

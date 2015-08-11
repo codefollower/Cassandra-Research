@@ -26,6 +26,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
+import javax.annotation.Nullable;
+
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -59,6 +61,7 @@ import org.apache.cassandra.db.rows.ColumnData;
 import org.apache.cassandra.db.rows.ComplexColumnData;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowIterator;
+import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.pager.QueryPager;
 
 /**
@@ -216,9 +219,14 @@ public class MaterializedView
         if (!partition.deletionInfo().isLive())
             return true;
 
-        // Check whether the update touches any of the columns included in the view
+        // Check each row for deletion or update
         for (Row row : partition)
         {
+            if (row.hasComplexDeletion())
+                return true;
+            if (!row.deletion().isLive())
+                return true;
+
             for (ColumnData data : row)
             {
                 if (getViewCfs().metadata.getColumnDefinition(data.column().name) != null)
@@ -629,6 +637,20 @@ public class MaterializedView
         CompactionManager.instance.submitMaterializedViewBuilder(builder);
     }
 
+    @Nullable
+    public static CFMetaData findBaseTable(String keyspace, String view)
+    {
+        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(keyspace);
+        if (ksm == null)
+            return null;
+
+        for (CFMetaData cfm : ksm.tables)
+            if (cfm.getMaterializedViews().get(view).isPresent())
+                return cfm;
+
+        return null;
+    }
+
     /**
      * @return CFMetaData which represents the definition given
      */
@@ -666,7 +688,7 @@ public class MaterializedView
             viewBuilder.addClusteringColumn(ident, properties.getReversableType(ident, column.type));
         }
 
-        for (ColumnDefinition column : baseCf.partitionColumns().regulars.columns)
+        for (ColumnDefinition column : baseCf.partitionColumns().regulars)
         {
             if (column != nonPkTarget && (includeAll || included.contains(column)))
             {

@@ -67,6 +67,7 @@ import org.apache.cassandra.service.paxos.*;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.triggers.TriggerExecutor;
 import org.apache.cassandra.utils.*;
+import org.apache.cassandra.utils.AbstractIterator;
 
 public class StorageProxy implements StorageProxyMBean
 {
@@ -275,7 +276,7 @@ public class StorageProxy implements StorageProxyMBean
                 Tracing.trace("CAS precondition is met; proposing client-requested updates for {}", ballot);
                 if (proposePaxos(proposal, liveEndpoints, requiredParticipants, true, consistencyForPaxos))
                 {
-                    commitPaxos(proposal, consistencyForCommit);
+                    commitPaxos(proposal, consistencyForCommit, true);
                     Tracing.trace("CAS successful");
                     return null;
                 }
@@ -415,7 +416,7 @@ public class StorageProxy implements StorageProxyMBean
                 {
                     try
                     {
-                        commitPaxos(refreshedInProgress, consistencyForCommit);
+                        commitPaxos(refreshedInProgress, consistencyForCommit, false);
                     }
                     catch (WriteTimeoutException e)
                     {
@@ -495,7 +496,7 @@ public class StorageProxy implements StorageProxyMBean
         return false;
     }
 
-    private static void commitPaxos(Commit proposal, ConsistencyLevel consistencyLevel) throws WriteTimeoutException, WriteFailureException
+    private static void commitPaxos(Commit proposal, ConsistencyLevel consistencyLevel, boolean shouldHint) throws WriteTimeoutException
     {
         boolean shouldBlock = consistencyLevel != ConsistencyLevel.ANY;
         Keyspace keyspace = Keyspace.open(proposal.update.metadata().ksName);
@@ -517,9 +518,13 @@ public class StorageProxy implements StorageProxyMBean
             if (FailureDetector.instance.isAlive(destination))
             {
                 if (shouldBlock)
-                    MessagingService.instance().sendRRWithFailure(message, destination, responseHandler);
+                    MessagingService.instance().sendRR(message, destination, responseHandler, shouldHint);
                 else
                     MessagingService.instance().sendOneWay(message, destination);
+            }
+            else if (shouldHint)
+            {
+                submitHint(proposal.makeMutation(), destination, null);
             }
         }
 
@@ -857,17 +862,17 @@ public class StorageProxy implements StorageProxyMBean
             {
                 insertLocal(Stage.BATCHLOG_MUTATION, message.payload, handler);
             }
-            else if (targetVersion == MessagingService.current_version)
-            {
-                MessagingService.instance().sendRR(message, target, handler, false);
-            }
-            else
+            else if (targetVersion < MessagingService.VERSION_30)
             {
                 MessagingService.instance().sendRR(BatchlogManager.getBatchlogMutationFor(mutations, uuid, targetVersion)
-                                                                  .createMessage(MessagingService.Verb.BATCHLOG_MUTATION),
+                                                                  .createMessage(MessagingService.Verb.MUTATION),
                                                    target,
                                                    handler,
                                                    false);
+            }
+            else
+            {
+                MessagingService.instance().sendRR(message, target, handler, false);
             }
         }
 
@@ -883,17 +888,29 @@ public class StorageProxy implements StorageProxyMBean
                                                                         null,
                                                                         WriteType.SIMPLE);
         Mutation mutation = new Mutation(
-                PartitionUpdate.fullPartitionDelete(SystemKeyspace.Batchlog,
+                PartitionUpdate.fullPartitionDelete(SystemKeyspace.Batches,
                                                     UUIDType.instance.decompose(uuid),
                                                     FBUtilities.timestampMicros(),
                                                     FBUtilities.nowInSeconds()));
         MessageOut<Mutation> message = mutation.createMessage(MessagingService.Verb.BATCHLOG_MUTATION);
         for (InetAddress target : endpoints)
         {
+            int targetVersion = MessagingService.instance().getVersion(target);
             if (canDoLocalRequest(target))
+            {
                 insertLocal(Stage.BATCHLOG_MUTATION, message.payload, handler);
+            }
+            else if (targetVersion < MessagingService.VERSION_30)
+            {
+                MessagingService.instance().sendRR(mutation.createMessage(MessagingService.Verb.MUTATION),
+                                                   target,
+                                                   handler,
+                                                   false);
+            }
             else
+            {
                 MessagingService.instance().sendRR(message, target, handler, false);
+            }
         }
     }
 
@@ -1636,9 +1653,9 @@ public class StorageProxy implements StorageProxyMBean
                                                  keyspace,
                                                  executor.handler.endpoints);
 
-                MessageOut<ReadCommand> message = command.createMessage();
                 for (InetAddress endpoint : executor.getContactedReplicas())
                 {
+                    MessageOut<ReadCommand> message = command.createMessage(MessagingService.instance().getVersion(endpoint));
                     Tracing.trace("Enqueuing full data read to {}", endpoint);
                     MessagingService.instance().sendRRWithFailure(message, endpoint, repairHandler);
                 }
@@ -1998,9 +2015,9 @@ public class StorageProxy implements StorageProxyMBean
             }
             else
             {
-                MessageOut<ReadCommand> message = rangeCommand.createMessage();
                 for (InetAddress endpoint : toQuery.filteredEndpoints)
                 {
+                    MessageOut<ReadCommand> message = rangeCommand.createMessage(MessagingService.instance().getVersion(endpoint));
                     Tracing.trace("Enqueuing request to {}", endpoint);
                     MessagingService.instance().sendRRWithFailure(message, endpoint, handler);
                 }
