@@ -82,7 +82,7 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
 
         //见org.apache.cassandra.service.StorageService.getRingDelay()
         //默认30秒，等太久了
-        System.setProperty("cassandra.ring_delay_ms", "5000");
+        System.setProperty("cassandra.ring_delay_ms", "7000");
 
         //org.apache.cassandra.db.Memtable里的默认值是10万，这会触发大量的JVMTI方法进入退出事件
         System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
