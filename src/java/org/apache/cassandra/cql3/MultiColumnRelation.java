@@ -43,6 +43,7 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.invalidReq
  *  - SELECT ... WHERE (a, b) IN ?
  * }
  */
+//虽然select和update、delete都有where子句，但是update、delete不能在where子句中使用MultiColumnRelation
 //只能用于clustering columns
 public class MultiColumnRelation extends Relation
 {

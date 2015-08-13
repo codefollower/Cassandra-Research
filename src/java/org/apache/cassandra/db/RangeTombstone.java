@@ -37,13 +37,6 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  */
 public class RangeTombstone
 {
-//<<<<<<< HEAD
-//    //start和stop是指开始和结束的列名
-//    public RangeTombstone(Composite start, Composite stop, long markedForDeleteAt, int localDeletionTime)
-//    {
-//        this(start, stop, new DeletionTime(markedForDeleteAt, localDeletionTime));
-//    }
-//=======
     private final Slice slice;
     private final DeletionTime deletion;
 

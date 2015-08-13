@@ -52,55 +52,10 @@ public class UpdateStatement extends ModificationStatement
     {
         params.newPartition(update.partitionKey());
 
-//<<<<<<< HEAD
-//    public void addUpdateForKey(ColumnFamily cf,
-//                                ByteBuffer key,
-//                                Composite prefix,
-//                                UpdateParameters params,
-//                                boolean validateIndexedColumns) throws InvalidRequestException
-//    {
-//        // Inserting the CQL row marker (see #4361)
-//        // We always need to insert a marker for INSERT, because of the following situation:
-//        //   CREATE TABLE t ( k int PRIMARY KEY, c text );
-//        //   INSERT INTO t(k, c) VALUES (1, 1)
-//        //   DELETE c FROM t WHERE k = 1;
-//        //   SELECT * FROM t;
-//        // The last query should return one row (but with c == null). Adding the marker with the insert make sure
-//        // the semantic is correct (while making sure a 'DELETE FROM t WHERE k = 1' does remove the row entirely)
-//        //
-//        // We do not insert the marker for UPDATE however, as this amount to updating the columns in the WHERE
-//        // clause which is inintuitive (#6782)
-//        //
-//        // We never insert markers for Super CF as this would confuse the thrift side.
-//        //插入一个列名和列值都为空的空列
-//        //只有CompoundSparseCellNameType和CompoundSparseCellNameType.WithCollection满足
-//        if (type == StatementType.INSERT && cfm.isCQL3Table() && !prefix.isStatic())
-//            cf.addColumn(params.makeColumn(cfm.comparator.rowMarker(prefix), ByteBufferUtil.EMPTY_BYTE_BUFFER));
-//
-//        //cf.toString(); //我加上的
-//        List<Operation> updates = getOperations();
-//
-//        if (cfm.comparator.isDense())
-//=======
         if (updatesRegularRows())
         {
             params.newRow(cbuilder.build());
 
-//<<<<<<< HEAD
-//            // An empty name for the compact value is what we use to recognize the case where there is not column
-//            // outside the PK, see CreateStatement.
-//            //列如: CREATE TABLE IF NOT EXISTS t ( block_id int, f2 int, PRIMARY KEY (block_id, f2)) WITH COMPACT STORAGE
-//            //然后: INSERT INTO t(block_id, f2) VALUES (1, 2)
-//            //见CreateTableStatement.valueAlias的注释
-//            //插入的列名是f2的值，列值是空字节数组
-//            if (!cfm.compactValueColumn().name.bytes.hasRemaining())
-//            {
-//                // There is no column outside the PK. So no operation could have passed through validation
-//                assert updates.isEmpty();
-//                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(key, cf, prefix, params);
-//            }
-//            else
-//=======
             // We update the row timestamp (ex-row marker) only on INSERT (#6782)
             // Further, COMPACT tables semantic differs from "CQL3" ones in that a row exists only if it has
             // a non-null column, so we don't want to set the row timestamp for them.
@@ -117,6 +72,9 @@ public class UpdateStatement extends ModificationStatement
             // value is of type "EmptyType").
             if (cfm.isCompactTable() && updates.isEmpty())
             {
+                //列如: CREATE TABLE IF NOT EXISTS t ( block_id int, f2 int, PRIMARY KEY (block_id, f2)) WITH COMPACT STORAGE
+                //然后: INSERT INTO t(block_id, f2) VALUES (1, 2)
+                //插入的列名是f2的值，列值是空字节数组
                 if (CompactTables.hasEmptyCompactValue(cfm))
                     updates = Collections.<Operation>singletonList(new Constants.Setter(cfm.compactValueColumn(), EMPTY));
                 else

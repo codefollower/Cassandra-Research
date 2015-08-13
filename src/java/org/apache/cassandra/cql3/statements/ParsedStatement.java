@@ -36,6 +36,8 @@ public abstract class ParsedStatement
     // Used by the parser and preparable statement
     //boundNames.size是prepared语句中?号的个数,
     //先触发setBoundVariables，再到Prepared(CQLStatement, List<ColumnSpecification>)
+    //如果是WHERE id=:a AND f1=:b这种类型，boundNames就是a、b
+    //如果是WHERE id=? AND f1=?这种类型，boundNames就是null、null
     public void setBoundVariables(List<ColumnIdentifier> boundNames)
     {
         this.variables = new VariableSpecifications(boundNames);

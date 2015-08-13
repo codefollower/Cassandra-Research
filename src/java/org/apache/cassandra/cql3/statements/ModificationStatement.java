@@ -43,7 +43,6 @@ import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageProxy;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.messages.ResultMessage;
@@ -76,10 +75,8 @@ public abstract class ModificationStatement implements CQLStatement
 
     //只能是PARTITION_KEY和CLUSTERING_COLUMN中的字段
     protected final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<>();
-//<<<<<<< HEAD
-//    //只能是REGULAR和COMPACT_VALUE字段
-//    private final List<Operation> columnOperations = new ArrayList<Operation>();
-//=======
+
+    //只能是REGULAR和COMPACT_VALUE字段
     private final List<Operation> regularOperations = new ArrayList<>();
     private final List<Operation> staticOperations = new ArrayList<>();
 
@@ -383,11 +380,17 @@ public abstract class ModificationStatement implements CQLStatement
                 throw new InvalidRequestException(
                         String.format("Multi-column relations cannot be used in WHERE clauses for UPDATE and DELETE statements: %s", relation));
             }
-            SingleColumnRelation rel = (SingleColumnRelation) relation;
+            //如果是TokenRelation，这里就出cast异常了
+//            SingleColumnRelation rel = (SingleColumnRelation) relation;
+//
+//            if (rel.onToken())
+//                throw new InvalidRequestException(String.format("The token function cannot be used in WHERE clauses for UPDATE and DELETE statements: %s", relation));
 
-            if (rel.onToken())
+            if (relation.onToken())
                 throw new InvalidRequestException(String.format("The token function cannot be used in WHERE clauses for UPDATE and DELETE statements: %s", relation));
-
+            
+            SingleColumnRelation rel = (SingleColumnRelation) relation;
+            
             ColumnIdentifier id = rel.getEntity().prepare(cfm);
             ColumnDefinition def = cfm.getColumnDefinition(id);
             if (def == null)
@@ -401,31 +404,6 @@ public abstract class ModificationStatement implements CQLStatement
 
                     if (rel.isEQ() || (def.isPartitionKey() && rel.isIN()))
                     {
-//<<<<<<< HEAD
-//                        Term t = rel.getValue().prepare(keyspace(), def);
-//                        t.collectMarkerSpecification(names);
-//                        restriction = new SingleColumnRestriction.EQ(t, false);
-//                    }
-//                    else if (def.kind == ColumnDefinition.Kind.PARTITION_KEY && rel.operator() == Operator.IN)
-//                    {
-//                        if (rel.getValue() != null) //in里只有一个值
-//                        {
-//                            Term t = rel.getValue().prepare(keyspace(), def);
-//                            t.collectMarkerSpecification(names);
-//                            restriction = new SingleColumnRestriction.InWithMarker((Lists.Marker)t);
-//                        }
-//                        else //in里只有多个值
-//                        {
-//                            List<Term> values = new ArrayList<Term>(rel.getInValues().size());
-//                            for (Term.Raw raw : rel.getInValues())
-//                            {
-//                                Term t = raw.prepare(keyspace(), def);
-//                                t.collectMarkerSpecification(names);
-//                                values.add(t);
-//                            }
-//                            restriction = new SingleColumnRestriction.InWithValues(values);
-//                        }
-//=======
                         restriction = rel.toRestriction(cfm, names);
                     }
                     else
@@ -452,26 +430,9 @@ public abstract class ModificationStatement implements CQLStatement
             r.appendTo(keyBuilder, options);
         }
 
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////            //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
-////            //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
-////            //就会得到两个PARTITION_KEY: (x,y)和(x,z)
-////            if (keyBuilder.remainingCount() == 1)
-////            {
-////                for (ByteBuffer val : values)
-////                {
-////                    if (val == null)
-////                        throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
-////                    ByteBuffer key = keyBuilder.buildWith(val).toByteBuffer();
-////                    ThriftValidation.validateKey(cfm, key);
-////                    keys.add(key);
-////                }
-////            }
-////            else
-////=======
-//        return Lists.transform(keyBuilder.build(), new com.google.common.base.Function<Composite, ByteBuffer>()
-//=======
+        //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
+        //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
+        //就会得到两个PARTITION_KEY: (x,y)和(x,z)
         NavigableSet<Clustering> clusterings = keyBuilder.build();
         List<ByteBuffer> keys = new ArrayList<ByteBuffer>(clusterings.size());
         for (Clustering clustering : clusterings)
@@ -531,15 +492,7 @@ public abstract class ModificationStatement implements CQLStatement
             if (r == null)
             {
                 firstEmptyKey = def;
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////
-////                //满足这个if条件的只有update语句，并且是CreateTableStatement.comparator中的第4种情况
-////                if (requireFullClusteringKey() && !cfm.comparator.isDense() && cfm.comparator.isCompound())
-////                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s", def.name));
-////=======
-//                checkFalse(requireFullClusteringKey() && !cfm.comparator.isDense() && cfm.comparator.isCompound(), 
-//=======
+                //满足这个if条件的只有update语句，并且是CreateTableStatement.comparator中的第4种情况
                 checkFalse(requireFullClusteringKey() && !cfm.isDense() && cfm.isCompound(),
                            "Missing mandatory PRIMARY KEY part %s", def.name);
             }

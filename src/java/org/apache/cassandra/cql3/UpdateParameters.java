@@ -74,20 +74,13 @@ public class UpdateParameters
     throws InvalidRequestException
     {
         this.metadata = metadata;
-//<<<<<<< HEAD
-//
-//        this.options = options;
-//        this.timestamp = timestamp; //以微秒为单位
-//        this.ttl = ttl; //以秒为单位，多少秒后过期
-//        this.localDeletionTime = (int)(System.currentTimeMillis() / 1000); //以秒为单位，从哪一秒开始
-//        this.prefetchedLists = prefetchedLists;
-//=======
+
         this.updatedColumns = updatedColumns;
         this.options = options;
 
-        this.nowInSec = FBUtilities.nowInSeconds();
-        this.timestamp = timestamp;
-        this.ttl = ttl;
+        this.nowInSec = FBUtilities.nowInSeconds(); //以秒为单位，从哪一秒开始
+        this.timestamp = timestamp; //以微秒为单位
+        this.ttl = ttl; //以秒为单位，多少秒后过期
 
         this.deletionTime = new DeletionTime(timestamp, nowInSec);
 

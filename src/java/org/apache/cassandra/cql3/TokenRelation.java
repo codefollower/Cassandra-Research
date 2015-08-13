@@ -44,6 +44,7 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.invalidReq
  * <li>SELECT ... WHERE token(a, b) &gt; token(1, 3)</li>
  * </ul>
  */
+//虽然select和update、delete都有where子句，但是update、delete不能在where子句中使用TokenRelation
 public final class TokenRelation extends Relation
 {
     private final List<ColumnIdentifier.Raw> entities;

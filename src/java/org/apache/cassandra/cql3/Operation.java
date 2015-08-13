@@ -88,11 +88,8 @@ public abstract class Operation
      * @param partitionKey partition key for the update.
      * @param params parameters of the update.
      */
-//<<<<<<< HEAD
-//    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex用了rowKey参数，其他的实现类都没用到
-//    //用来调用UpdateParameters.getPrefetchedList(ByteBuffer, ColumnIdentifier)，通过rowKey和列名预先抓取字段
-//    public abstract void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException;
-//=======
+    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex用了partitionKey参数，其他的实现类都没用到
+    //用来调用UpdateParameters.getPrefetchedList(ByteBuffer, ColumnIdentifier)，通过partitionKey和列名预先抓取字段
     public abstract void execute(DecoratedKey partitionKey, UpdateParameters params) throws InvalidRequestException;
 
     /**
