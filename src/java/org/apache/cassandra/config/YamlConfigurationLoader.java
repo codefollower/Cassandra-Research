@@ -90,12 +90,14 @@ public class YamlConfigurationLoader implements ConfigurationLoader
         return url;
     }
 
-    private static final URL storageConfigURL = getStorageConfigURL();
+    //我注释掉了，这种方式不方便指定"cassandra.config"
+    //private static final URL storageConfigURL = getStorageConfigURL();
 
     @Override
     public Config loadConfig() throws ConfigurationException
     {
-        return loadConfig(storageConfigURL);
+        //return loadConfig(storageConfigURL);
+        return loadConfig(getStorageConfigURL());
     }
 
     public Config loadConfig(URL url) throws ConfigurationException

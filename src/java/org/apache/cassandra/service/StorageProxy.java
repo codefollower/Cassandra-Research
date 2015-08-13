@@ -200,16 +200,7 @@ public class StorageProxy implements StorageProxyMBean
      * @return null if the operation succeeds in updating the row, or the current values corresponding to conditions.
      * (since, if the CAS doesn't succeed, it means the current value do not match the conditions).
      */
-//<<<<<<< HEAD
-//    //用于条件化insert和update
-//    public static ColumnFamily cas(String keyspaceName,
-//                                   String cfName,
-//                                   ByteBuffer key,
-//                                   CASRequest request,
-//                                   ConsistencyLevel consistencyForPaxos,
-//                                   ConsistencyLevel consistencyForCommit,
-//                                   ClientState state)
-//=======
+    //用于条件化insert和update
     public static RowIterator cas(String keyspaceName,
                                   String cfName,
                                   DecoratedKey key,
@@ -731,15 +722,10 @@ public class StorageProxy implements StorageProxyMBean
         boolean updatesView = MaterializedViewManager.updatesAffectView(mutations, true);
 
         if (augmented != null)
-//<<<<<<< HEAD
-//            mutateAtomically(augmented, consistencyLevel);
-//        else if (mutateAtomically) //由BatchStatement触发的
-//            mutateAtomically((Collection<Mutation>) mutations, consistencyLevel);
-//=======
             mutateAtomically(augmented, consistencyLevel, updatesView);
         else
         {
-            if (mutateAtomically || updatesView)
+            if (mutateAtomically || updatesView) //由BatchStatement触发的
                 mutateAtomically((Collection<Mutation>) mutations, consistencyLevel, updatesView);
             else
                 mutate(mutations, consistencyLevel);
@@ -1566,11 +1552,6 @@ public class StorageProxy implements StorageProxyMBean
     private static PartitionIterator fetchRows(List<SinglePartitionReadCommand<?>> commands, ConsistencyLevel consistencyLevel)
     throws UnavailableException, ReadFailureException, ReadTimeoutException
     {
-//<<<<<<< HEAD
-//        List<Row> rows = new ArrayList<>(initialCommands.size()); //ReadCommand的子类都是只查一个rowKey
-//        // (avoid allocating a new list in the common case of nothing-to-retry)
-//        List<ReadCommand> commandsToRetry = Collections.emptyList();
-//=======
         int cmdCount = commands.size();
 
         SinglePartitionReadLifecycle[] reads = new SinglePartitionReadLifecycle[cmdCount];

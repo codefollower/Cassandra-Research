@@ -158,7 +158,7 @@ public class CassandraDaemon
 
         logSystemInfo();
 
-        CLibrary.tryMlockall();
+        CLibrary.tryMlockall(); //看一下本地库是否可用，windows下不支持JNA
 
         try
         {
@@ -169,11 +169,6 @@ public class CassandraDaemon
             exitOrFail(e.returnCode, e.getMessage(), e.getCause());
         }
 
-//<<<<<<< HEAD
-//        CLibrary.tryMlockall(); //看一下本地库是否可用，windows下不支持JNA
-//
-//=======
-//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
         try
         {
             if (SystemKeyspace.snapshotOnVersionChange())
@@ -236,12 +231,8 @@ public class CassandraDaemon
             if (keyspaceName.equals(SystemKeyspace.NAME))
                 continue;
 
-//<<<<<<< HEAD
-//            for (CFMetaData cfm : Schema.instance.getKeyspaceMetaData(keyspaceName).values())
-//                ColumnFamilyStore.scrubDataDirectories(cfm); //清理一些临时或不再需要的文件
-//=======
             for (CFMetaData cfm : Schema.instance.getTables(keyspaceName))
-                ColumnFamilyStore.scrubDataDirectories(cfm);
+                ColumnFamilyStore.scrubDataDirectories(cfm); //清理一些临时或不再需要的文件
         }
 
         Keyspace.setInitialized();
@@ -375,10 +366,7 @@ public class CassandraDaemon
         //用于支持CQL
         InetAddress nativeAddr = DatabaseDescriptor.getRpcAddress();
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
-//<<<<<<< HEAD
-//        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
-//=======
-        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort);
+        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
 
         completeSetup();
     }

@@ -42,9 +42,13 @@ public class WindowsFailedSnapshotTracker
 
     @VisibleForTesting
     // Need to handle null for unit tests
+//    public static final String TODELETEFILE = System.getenv("CASSANDRA_HOME") == null
+//                 ? ".toDelete"
+//                 : System.getenv("CASSANDRA_HOME") + File.separator + ".toDelete";
+    //我加上的，放到build目录中
     public static final String TODELETEFILE = System.getenv("CASSANDRA_HOME") == null
-                 ? ".toDelete"
-                 : System.getenv("CASSANDRA_HOME") + File.separator + ".toDelete";
+            ? "build" + File.separator + ".toDelete"
+            : System.getenv("CASSANDRA_HOME") + File.separator + "build" + File.separator + ".toDelete";
 
     public static void deleteOldSnapshots()
     {
