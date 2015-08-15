@@ -30,7 +30,6 @@ import org.apache.cassandra.db.compaction.CompactionManagerMBean;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tools.NodeProbe;
-import org.apache.cassandra.tools.NodeTool;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
 
 @Command(name = "compactionstats", description = "Print statistics on compactions")

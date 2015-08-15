@@ -74,3 +74,4 @@ num_tokens: 2
 
 
 #broadcast_address: 127.0.0.2
+enable_user_defined_functions: true

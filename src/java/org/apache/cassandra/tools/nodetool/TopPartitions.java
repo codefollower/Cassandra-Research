@@ -52,6 +52,7 @@ public class TopPartitions extends NodeToolCmd
     private int topCount = 10;
     @Option(name = "-a", description = "Comma separated list of samplers to use (Default: all)")
     private String samplers = join(TableMetrics.Sampler.values(), ',');
+    @SuppressWarnings("unchecked")
     @Override
     public void execute(NodeProbe probe)
     {

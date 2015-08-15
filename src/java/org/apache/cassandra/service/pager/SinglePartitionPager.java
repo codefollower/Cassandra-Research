@@ -31,10 +31,7 @@ import org.apache.cassandra.db.filter.*;
  *
  * For use by MultiPartitionPager.
  */
-//<<<<<<< HEAD
-////只用于单rowKey查询
-//public interface SinglePartitionPager extends QueryPager
-//=======
+//只用于单rowKey查询
 public class SinglePartitionPager extends AbstractQueryPager
 {
     private static final Logger logger = LoggerFactory.getLogger(SinglePartitionPager.class);

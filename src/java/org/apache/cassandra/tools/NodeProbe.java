@@ -1306,6 +1306,7 @@ public class NodeProbe implements AutoCloseable
 
 class ColumnFamilyStoreMBeanIterator implements Iterator<Map.Entry<String, ColumnFamilyStoreMBean>>
 {
+    @SuppressWarnings("unused")
     private MBeanServerConnection mbeanServerConn;
     Iterator<Entry<String, ColumnFamilyStoreMBean>> mbeans;
 
@@ -1317,6 +1318,7 @@ class ColumnFamilyStoreMBeanIterator implements Iterator<Map.Entry<String, Colum
         cfMbeans.addAll(getCFSMBeans(mbeanServerConn, "IndexColumnFamilies"));
         Collections.sort(cfMbeans, new Comparator<Entry<String, ColumnFamilyStoreMBean>>()
         {
+            @SuppressWarnings("deprecation")
             public int compare(Entry<String, ColumnFamilyStoreMBean> e1, Entry<String, ColumnFamilyStoreMBean> e2)
             {
                 //compare keyspace, then CF name, then normal vs. index

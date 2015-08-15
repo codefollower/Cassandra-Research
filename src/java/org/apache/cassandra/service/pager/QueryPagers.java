@@ -35,13 +35,7 @@ public class QueryPagers
     /**
      * Convenience method that count (live) cells/rows for a given slice of a row, but page underneath.
      */
-//<<<<<<< HEAD
-//    //只在org.apache.cassandra.thrift.CassandraServer.get_count调用
-//    public static int countPaged(String keyspace,
-//                                 String columnFamily,
-//                                 ByteBuffer key,
-//                                 SliceQueryFilter filter,
-//=======
+    //只在org.apache.cassandra.thrift.CassandraServer.get_count调用
     public static int countPaged(CFMetaData metadata,
                                  DecoratedKey key,
                                  ColumnFilter columnFilter,

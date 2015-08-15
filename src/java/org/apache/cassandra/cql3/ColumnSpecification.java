@@ -24,7 +24,7 @@ import org.apache.cassandra.db.marshal.ReversedType;
 import java.util.Collection;
 import java.util.Iterator;
 
-public class ColumnSpecification //有一个子类: org.apache.cassandra.config.ColumnDefinition73880
+public class ColumnSpecification //有一个子类: org.apache.cassandra.config.ColumnDefinition
 {
     public final String ksName;
     public final String cfName;

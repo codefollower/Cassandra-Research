@@ -68,5 +68,5 @@ truncate_request_timeout_in_ms: 100000000
 num_tokens: 3
 
 #memtable_total_space_in_mb: 1
-
+enable_user_defined_functions: true
 

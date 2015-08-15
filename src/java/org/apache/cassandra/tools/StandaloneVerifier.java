@@ -18,10 +18,6 @@
  */
 package org.apache.cassandra.tools;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
@@ -35,7 +31,6 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.OutputHandler;
 import org.apache.commons.cli.*;
 
-import java.io.File;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 

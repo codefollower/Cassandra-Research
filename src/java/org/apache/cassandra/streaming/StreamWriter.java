@@ -37,6 +37,7 @@ import org.apache.cassandra.utils.Pair;
 /**
  * StreamWriter writes given section of the SSTable to given channel.
  */
+//读本地的SSTable，然后发给别的节点
 public class StreamWriter
 {
     private static final int DEFAULT_CHUNK_SIZE = 64 * 1024;

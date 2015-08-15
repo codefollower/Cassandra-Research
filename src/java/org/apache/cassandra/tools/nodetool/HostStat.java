@@ -19,10 +19,6 @@ package org.apache.cassandra.tools.nodetool;
 
 import java.net.InetAddress;
 
-//<<<<<<< HEAD:src/java/org/apache/cassandra/io/util/JEMallocAllocator.java
-//参考例子:my.test.jna.JNAHelloWorld
-//public class JEMallocAllocator implements IAllocator
-//=======
 public class HostStat
 {
     public final InetAddress endpoint;

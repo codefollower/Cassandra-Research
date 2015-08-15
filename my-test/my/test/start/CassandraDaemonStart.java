@@ -89,6 +89,8 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
 
         System.setProperty("cassandra.unsafesystem", "true"); //不要每次更新元数据就刷新到硬盘，产生大量文件，只在测试时用
         
+        System.setProperty("cassandra.jmx.local.port", "7070");
+        
         CassandraDaemon.main(args);
     }
 

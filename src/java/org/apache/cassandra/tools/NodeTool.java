@@ -46,6 +46,7 @@ public class NodeTool
 {
     private static final String HISTORYFILE = "nodetool.history";
 
+    @SuppressWarnings({ "unchecked", "deprecation" })
     public static void main(String... args)
     {
         List<Class<? extends Runnable>> commands = newArrayList(

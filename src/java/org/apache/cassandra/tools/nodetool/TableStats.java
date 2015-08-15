@@ -35,6 +35,7 @@ import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
 
+@SuppressWarnings("deprecation")
 @Command(name = "tablestats", description = "Print statistics on tables")
 public class TableStats extends NodeToolCmd
 {

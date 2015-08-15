@@ -40,18 +40,4 @@ public class BootstrapResume extends NodeToolCmd
             throw new IOError(e);
         }
     }
-//<<<<<<< HEAD:src/java/org/apache/cassandra/io/util/NativeAllocator.java
-//
-//    public long allocate(long size)
-//    {
-//        return unsafe.allocateMemory(size);
-//    }
-//
-//    public void free(long peer) //peer是allocate返回的本地内存地址
-//    {
-//        unsafe.freeMemory(peer); //sun.misc.Unsafe中的方法声明: public native void freeMemory(long address);
-//    }
-//
-//}
-//=======
 }

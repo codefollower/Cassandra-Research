@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
 

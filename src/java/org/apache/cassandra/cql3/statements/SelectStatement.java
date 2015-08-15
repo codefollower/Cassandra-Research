@@ -215,9 +215,6 @@ public class SelectStatement implements CQLStatement
         if (selection.isAggregate() && pageSize <= 0)
             pageSize = DEFAULT_COUNT_PAGE_SIZE;
 
-//<<<<<<< HEAD
-//        if (pageSize <= 0 || command == null || !QueryPagers.mayNeedPaging(command, pageSize)) //不需要分页
-//=======
         return  pageSize;
     }
 
@@ -225,9 +222,9 @@ public class SelectStatement implements CQLStatement
     {
         DataLimits limit = getLimit(options);
         if (restrictions.isKeyRange() || restrictions.usesSecondaryIndexing())
-            return getRangeCommand(options, limit, nowInSec);
+            return getRangeCommand(options, limit, nowInSec); //多行
 
-        return getSliceCommands(options, limit, nowInSec);
+        return getSliceCommands(options, limit, nowInSec); //单行
     }
 
     private ResultMessage.Rows execute(ReadQuery query, QueryOptions options, QueryState state, int nowInSec) throws RequestValidationException, RequestExecutionException
@@ -241,17 +238,12 @@ public class SelectStatement implements CQLStatement
     // Simple wrapper class to avoid some code duplication
     private static abstract class Pager
     {
-        protected QueryPager pager;
+        protected QueryPager pager; //org.apache.cassandra.service.pager包里的类只有分页查询时才用得到
 
         protected Pager(QueryPager pager)
         {
             this.pager = pager;
         }
-//<<<<<<< HEAD
-//        
-//        //org.apache.cassandra.service.pager包里的类只有分页查询时才用得到
-//        QueryPager pager = QueryPagers.pager(command, cl, state.getClientState(), options.getPagingState());
-//=======
 
         public static Pager forInternalQuery(QueryPager pager, ReadOrderGroup orderGroup)
         {
@@ -335,25 +327,6 @@ public class SelectStatement implements CQLStatement
         return msg;
     }
 
-//<<<<<<< HEAD
-//    private Pageable getPageableCommand(QueryOptions options, int limit, long now) throws RequestValidationException
-//    {
-//        int limitForQuery = updateLimitForQuery(limit);
-//        if (restrictions.isKeyRange() || restrictions.usesSecondaryIndexing()) //查询一个范围
-//            return getRangeCommand(options, limitForQuery, now);
-//        
-//        //查询具体的某一行
-//        List<ReadCommand> commands = getSliceCommands(options, limitForQuery, now);
-//        return commands == null ? null : new Pageable.ReadCommands(commands, limitForQuery);
-//    }
-//
-//    public Pageable getPageableCommand(QueryOptions options) throws RequestValidationException
-//    {
-//        return getPageableCommand(options, getLimit(options), System.currentTimeMillis());
-//    }
-//
-//    private ResultMessage.Rows execute(Pageable command, QueryOptions options, int limit, long now, QueryState state) throws RequestValidationException, RequestExecutionException
-//=======
     private ResultMessage.Rows pageAggregateQuery(Pager pager, QueryOptions options, int pageSize, int nowInSec)
     throws RequestValidationException, RequestExecutionException
     {
@@ -434,10 +407,6 @@ public class SelectStatement implements CQLStatement
      */
     public Selection getSelection()
     {
-//<<<<<<< HEAD
-//        //最后一个PARTITION_KEY字段使用in包含多个值时就能得到多个key，然后生成多个ReadCommand
-//        Collection<ByteBuffer> keys = restrictions.getPartitionKeys(options);
-//=======
         return selection;
     }
 
@@ -455,9 +424,6 @@ public class SelectStatement implements CQLStatement
         if (keys.isEmpty())
             return ReadQuery.EMPTY;
 
-//<<<<<<< HEAD
-//        IDiskAtomFilter filter = makeFilter(options, limit); //只与CLUSTERING_COLUMN相关
-//=======
         ClusteringIndexFilter filter = makeClusteringIndexFilter(options);
         if (filter == null)
             return ReadQuery.EMPTY;
@@ -492,10 +458,6 @@ public class SelectStatement implements CQLStatement
              : new PartitionRangeReadCommand(cfm, nowInSec, queriedColumns, rowFilter, limit, new DataRange(keyBounds, clusteringIndexFilter));
     }
 
-//<<<<<<< HEAD
-//    //生成一个过滤器，当迭代每一行记录时，这个过滤器用来指示哪些字段是需要的
-//    private IDiskAtomFilter makeFilter(QueryOptions options, int limit)
-//=======
     private ClusteringIndexFilter makeClusteringIndexFilter(QueryOptions options)
     throws InvalidRequestException
     {
@@ -608,46 +570,6 @@ public class SelectStatement implements CQLStatement
         return restrictions.getClusteringColumns(options);
     }
 
-//<<<<<<< HEAD
-//    //只有在getRequestedColumns中调用
-//    //调用顺序只有makeFilter => getRequestedColumns => addSelectedColumns
-//    //在makeFilter中触发getRequestedColumns的条件只有isColumnRange()返回为false时
-//    private SortedSet<CellName> addSelectedColumns(Composite prefix)
-//    {
-//        if (cfm.comparator.isDense())
-//        {
-//            return FBUtilities.singleton(cfm.comparator.create(prefix, null), cfm.comparator);
-//        }
-//        else
-//        {
-//            SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
-//
-//            // We need to query the selected column as well as the marker
-//            // column (for the case where the row exists but has no columns outside the PK)
-//            // Two exceptions are "static CF" (non-composite non-compact CF) and "super CF"
-//            // that don't have marker and for which we must query all columns instead
-//            if (cfm.comparator.isCompound() && !cfm.isSuper())
-//            {
-//                // marker
-//                columns.add(cfm.comparator.rowMarker(prefix));
-//
-//                // selected columns
-//                for (ColumnDefinition def : selection.getColumns())
-//                    if (def.isRegular() || def.isStatic())
-//                        columns.add(cfm.comparator.create(prefix, def));
-//            }
-//            else
-//            {
-//                // We now that we're not composite so we can ignore static columns
-//                for (ColumnDefinition def : cfm.regularColumns())
-//                    columns.add(cfm.comparator.create(prefix, def));
-//            }
-//            return columns;
-//        }
-//    }
-//
-//    public List<IndexExpression> getValidatedIndexExpressions(QueryOptions options) throws InvalidRequestException
-//=======
     /**
      * May be used by custom QueryHandler implementations
      */
@@ -752,10 +674,6 @@ public class SelectStatement implements CQLStatement
         }
     }
 
-//<<<<<<< HEAD
-//    @SuppressWarnings({ "unchecked", "rawtypes" })
-//    private static void addValue(Selection.ResultSetBuilder result, ColumnDefinition def, CQL3Row row, QueryOptions options)
-//=======
     private static void addValue(Selection.ResultSetBuilder result, ColumnDefinition def, Row row, int nowInSec, int protocolVersion)
     {
         if (def.isComplex())

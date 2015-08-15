@@ -22,8 +22,12 @@ import org.apache.cassandra.tools.NodeTool;
 public class NodeToolTest {
 
     public static void main(String[] args) {
-        String[] options = {"-h", "127.0.0.1", "status"};
+        //String[] options = { "-h", "127.0.0.1", "-p", "7010", "-u", "cassandra", "-pw", "cassandra", "status" };
 
+        //String[] options = { "-p", "7070", "status" };
+        //String[] options = { "-p", "7070","bootstrap","resume" };
+        
+        String[] options = { "-p", "7070", "info" };
         NodeTool.main(options);
     }
 

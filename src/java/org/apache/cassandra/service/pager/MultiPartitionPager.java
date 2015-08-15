@@ -43,10 +43,7 @@ import org.apache.cassandra.service.ClientState;
  * cfs meanPartitionSize to decide if parallelizing some of the command might be worth it while being confident we don't
  * blow out memory.
  */
-//<<<<<<< HEAD
-////只用于单rowKey查询
-//class MultiPartitionPager implements QueryPager
-//=======
+//只用于单rowKey查询
 public class MultiPartitionPager implements QueryPager
 {
     private final SinglePartitionPager[] pagers;

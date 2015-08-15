@@ -51,6 +51,7 @@ import org.apache.cassandra.utils.Pair;
 /**
  * StreamReader reads from stream and writes to SSTable.
  */
+//读取别的节点发过来的数据，然后写到本地
 public class StreamReader
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamReader.class);
