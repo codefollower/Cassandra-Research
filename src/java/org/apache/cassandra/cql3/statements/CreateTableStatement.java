@@ -226,11 +226,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
             //不能在语法分析阶段检查出来，这里是QUOTED_NAME的场景(用双引号括起来)
             //如：CREATE TABLE IF NOT EXISTS \"t中t\" ( block_id uuid)
             if (!columnFamily().matches("\\w+"))
-                //String.format中给的信息不够准确，不是[0-9A-Za-z]+，而是[a-zA-Z_0-9]+，少了一个下划线
-                //IDENT在文法中也是有下划线的
-                throw new InvalidRequestException(String.format("\"%s\" is not a valid table name (must be alphanumeric character only: [0-9A-Za-z]+)", columnFamily()));
-            //列族名就是表名，不能超过48个字符
-            if (columnFamily().length() > Schema.NAME_LENGTH)
+                throw new InvalidRequestException(String.format("\"%s\" is not a valid table name (must be alphanumeric character or underscore only: [a-zA-Z_0-9]+)", columnFamily()));
+
+            if (columnFamily().length() > Schema.NAME_LENGTH)  //列族名就是表名，不能超过48个字符
                 throw new InvalidRequestException(String.format("Table names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, columnFamily()));
 
             //定义了重复的字段

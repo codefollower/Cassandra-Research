@@ -357,7 +357,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         if (data.loadsstables)
         {
-            Directories.SSTableLister sstableFiles = directories.sstableLister().skipTemporary(true);
+            Directories.SSTableLister sstableFiles = directories.sstableLister(Directories.OnTxnErr.IGNORE).skipTemporary(true);
             Collection<SSTableReader> sstables = SSTableReader.openAll(sstableFiles.list().entrySet(), metadata);
             data.addInitialSSTables(sstables);
         }
@@ -463,7 +463,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         SystemKeyspace.removeTruncationRecord(metadata.cfId);
 
         data.dropSSTables();
-        TransactionLogs.waitForDeletions();
+        TransactionLog.waitForDeletions();
 
         indexManager.invalidate();
         materializedViewManager.invalidate();
@@ -508,7 +508,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         // get the max generation number, to prevent generation conflicts
         //在这里debug打条件断点columnFamily.equals("keysindextest")
         Directories directories = new Directories(metadata);
-        Directories.SSTableLister lister = directories.sstableLister().includeBackups(true);
+        Directories.SSTableLister lister = directories.sstableLister(Directories.OnTxnErr.IGNORE).includeBackups(true);
         List<Integer> generations = new ArrayList<Integer>();
         for (Map.Entry<Descriptor, Set<Component>> entry : lister.list().entrySet())
         {
@@ -540,7 +540,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         LifecycleTransaction.removeUnfinishedLeftovers(metadata);
 
         logger.debug("Further extra check for orphan sstable files for {}", metadata.cfName);
-        for (Map.Entry<Descriptor,Set<Component>> sstableFiles : directories.sstableLister().list().entrySet())
+        for (Map.Entry<Descriptor,Set<Component>> sstableFiles : directories.sstableLister(Directories.OnTxnErr.IGNORE).list().entrySet())
         {
             Descriptor desc = sstableFiles.getKey();
             Set<Component> components = sstableFiles.getValue();
@@ -648,7 +648,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             currentDescriptors.add(sstable.descriptor);
         Set<SSTableReader> newSSTables = new HashSet<>();
 
-        Directories.SSTableLister lister = directories.sstableLister().skipTemporary(true);
+        Directories.SSTableLister lister = directories.sstableLister(Directories.OnTxnErr.IGNORE).skipTemporary(true);
         for (Map.Entry<Descriptor, Set<Component>> entry : lister.list().entrySet())
         {
             Descriptor descriptor = entry.getKey();
@@ -1182,15 +1182,49 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         View view = data.getView();
 
-        Set<SSTableReader> results = null;
-        for (SSTableReader sstable : sstables)
-        {
-            Set<SSTableReader> overlaps = ImmutableSet.copyOf(view.sstablesInBounds(sstableSet, sstable.first, sstable.last));
-            results = results == null ? overlaps : Sets.union(results, overlaps).immutableCopy();
-        }
-        results = Sets.difference(results, ImmutableSet.copyOf(sstables));
+        List<SSTableReader> sortedByFirst = Lists.newArrayList(sstables);
+        Collections.sort(sortedByFirst, (o1, o2) -> o1.first.compareTo(o2.first));
 
-        return results;
+        List<AbstractBounds<PartitionPosition>> bounds = new ArrayList<>();
+        DecoratedKey first = null, last = null;
+        /*
+        normalize the intervals covered by the sstables
+        assume we have sstables like this (brackets representing first/last key in the sstable);
+        [   ] [   ]    [   ]   [  ]
+           [   ]         [       ]
+        then we can, instead of searching the interval tree 6 times, normalize the intervals and
+        only query the tree 2 times, for these intervals;
+        [         ]    [          ]
+         */
+        for (SSTableReader sstable : sortedByFirst)
+        {
+            if (first == null)
+            {
+                first = sstable.first;
+                last = sstable.last;
+            }
+            else
+            {
+                if (sstable.first.compareTo(last) <= 0) // we do overlap
+                {
+                    if (sstable.last.compareTo(last) > 0)
+                        last = sstable.last;
+                }
+                else
+                {
+                    bounds.add(AbstractBounds.bounds(first, true, last, true));
+                    first = sstable.first;
+                    last = sstable.last;
+                }
+            }
+        }
+        bounds.add(AbstractBounds.bounds(first, true, last, true));
+        Set<SSTableReader> results = new HashSet<>();
+
+        for (AbstractBounds<PartitionPosition> bound : bounds)
+            Iterables.addAll(results, view.sstablesInBounds(sstableSet, bound.left, bound.right));
+
+        return Sets.difference(results, ImmutableSet.copyOf(sstables));
     }
 
     /**
@@ -1695,7 +1729,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         Map<Integer, SSTableReader> active = new HashMap<>();
         for (SSTableReader sstable : getSSTables(SSTableSet.CANONICAL))
             active.put(sstable.descriptor.generation, sstable);
-        Map<Descriptor, Set<Component>> snapshots = directories.sstableLister().snapshots(tag).list();
+        Map<Descriptor, Set<Component>> snapshots = directories.sstableLister(Directories.OnTxnErr.IGNORE).snapshots(tag).list();
         Refs<SSTableReader> refs = new Refs<>();
         try
         {

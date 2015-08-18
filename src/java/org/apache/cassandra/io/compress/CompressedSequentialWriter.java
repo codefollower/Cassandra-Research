@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.io.compress;
 
+import static org.apache.cassandra.utils.Throwables.merge;
+
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -31,6 +33,7 @@ import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.DataIntegrityMetadata;
 import org.apache.cassandra.io.util.FileMark;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.schema.CompressionParams;
 
@@ -85,7 +88,7 @@ public class CompressedSequentialWriter extends SequentialWriter
     {
         try
         {
-            return channel.position();
+            return fchannel.position();
         }
         catch (IOException e)
         {
@@ -142,9 +145,6 @@ public class CompressedSequentialWriter extends SequentialWriter
             compressed.rewind();
             crcMetadata.appendDirect(compressed, true);
             lastFlushOffset += compressedLength + 4;
-
-            // adjust our bufferOffset to account for the new uncompressed data we've now written out
-            resetBuffer();
         }
         catch (IOException e)
         {
@@ -167,6 +167,8 @@ public class CompressedSequentialWriter extends SequentialWriter
     @Override
     public FileMark mark()
     {
+        if (!buffer.hasRemaining())
+            doFlush();
         return new CompressedFileWriterMark(chunkOffset, current(), buffer.position(), chunkCount + 1);
     }
 
@@ -201,8 +203,8 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             compressed.clear();
             compressed.limit(chunkSize);
-            channel.position(chunkOffset);
-            channel.read(compressed);
+            fchannel.position(chunkOffset);
+            fchannel.read(compressed);
 
             try
             {
@@ -221,7 +223,7 @@ public class CompressedSequentialWriter extends SequentialWriter
             checksum.update(compressed);
 
             crcCheckBuffer.clear();
-            channel.read(crcCheckBuffer);
+            fchannel.read(crcCheckBuffer);
             crcCheckBuffer.flip();
             if (crcCheckBuffer.getInt() != (int) checksum.getValue())
                 throw new CorruptBlockException(getPath(), chunkOffset, chunkSize);
@@ -241,7 +243,6 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // Mark as dirty so we can guarantee the newly buffered bytes won't be lost on a rebuffer
         buffer.position(realMark.validBufferBytes);
-        isDirty = true;
 
         bufferOffset = truncateTarget - buffer.position();
         chunkCount = realMark.nextChunkIndex - 1;
@@ -260,7 +261,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             try
             {
-                channel.position(chunkOffset);
+                fchannel.position(chunkOffset);
             }
             catch (IOException e)
             {
@@ -292,6 +293,20 @@ public class CompressedSequentialWriter extends SequentialWriter
             releaseFileHandle();
             sstableMetadataCollector.addCompressionRatio(compressedSize, uncompressedSize);
             metadataWriter.finalizeLength(current(), chunkCount).prepareToCommit();
+        }
+
+        @Override
+        protected Throwable doPreCleanup(Throwable accumulate)
+        {
+            accumulate = super.doPreCleanup(accumulate);
+            if (compressed != null)
+            {
+                try { FileUtils.clean(compressed); }
+                catch (Throwable t) { accumulate = merge(accumulate, t); }
+                compressed = null;
+            }
+
+            return accumulate;
         }
     }
 
