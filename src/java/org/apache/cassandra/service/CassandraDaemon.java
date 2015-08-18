@@ -27,7 +27,6 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.server.RMIServerSocketFactory;
 import java.util.Collections;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -41,7 +40,6 @@ import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistryListener;
 import com.codahale.metrics.SharedMetricRegistries;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 import org.slf4j.Logger;
@@ -427,6 +425,7 @@ public class CassandraDaemon
      * initialized via {@link #init(String[])}
      *
      * Hook for JSVC
+     * (JSVC(Java SerViCe)是一个把Java程序当成服务运行的库 http://commons.apache.org/proper/commons-daemon/jsvc.html)
      */
     public void start()
     {
@@ -497,6 +496,7 @@ public class CassandraDaemon
         {
             // We need to adjust the system timer on windows from the default 15ms down to the minimum of 1ms as this
             // impacts timer intervals, thread scheduling, driver interrupts, etc.
+            //下面调用forceStaticInitialization就没意义了
             WindowsTimer.startTimerPeriod(DatabaseDescriptor.getWindowsTimerInterval());
         }
 

@@ -95,7 +95,7 @@ public class GossipDigestSynVerbHandler implements IVerbHandler<GossipDigestSyn>
      * Sort this list. Now loop through the sorted list and retrieve the GossipDigest corresponding
      * to the endpoint from the map that was initially constructed.
     */
-    private void doSort(List<GossipDigest> gDigestList)
+    private void doSort(List<GossipDigest> gDigestList) //generation最大的排在前面，如果generation相同，maxVersion与原有maxVersion间隔最大的排在前面
     {
         /* Construct a map of endpoint to GossipDigest. */
         Map<InetAddress, GossipDigest> epToDigestMap = new HashMap<InetAddress, GossipDigest>();

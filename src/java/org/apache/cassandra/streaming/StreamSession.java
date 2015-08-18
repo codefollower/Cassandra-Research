@@ -123,10 +123,10 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      *
      * Each {@code StreamSession} is identified by this InetAddress which is broadcast address of the node streaming.
      */
-    public final InetAddress peer;
+    public final InetAddress peer; //并不会直接连它，只是用于log的多
     private final int index;
     /** Actual connecting address. Can be the same as {@linkplain #peer}. */
-    public final InetAddress connecting;
+    public final InetAddress connecting; //实际连的是它，大多数跟peer是一样的
 
     // should not be null when session is started
     private StreamResultFuture streamResult;

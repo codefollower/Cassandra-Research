@@ -54,9 +54,10 @@ public class RangeStreamer
     /* current token ring */
     private final TokenMetadata metadata;
     /* address of this node */
-    private final InetAddress address;
+    private final InetAddress address; //是当前节点的地址，并不是将要被请求的节点的地址
     /* streaming description */
     private final String description;
+    //map的key是keyspaceName
     private final Multimap<String, Map.Entry<InetAddress, Collection<Range<Token>>>> toFetch = HashMultimap.create();
     private final Set<ISourceFilter> sourceFilters = new HashSet<>();
     private final StreamPlan streamPlan;

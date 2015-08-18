@@ -30,6 +30,8 @@ import org.apache.cassandra.utils.UUIDGen;
  *
  * This is the class you want to use for building streaming plan and starting streaming.
  */
+//transferRanges方法是把当前节点的数据传给其他节点
+//而requestRanges方法是让其他节点把数据传给当前节点
 public class StreamPlan
 {
     private final UUID planId = UUIDGen.getTimeUUID();

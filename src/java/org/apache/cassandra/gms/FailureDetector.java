@@ -63,13 +63,10 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
             return DEFAULT_MAX_PAUSE;
     }
 
-//<<<<<<< HEAD
-//    //我改过的，避免在eclipse中按f3时总是跳到IFailureDetector接口
-//    public static final FailureDetector instance = new FailureDetector();
-//    //public static final IFailureDetector instance = new FailureDetector();
-//    private static final Logger logger = LoggerFactory.getLogger(FailureDetector.class);
-//=======
-    public static final IFailureDetector instance = new FailureDetector();
+
+    //我改过的，避免在eclipse中按f3时总是跳到IFailureDetector接口
+    public static final FailureDetector instance = new FailureDetector();
+    //public static final IFailureDetector instance = new FailureDetector();
 
     // this is useless except to provide backwards compatibility in phi_convict_threshold,
     // because everyone seems pretty accustomed to the default of 8, and users who have

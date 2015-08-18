@@ -303,7 +303,7 @@ public class DatabaseDescriptor
             conf.commitlog_total_space_in_mb = 8192; //提交日志总空间大小默认是8G
 
         /* evaluate the DiskAccessMode Config directive, which also affects indexAccessMode selection */
-        if (conf.disk_access_mode == Config.DiskAccessMode.auto)
+        if (conf.disk_access_mode == Config.DiskAccessMode.auto) //自动侦测，64位系统使用mmap
         {
             conf.disk_access_mode = hasLargeAddressSpace() ? Config.DiskAccessMode.mmap : Config.DiskAccessMode.standard;
             indexAccessMode = conf.disk_access_mode;
@@ -317,26 +317,6 @@ public class DatabaseDescriptor
         }
         else
         {
-//<<<<<<< HEAD
-//            /* evaluate the DiskAccessMode Config directive, which also affects indexAccessMode selection */
-//            if (conf.disk_access_mode == Config.DiskAccessMode.auto) //自动侦测，64位系统使用mmap
-//            {
-//                conf.disk_access_mode = hasLargeAddressSpace() ? Config.DiskAccessMode.mmap : Config.DiskAccessMode.standard;
-//                indexAccessMode = conf.disk_access_mode;
-//                logger.info("DiskAccessMode 'auto' determined to be {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
-//            }
-//            else if (conf.disk_access_mode == Config.DiskAccessMode.mmap_index_only)
-//            {
-//                conf.disk_access_mode = Config.DiskAccessMode.standard;
-//                indexAccessMode = Config.DiskAccessMode.mmap;
-//                logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
-//            }
-//            else
-//            {
-//                indexAccessMode = conf.disk_access_mode;
-//                logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
-//            }
-//=======
             indexAccessMode = conf.disk_access_mode;
             logger.info("DiskAccessMode is {}, indexAccessMode is {}", conf.disk_access_mode, indexAccessMode);
         }

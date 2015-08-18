@@ -417,9 +417,6 @@ public final class SystemKeyspace
                          .comment(description);
     }
 
-//<<<<<<< HEAD
-//    public static KSMetaData definition() //18个表
-//=======
     public static KeyspaceMetadata metadata()
     {
         return KeyspaceMetadata.create(NAME, KeyspaceParams.local(), tables(), Types.none(), functions());
@@ -925,10 +922,7 @@ public final class SystemKeyspace
         if (result.isEmpty() || !result.one().has("cluster_name"))
         {
             // this is a brand new node
-//<<<<<<< HEAD
-//            if (!cfs.getSSTables().isEmpty()) //system.local表里没记录，但是却存在文件，说明不一致了
-//=======
-            if (!cfs.getLiveSSTables().isEmpty())
+            if (!cfs.getLiveSSTables().isEmpty()) //system.local表里没记录，但是却存在文件，说明不一致了
                 throw new ConfigurationException("Found system keyspace files, but they couldn't be loaded!");
 
             // no system files.  this is a new node.

@@ -234,7 +234,7 @@ public class OutboundTcpConnection extends Thread
 //                    //qm.isTimedOut方法的内部代码是: 
 //                    //droppable && timestamp < System.currentTimeMillis() - maxTime;
 //                    //maxTime = m.getTimeout是消息超时时间长度，比如3000毫秒，就是3秒钟，并不是一个具体的时间
-//                    //timestamp是进行队列的时间，是一个具体的时间
+//                    //timestamp是进入队列的时间，是一个具体的时间
 //                    //timestamp < System.currentTimeMillis() - maxTime相当于
 //                    //qm.timestamp + maxTime < System.currentTimeMillis()
 //                    //意思就是消息进入队列太久了，都超过超时时间了，如果消息是可丢弃的，那么就丢弃它，不再处理
