@@ -62,11 +62,7 @@ public class Schema
     public static final int NAME_LENGTH = 48;
 
     /* metadata map for faster keyspace lookup */
-//<<<<<<< HEAD
-//
-//    //key是keyspace的名称
-//    private final Map<String, KSMetaData> keyspaces = new NonBlockingHashMap<>();
-//=======
+    //key是keyspace的名称
     private final Map<String, KeyspaceMetadata> keyspaces = new NonBlockingHashMap<>();
 
     /* Keyspace objects, one per keyspace. Only one instance should ever exist for any given keyspace. */

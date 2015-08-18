@@ -41,7 +41,6 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 
 import static java.lang.String.format;
 
-@SuppressWarnings("deprecation")
 public final class CompressionParams
 {
     private static final Logger logger = LoggerFactory.getLogger(CompressionParams.class);

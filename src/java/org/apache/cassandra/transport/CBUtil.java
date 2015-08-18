@@ -50,6 +50,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * advancing the write position. Functions are also provided to create
  * ByteBuf while avoiding copies.
  */
+//CBUtil是ChannelBuffer utility，之前的版本(<=2.0)使用org.jboss.netty.buffer.ChannelBuffer，现在变io.netty了
 public abstract class CBUtil
 {
     public static final boolean USE_HEAP_ALLOCATOR = Boolean.getBoolean(Config.PROPERTY_PREFIX + "netty_use_heap_allocator");

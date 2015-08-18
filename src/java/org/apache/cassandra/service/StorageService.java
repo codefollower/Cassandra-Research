@@ -192,7 +192,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public volatile VersionedValue.VersionedValueFactory valueFactory = new VersionedValue.VersionedValueFactory(tokenMetadata.partitioner);
 
     private Thread drainOnShutdown = null;
-    private boolean inShutdownHook = false;
+    private boolean inShutdownHook = false; //执行drain或jvm正要退出时为true
 
     public static final StorageService instance = new StorageService();
 
@@ -2119,6 +2119,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
+    //excise: 切除
     private void excise(Collection<Token> tokens, InetAddress endpoint)
     {
         logger.info("Removing tokens {} for {}", tokens, endpoint);
@@ -3314,6 +3315,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         PendingRangeCalculatorService.instance.update();
     }
 
+    //decommission: 退役
     public void decommission() throws InterruptedException
     {
         if (!tokenMetadata.isMember(FBUtilities.getBroadcastAddress()))

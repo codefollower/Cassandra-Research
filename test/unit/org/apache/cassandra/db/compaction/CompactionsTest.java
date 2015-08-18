@@ -65,9 +65,9 @@ public class CompactionsTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.denseCFMD(KEYSPACE1, CF_DENSE1)
-                                                .compaction(CompactionParams.scts(compactionOptions)),
+                                                .compaction(CompactionParams.stcs(compactionOptions)),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1)
-                                                .compaction(CompactionParams.scts(compactionOptions)),
+                                                .compaction(CompactionParams.stcs(compactionOptions)),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD3),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD4),

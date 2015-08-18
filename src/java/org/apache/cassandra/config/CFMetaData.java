@@ -124,6 +124,8 @@ public final class CFMetaData
         return this;
     }
 
+    //fp是指false-positive
+    //cql31文档中的描述是: Desired false-positive probability for SSTable Bloom filters.
     public CFMetaData bloomFilterFpChance(double prop)
     {
         params = TableParams.builder(params).bloomFilterFpChance(prop).build();

@@ -23,9 +23,9 @@ import java.util.stream.Collectors;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.functions.FunctionName;
@@ -494,6 +494,7 @@ public final class LegacySchemaMigrator
     private static void addDroppedColumns(CFMetaData cfm, AbstractType<?> comparator, Map<String, Long> droppedTimes)
     {
         AbstractType<?> last = comparator.getComponents().get(comparator.componentsCount() - 1);
+        @SuppressWarnings("rawtypes")
         Map<ByteBuffer, CollectionType> collections = last instanceof ColumnToCollectionType
                                                     ? ((ColumnToCollectionType) last).defined
                                                     : Collections.emptyMap();
@@ -630,7 +631,7 @@ public final class LegacySchemaMigrator
         Slices slices = Slices.with(comparator, Slice.make(comparator, typeName));
         int nowInSec = FBUtilities.nowInSeconds();
         DecoratedKey key = store.metadata.decorateKey(AsciiType.instance.fromString(keyspaceName));
-        SinglePartitionReadCommand command = SinglePartitionSliceCommand.create(store.metadata, nowInSec, key, slices);
+        SinglePartitionReadCommand<?> command = SinglePartitionSliceCommand.create(store.metadata, nowInSec, key, slices);
 
         try (OpOrder.Group op = store.readOrdering.start();
              RowIterator partition = UnfilteredRowIterators.filter(command.queryMemtableAndDisk(store, op), nowInSec))

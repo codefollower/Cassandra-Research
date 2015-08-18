@@ -23,6 +23,7 @@ import org.apache.cassandra.exceptions.TransportException;
 /**
  * Exceptions thrown when a client didn't respect the protocol.
  */
+//TransportException接口中的getMessage()在java.lang.Throwable类中默认已经有了
 public class ProtocolException extends RuntimeException implements TransportException
 {
     public ProtocolException(String msg)

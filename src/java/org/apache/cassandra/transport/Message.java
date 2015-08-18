@@ -341,12 +341,8 @@ public abstract class Message
                 ByteBuf body;
                 if (message instanceof Response)
                 {
-//<<<<<<< HEAD
-//                    //执行QueryMessage、PrepareMessage、ExecuteMessage、BatchMessage时才有可能返回不为null的tracingId
-//                    UUID tracingId = ((Response)message).getTracingId(); //tracingId的长度是16字节
-//                    Map<String, byte[]> customPayload = message.getCustomPayload();
-//=======
-                    UUID tracingId = ((Response)message).getTracingId();
+                    //执行QueryMessage、PrepareMessage、ExecuteMessage、BatchMessage时才有可能返回不为null的tracingId
+                    UUID tracingId = ((Response)message).getTracingId(); //tracingId的长度是16字节
                     Map<String, ByteBuffer> customPayload = message.getCustomPayload();
                     if (tracingId != null)
                         messageSize += CBUtil.sizeOfUUID(tracingId);

@@ -74,7 +74,7 @@ public final class SchemaKeyspace
     public static final String FUNCTIONS = "functions";
     public static final String AGGREGATES = "aggregates";
 
-    public static final List<String> ALL =
+    public static final List<String> ALL = //不包含"dropped_columns"
         ImmutableList.of(KEYSPACES, TABLES, COLUMNS, TRIGGERS, MATERIALIZED_VIEWS, TYPES, FUNCTIONS, AGGREGATES);
 
     private static final CFMetaData Keyspaces =
@@ -199,7 +199,7 @@ public final class SchemaKeyspace
                 + "state_type text,"
                 + "PRIMARY KEY ((keyspace_name), aggregate_name, signature))");
 
-    public static final List<CFMetaData> All =
+    public static final List<CFMetaData> All = //包含"dropped_columns"
         ImmutableList.of(Keyspaces, Tables, Columns, Triggers, DroppedColumns, MaterializedViews, Types, Functions, Aggregates);
 
     private static CFMetaData compile(String name, String description, String schema)

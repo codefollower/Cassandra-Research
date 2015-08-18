@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.schema;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -105,7 +106,7 @@ public final class KeyspaceMetadata
     @Override
     public String toString()
     {
-        return Objects.toStringHelper(this)
+        return MoreObjects.toStringHelper(this)
                       .add("name", name)
                       .add("params", params)
                       .add("tables", tables)

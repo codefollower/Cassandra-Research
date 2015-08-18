@@ -88,10 +88,7 @@ public class Memtable implements Comparable<Memtable>
     // We index the memtable by PartitionPosition only for the purpose of being able
     // to select key range using Token.KeyBound. However put() ensures that we
     // actually only store DecoratedKey.
-//<<<<<<< HEAD
-//    //AtomicBTreeColumns只是针对一行的，代表某行中的所有列
-//    private final ConcurrentNavigableMap<RowPosition, AtomicBTreeColumns> rows = new ConcurrentSkipListMap<>();
-//=======
+    //AtomicBTreePartition只是针对一行的，代表某行中的所有列
     private final ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> partitions = new ConcurrentSkipListMap<>();
     public final ColumnFamilyStore cfs;
     private final long creationTime = System.currentTimeMillis();
@@ -264,17 +261,7 @@ public class Memtable implements Comparable<Memtable>
                              100 * allocator.onHeap().ownershipRatio(), 100 * allocator.offHeap().ownershipRatio());
     }
 
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////    /**
-////     * @param startWith Include data in the result from and including this key and to the end of the memtable
-////     * @return An iterator of entries with the data from the start key
-////     */
-////    //用于按rowkey进行范围扫描的情况
-////    public Iterator<Map.Entry<DecoratedKey, ColumnFamily>> getEntryIterator(final RowPosition startWith, final RowPosition stopAt)
-////=======
-//    public UnfilteredPartitionIterator makePartitionIterator(final ColumnFilter columnFilter, final DataRange dataRange, final boolean isForThrift)
-//=======
+    //用于按rowkey进行范围扫描的情况
     public MemtableUnfilteredPartitionIterator makePartitionIterator(final ColumnFilter columnFilter, final DataRange dataRange, final boolean isForThrift)
     {
         AbstractBounds<PartitionPosition> keyRange = dataRange.keyRange();
@@ -315,11 +302,7 @@ public class Memtable implements Comparable<Memtable>
         return minLocalDeletionTime;
     }
 
-//<<<<<<< HEAD
-//    //只找单个rowkey的情况
-//    public ColumnFamily getColumnFamily(DecoratedKey key)
-//=======
-    public Partition getPartition(DecoratedKey key)
+    public Partition getPartition(DecoratedKey key) //只找单个rowkey的情况
     {
         return partitions.get(key);
     }

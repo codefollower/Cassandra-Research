@@ -107,7 +107,7 @@ public class DefsTest
         cfm.comment("No comment")
            .readRepairChance(0.5)
            .gcGraceSeconds(100000)
-           .compaction(CompactionParams.scts(ImmutableMap.of("min_threshold", "500",
+           .compaction(CompactionParams.stcs(ImmutableMap.of("min_threshold", "500",
                                                              "max_threshold", "500")));
 
         // we'll be adding this one later. make sure it's not already there.

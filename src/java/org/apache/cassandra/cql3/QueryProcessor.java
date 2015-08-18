@@ -98,7 +98,6 @@ public class QueryProcessor implements QueryHandler
 
     static
     {
-        //要加-javaagent:"E:/cassandra/lib/jamm-0.2.5.jar"
         preparedStatements = new ConcurrentLinkedHashMap.Builder<MD5Digest, ParsedStatement.Prepared>()
                              .maximumWeightedCapacity(MAX_CACHE_PREPARED_MEMORY)
                              .weigher(cqlMemoryUsageWeigher)
@@ -194,32 +193,6 @@ public class QueryProcessor implements QueryHandler
         }
     }
 
-//<<<<<<< HEAD
-//    public static void validateCellNames(Iterable<CellName> cellNames, CellNameType type) throws InvalidRequestException
-//    {
-//        for (CellName name : cellNames)
-//            validateCellName(name, type);
-//    }
-//
-//    public static void validateCellName(CellName name, CellNameType type) throws InvalidRequestException
-//    {
-//        validateComposite(name, type);
-//        if (name.isEmpty()) //这一步为什么不放到validateComposite里顺便做了？
-//            throw new InvalidRequestException("Invalid empty value for clustering column of COMPACT TABLE");
-//    }
-//
-//    public static void validateComposite(Composite name, CType type) throws InvalidRequestException
-//    { 
-//        //会触发org.apache.cassandra.db.composites.AbstractComposite.toByteBuffer()，会复制数据，是否可优化？
-//        long serializedSize = type.serializer().serializedSize(name, TypeSizes.NATIVE);
-//        if (serializedSize > Cell.MAX_NAME_LENGTH)
-//            throw new InvalidRequestException(String.format("The sum of all clustering columns is too long (%s > %s)",
-//                                                            serializedSize,
-//                                                            Cell.MAX_NAME_LENGTH));
-//    }
-//
-//=======
-//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
     public ResultMessage processStatement(CQLStatement statement, QueryState queryState, QueryOptions options)
     throws RequestExecutionException, RequestValidationException
     {
