@@ -29,7 +29,6 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.serializers.MarshalException;
-import org.apache.cassandra.exceptions.*;
 
 public class ColumnDefinition extends ColumnSpecification implements Comparable<ColumnDefinition>
 {
@@ -91,10 +90,6 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
     //超类ColumnSpecification有4个字段，此类有5个字段，刚好9个，刚好对应system.schema_columns表中的9个字段
     public final Kind kind;
 
-    private String indexName;
-    private IndexType indexType;
-    private Map<String,String> indexOptions;
-
     /*
      * If the column comparator is a composite type, indicates to which
      * component this definition refers to. If null, the definition refers to
@@ -124,7 +119,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     public static ColumnDefinition partitionKeyDef(String ksName, String cfName, String name, AbstractType<?> validator, Integer componentIndex)
     {
-        return new ColumnDefinition(ksName, cfName, ColumnIdentifier.getInterned(name, true), validator, null, null, null, componentIndex, Kind.PARTITION_KEY);
+        return new ColumnDefinition(ksName, cfName, ColumnIdentifier.getInterned(name, true), validator, componentIndex, Kind.PARTITION_KEY);
     }
 
     public static ColumnDefinition clusteringKeyDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
@@ -134,7 +129,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     public static ColumnDefinition clusteringKeyDef(String ksName, String cfName, String name, AbstractType<?> validator, Integer componentIndex)
     {
-        return new ColumnDefinition(ksName, cfName, ColumnIdentifier.getInterned(name, true),  validator, null, null, null, componentIndex, Kind.CLUSTERING);
+        return new ColumnDefinition(ksName, cfName, ColumnIdentifier.getInterned(name, true),  validator, componentIndex, Kind.CLUSTERING);
     }
 
     public static ColumnDefinition regularDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator)
@@ -144,7 +139,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     public static ColumnDefinition regularDef(String ksName, String cfName, String name, AbstractType<?> validator)
     {
-        return new ColumnDefinition(ksName, cfName, ColumnIdentifier.getInterned(name, true), validator, null, null, null, null, Kind.REGULAR);
+        return new ColumnDefinition(ksName, cfName, ColumnIdentifier.getInterned(name, true), validator, null, Kind.REGULAR);
     }
 
     public static ColumnDefinition staticDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator)
@@ -163,16 +158,8 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 //=======
              ColumnIdentifier.getInterned(name, cfm.getColumnDefinitionNameComparator(kind)),
              validator,
-             null,
-             null,
-             null,
              componentIndex,
              kind);
-    }
-
-    public ColumnDefinition(String ksName, String cfName, ColumnIdentifier name, AbstractType<?> type, Integer componentIndex, Kind kind)
-    {
-        this(ksName, cfName, name, type, null, null, null, componentIndex, kind);
     }
 
     @VisibleForTesting
@@ -180,9 +167,6 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
                             String cfName,
                             ColumnIdentifier name,
                             AbstractType<?> validator,
-                            IndexType indexType,
-                            Map<String, String> indexOptions,
-                            String indexName,
                             Integer componentIndex,
                             Kind kind)
     {
@@ -192,9 +176,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         assert componentIndex == null || kind.isPrimaryKeyKind(); // The componentIndex really only make sense for partition and clustering columns,
                                                                   // so make sure we don't sneak it for something else since it'd breaks equals()
         this.kind = kind;
-        this.indexName = indexName;
         this.componentIndex = componentIndex;
-        this.setIndexType(indexType, indexOptions);
         this.cellPathComparator = makeCellPathComparator(kind, validator);
         this.cellComparator = cellPathComparator == null ? ColumnData.comparator : (a, b) -> cellPathComparator.compare(a.path(), b.path());
         this.asymmetricCellPathComparator = cellPathComparator == null ? null : (a, b) -> cellPathComparator.compare(((Cell)a).path(), (CellPath) b);
@@ -229,17 +211,17 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     public ColumnDefinition copy()
     {
-        return new ColumnDefinition(ksName, cfName, name, type, indexType, indexOptions, indexName, componentIndex, kind);
+        return new ColumnDefinition(ksName, cfName, name, type, componentIndex, kind);
     }
 
     public ColumnDefinition withNewName(ColumnIdentifier newName)
     {
-        return new ColumnDefinition(ksName, cfName, newName, type, indexType, indexOptions, indexName, componentIndex, kind);
+        return new ColumnDefinition(ksName, cfName, newName, type, componentIndex, kind);
     }
 
     public ColumnDefinition withNewType(AbstractType<?> newType)
     {
-        return new ColumnDefinition(ksName, cfName, name, newType, indexType, indexOptions, indexName, componentIndex, kind);
+        return new ColumnDefinition(ksName, cfName, name, newType, componentIndex, kind);
     }
 
     //SimpleSparseCellNameType和SimpleDenseCellNameType的情况componentIndex是null
@@ -292,33 +274,24 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
             && Objects.equal(name, cd.name)
             && Objects.equal(type, cd.type)
             && Objects.equal(kind, cd.kind)
-            && Objects.equal(componentIndex, cd.componentIndex)
-            && Objects.equal(indexName, cd.indexName)
-            && Objects.equal(indexType, cd.indexType)
-            && Objects.equal(indexOptions, cd.indexOptions);
+            && Objects.equal(componentIndex, cd.componentIndex);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(ksName, cfName, name, type, kind, componentIndex, indexName, indexType, indexOptions);
+        return Objects.hashCode(ksName, cfName, name, type, kind, componentIndex);
     }
 
     @Override
     public String toString()
     {
-//        return Objects.toStringHelper(this)
-//                      .add("name", name)
-//                      .add("type", type)
-//                      .add("kind", kind)
-//                      .add("componentIndex", componentIndex)
-//                      .add("indexName", indexName)
-//                      .add("indexType", indexType)
-//                      .toString();
-        
         return Objects.toStringHelper(this)
-                .add("name", name)
-                .toString();
+                      .add("name", name)
+                      .add("type", type)
+                      .add("kind", kind)
+                      .add("componentIndex", componentIndex)
+                      .toString();
     }
 
     public boolean isPrimaryKeyColumn()
@@ -342,123 +315,25 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         else
             return kind == Kind.STATIC;
     }
-
-//<<<<<<< HEAD
-//    /**
-//     * Drop specified column from the schema using given mutation.
-//     *
-//     * @param mutation  The schema mutation
-//     * @param timestamp The timestamp to use for column modification
-//     */
-//    public void deleteFromSchema(Mutation mutation, long timestamp)
-//    {
-//        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SchemaColumnsTable);
-//        int ldt = (int) (System.currentTimeMillis() / 1000);
+////每一个字段对应schema_columns表中的一条记录
+//public void toSchema(Mutation mutation, long timestamp)
+//{
+//    ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SchemaColumnsTable);
+//    Composite prefix = SystemKeyspace.SchemaColumnsTable.comparator.make(cfName, name.toString());
+//    CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
 //
-//        // Note: we do want to use name.toString(), not name.bytes directly for backward compatibility (For CQL3, this won't make a difference).
-//        Composite prefix = SystemKeyspace.SchemaColumnsTable.comparator.make(cfName, name.toString());
-//        cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
-//    }
-//
-//    //每一个字段对应schema_columns表中的一条记录
-//    public void toSchema(Mutation mutation, long timestamp)
-//    {
-//        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SchemaColumnsTable);
-//        Composite prefix = SystemKeyspace.SchemaColumnsTable.comparator.make(cfName, name.toString());
-//        CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
-//
-//        //对应schema_columns表除keyspace_name和columnfamily_name、column_name之外的6个普通字段
-//        //keyspace_name字段是PARTITION_KEY，
-//        //而columnfamily_name、column_name字段是CLUSTERING_COLUMN
-//        //columnfamily_name、column_name这两个字段的值串接后会加到每个普通字段名之前
-//        adder.add(TYPE, type.toString());
-//        adder.add(INDEX_TYPE, indexType == null ? null : indexType.toString());
-//        adder.add(INDEX_OPTIONS, json(indexOptions));
-//        adder.add(INDEX_NAME, indexName);
-//        adder.add(COMPONENT_INDEX, componentIndex);
-//        adder.add(KIND, kind.serialize());
-//        cf.toString();
-//    }
-//
-//=======
-//>>>>>>> bf599fb5b062cbcc652da78b7d699e7a01b949ad
-    public ColumnDefinition apply(ColumnDefinition def)  throws ConfigurationException
-    {
-        assert kind == def.kind && Objects.equal(componentIndex, def.componentIndex);
-
-        if (getIndexType() != null && def.getIndexType() != null)
-        {
-            // If an index is set (and not drop by this update), the validator shouldn't be change to a non-compatible one
-            // (and we want true comparator compatibility, not just value one, since the validator is used by LocalPartitioner to order index rows)
-            if (!def.type.isCompatibleWith(type))
-                throw new ConfigurationException(String.format("Cannot modify validator to a non-order-compatible one for column %s since an index is set", name));
-
-            assert getIndexName() != null;
-            if (!getIndexName().equals(def.getIndexName()))
-                throw new ConfigurationException("Cannot modify index name: " + def.getIndexName());
-        }
-
-        return new ColumnDefinition(ksName,
-                                    cfName,
-                                    name,
-                                    def.type,
-                                    def.getIndexType(),
-                                    def.getIndexOptions(),
-                                    def.getIndexName(),
-                                    componentIndex,
-                                    kind);
-    }
-
-    public String getIndexName()
-    {
-        return indexName;
-    }
-
-    public ColumnDefinition setIndexName(String indexName)
-    {
-        this.indexName = indexName;
-        return this;
-    }
-
-    public ColumnDefinition setIndexType(IndexType indexType, Map<String,String> indexOptions)
-    {
-        this.indexType = indexType;
-        this.indexOptions = indexOptions;
-        return this;
-    }
-
-    public ColumnDefinition setIndex(String indexName, IndexType indexType, Map<String,String> indexOptions)
-    {
-        return setIndexName(indexName).setIndexType(indexType, indexOptions);
-    }
-
-    public boolean isIndexed()
-    {
-        return indexType != null;
-    }
-
-    public IndexType getIndexType()
-    {
-        return indexType;
-    }
-
-    public Map<String,String> getIndexOptions()
-    {
-        return indexOptions;
-    }
-
-    /**
-     * Checks if the index option with the specified name has been specified.
-     *
-     * @param name index option name
-     * @return <code>true</code> if the index option with the specified name has been specified, <code>false</code>
-     * otherwise.
-     */
-    public boolean hasIndexOption(String name)
-    {
-        return indexOptions != null && indexOptions.containsKey(name);
-    }
-
+//    //对应schema_columns表除keyspace_name和columnfamily_name、column_name之外的6个普通字段
+//    //keyspace_name字段是PARTITION_KEY，
+//    //而columnfamily_name、column_name字段是CLUSTERING_COLUMN
+//    //columnfamily_name、column_name这两个字段的值串接后会加到每个普通字段名之前
+//    adder.add(TYPE, type.toString());
+//    adder.add(INDEX_TYPE, indexType == null ? null : indexType.toString());
+//    adder.add(INDEX_OPTIONS, json(indexOptions));
+//    adder.add(INDEX_NAME, indexName);
+//    adder.add(COMPONENT_INDEX, componentIndex);
+//    adder.add(KIND, kind.serialize());
+//    cf.toString();
+//}
     /**
      * Converts the specified column definitions into column identifiers.
      *

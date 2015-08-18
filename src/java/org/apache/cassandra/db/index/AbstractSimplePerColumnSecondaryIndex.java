@@ -54,13 +54,16 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         columnDef = columnDefs.iterator().next();
 
 //<<<<<<< HEAD
-//        //索引实际上在内部也是当成一个列族存储的，
-//        //只不过这个列族名比较特殊，
-//        //此列族名为: 索引字段所在列族名 + "." + 索引名(如果没有索引名，就用索引字段名，建索引时可以不指定索引名)
-//        CellNameType indexComparator = SecondaryIndex.getIndexComparator(baseCfs.metadata, columnDef);
-//        CFMetaData indexedCfMetadata = CFMetaData.newIndexMetadata(baseCfs.metadata, columnDef, indexComparator);
+////<<<<<<< HEAD
+////        //索引实际上在内部也是当成一个列族存储的，
+////        //只不过这个列族名比较特殊，
+////        //此列族名为: 索引字段所在列族名 + "." + 索引名(如果没有索引名，就用索引字段名，建索引时可以不指定索引名)
+////        CellNameType indexComparator = SecondaryIndex.getIndexComparator(baseCfs.metadata, columnDef);
+////        CFMetaData indexedCfMetadata = CFMetaData.newIndexMetadata(baseCfs.metadata, columnDef, indexComparator);
+////=======
+//        CFMetaData indexedCfMetadata = SecondaryIndex.newIndexMetadata(baseCfs.metadata, columnDef, getIndexKeyComparator());
 //=======
-        CFMetaData indexedCfMetadata = SecondaryIndex.newIndexMetadata(baseCfs.metadata, columnDef, getIndexKeyComparator());
+        CFMetaData indexedCfMetadata = SecondaryIndex.newIndexMetadata(baseCfs.metadata, indexMetadata, getIndexKeyComparator());
         indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
                                                              indexedCfMetadata.cfName,
                                                              indexedCfMetadata,

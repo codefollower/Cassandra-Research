@@ -71,9 +71,6 @@ target/
 *.tmp
 .DS_Store
 Thumbs.db
-<<<<<<< HEAD
-/src/resources
-=======
 
 # JSR223
 lib/jsr223/clojure/*.jar
@@ -86,4 +83,4 @@ lib/jsr223/jython/*.jar
 lib/jsr223/jython/cachedir
 lib/jsr223/scala/*.jar
 
->>>>>>> f0ea366b3d7733572e7de6a2eb3c9c197f484864
+lib/cassandra-driver-core-3.0.0-alpha2-188d996-SNAPSHOT-shaded.jar
