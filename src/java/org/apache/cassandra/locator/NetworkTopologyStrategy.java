@@ -80,6 +80,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
      * calculate endpoints in one pass through the tokens by tracking our progress in each DC, rack etc.
      */
     @SuppressWarnings("serial")
+    //在满足每个数据中心放置副本个数的情况下，尽量把副本放到不同的机架
     public List<InetAddress> calculateNaturalEndpoints(Token searchToken, TokenMetadata tokenMetadata)
     {
         // we want to preserve insertion order so that the first added endpoint becomes primary
@@ -130,6 +131,8 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
                 // is this a new rack?
                 if (seenRacks.get(dc).contains(rack))
                 {
+                    //如果DC1放两份，rack1有两个节点，rack2有1个节点
+                    //这里可以避免把两个副本都放到rack1
                     skippedDcEndpoints.get(dc).add(ep);
                 }
                 else
