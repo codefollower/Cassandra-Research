@@ -37,6 +37,7 @@ public class Assassinate extends NodeToolCmd
     {
         try
         {
+            //assassinate : 暗杀, 行刺
             probe.assassinateEndpoint(endpoint);
         }
         catch (UnknownHostException e)

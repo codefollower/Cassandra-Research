@@ -105,14 +105,17 @@ public class CassandraDaemon
         String jmxPort = System.getProperty("cassandra.jmx.local.port");
         if (jmxPort == null)
             return;
+        
+        String hostname = DatabaseDescriptor.getListenAddress().getHostAddress();
+        String urlStr = String.format("service:jmx:rmi://%s/jndi/rmi://%s:%s/jmxrmi", hostname,hostname, jmxPort);
 
-        System.setProperty("java.rmi.server.hostname", InetAddress.getLoopbackAddress().getHostAddress());
+        System.setProperty("java.rmi.server.hostname", hostname);
         RMIServerSocketFactory serverFactory = new RMIServerSocketFactoryImpl();
         Map<String, ?> env = Collections.singletonMap(RMIConnectorServer.RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE, serverFactory);
         try
         {
             LocateRegistry.createRegistry(Integer.valueOf(jmxPort), null, serverFactory);
-            JMXServiceURL url = new JMXServiceURL(String.format("service:jmx:rmi://localhost/jndi/rmi://localhost:%s/jmxrmi", jmxPort));
+            JMXServiceURL url = new JMXServiceURL(urlStr);
             jmxServer = new RMIConnectorServer(url, env, ManagementFactory.getPlatformMBeanServer());
             jmxServer.start();
         }
@@ -120,6 +123,21 @@ public class CassandraDaemon
         {
             logger.error("Error starting local jmx server: ", e);
         }
+        
+//        System.setProperty("java.rmi.server.hostname", InetAddress.getLoopbackAddress().getHostAddress());
+//        RMIServerSocketFactory serverFactory = new RMIServerSocketFactoryImpl();
+//        Map<String, ?> env = Collections.singletonMap(RMIConnectorServer.RMI_SERVER_SOCKET_FACTORY_ATTRIBUTE, serverFactory);
+//        try
+//        {
+//            LocateRegistry.createRegistry(Integer.valueOf(jmxPort), null, serverFactory);
+//            JMXServiceURL url = new JMXServiceURL(String.format("service:jmx:rmi://localhost/jndi/rmi://localhost:%s/jmxrmi", jmxPort));
+//            jmxServer = new RMIConnectorServer(url, env, ManagementFactory.getPlatformMBeanServer());
+//            jmxServer.start();
+//        }
+//        catch (IOException e)
+//        {
+//            logger.error("Error starting local jmx server: ", e);
+//        }
     }
 
     private static final CassandraDaemon instance = new CassandraDaemon();

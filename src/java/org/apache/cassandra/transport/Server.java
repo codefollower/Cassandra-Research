@@ -207,7 +207,7 @@ public class Server implements CassandraDaemon.Server
         eventExecutorGroup = null;
         logger.info("Stop listening for CQL clients");
 
-        StorageService.instance.setRpcReady(false);
+        StorageService.instance.setRpcReady(false); //会触发多余的EventNotifier.onDown
     }
 
 

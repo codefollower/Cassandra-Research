@@ -17,18 +17,71 @@
  */
 package my.test.nodetool;
 
+import java.util.ArrayList;
+
 import org.apache.cassandra.tools.NodeTool;
 
 public class NodeToolTest {
 
     public static void main(String[] args) {
-        //String[] options = { "-h", "127.0.0.1", "-p", "7010", "-u", "cassandra", "-pw", "cassandra", "status" };
+        // String[] options = { "-h", "127.0.0.1", "-p", "7010", "-u", "cassandra", "-pw", "cassandra", "status" };
 
-        //String[] options = { "-p", "7070", "status" };
-        //String[] options = { "-p", "7070","bootstrap","resume" };
-        
-        String[] options = { "-p", "7070", "info" };
-        NodeTool.main(options);
+        // String[] options = { "-p", "7070", "status" };
+        // String[] options = { "-p", "7070","bootstrap","resume" };
+
+        // String[] options = { "-h", "127.0.0.1", "-p", "7070", "removenode", "5e8b63cc-387d-49c0-bb60-b551943918b1"};
+        // String[] options = { "-h", "127.0.0.1", "-p", "7070", "help", "decommission"};
+
+        ArrayList<String> options = new ArrayList<>();
+        options.add("-h");
+        options.add("127.0.0.1");
+        // options.add("127.0.0.2");
+        // options.add("127.0.0.3");
+        options.add("-p");
+        options.add("7070");
+
+        // options.add("help");
+        // options.add("assassinate");
+        // options.add("decommission");
+
+        // options.add("removenode");
+        // options.add("force");
+        // options.add("5e8b63cc-387d-49c0-bb60-b551943918b1");
+
+        // options.add("drain");
+
+        // options.add("status");
+
+        // options.add("move");
+        // options.add("100");
+
+        // options.add("assassinate");
+        // options.add("127.0.0.3");
+
+        // options.add("bootstrap");
+        // options.add("resume");
+
+        // options.add("flush");
+        // options.add("mytest");
+        // options.add("users");
+
+        // options.add("tablehistograms");
+        // options.add("mytest");
+        // options.add("users");
+
+        // options.add("gossipinfo");
+        // options.add("info");
+
+        // options.add("netstats");
+        // options.add("--human-readable");
+
+        // options.add("rangekeysample");
+
+        // options.add("tpstats");
+
+        options.add("stopdaemon");
+
+        NodeTool.main(options.toArray(new String[0]));
     }
 
 }
