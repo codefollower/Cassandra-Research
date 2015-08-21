@@ -182,6 +182,7 @@ public class RangeStreamer
      *
      * @throws java.lang.IllegalStateException when there is no source to get data streamed
      */
+    // 返回的结果中，一个desiredRange可能有多个InetAddress
     private Multimap<Range<Token>, InetAddress> getAllRangesWithSourcesFor(String keyspaceName, Collection<Range<Token>> desiredRanges)
     {
         AbstractReplicationStrategy strat = Keyspace.open(keyspaceName).getReplicationStrategy();
@@ -214,6 +215,7 @@ public class RangeStreamer
      *
      * @throws java.lang.IllegalStateException when there is no source to get data streamed, or more than 1 source found.
      */
+    // 返回的结果中，一个desiredRange只有一个InetAddress
     private Multimap<Range<Token>, InetAddress> getAllRangesWithStrictSourcesFor(String keyspace, Collection<Range<Token>> desiredRanges)
     {
         assert tokens != null;

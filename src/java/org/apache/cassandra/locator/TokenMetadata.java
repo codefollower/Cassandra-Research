@@ -84,6 +84,7 @@ public class TokenMetadata
     // (don't need to record Token here since it's still part of tokenToEndpointMap until it's done leaving)
     private final Set<InetAddress> leavingEndpoints = new HashSet<InetAddress>();
     // this is a cache of the calculation from {tokenToEndpointMap, bootstrapTokens, leavingEndpoints}
+    // 在节点启动需要进行bootstrap时并没有用到pendingRanges
     private final ConcurrentMap<String, Multimap<Range<Token>, InetAddress>> pendingRanges = new ConcurrentHashMap<String, Multimap<Range<Token>, InetAddress>>();
 
     // nodes which are migrating to the new tokens in the ring
@@ -744,7 +745,7 @@ public class TokenMetadata
             {
                 Set<InetAddress> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, metadata));
                 Set<InetAddress> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, allLeftMetadata));
-                newPendingRanges.putAll(range, Sets.difference(newEndpoints, currentEndpoints));
+                newPendingRanges.putAll(range, Sets.difference(newEndpoints, currentEndpoints)); //差集
             }
 
             // At this stage newPendingRanges has been updated according to leave operations. We can

@@ -19,6 +19,7 @@ listen_address: 127.0.0.1
 storage_port: 7010
 rpc_port: 9170
 column_index_size_in_kb: 4
+hints_directory: my-test-data/hints
 commitlog_directory: my-test-data/commitlog
 saved_caches_directory: my-test-data/saved_caches
 data_file_directories:

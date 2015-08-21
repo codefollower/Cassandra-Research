@@ -44,6 +44,7 @@ public class CassandraDaemonStart extends YamlConfigurationLoader {
         this.dir = "my-test-data/" + dir + "/";
         Config config = super.loadConfig();
         config.listen_address = listen_address;
+        config.hints_directory = dir + "hints";
         config.commitlog_directory = dir + "commitlog";
         config.saved_caches_directory = dir + "saved_caches";
         config.data_file_directories = new String[] { dir + "data" };
