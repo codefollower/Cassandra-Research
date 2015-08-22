@@ -31,14 +31,8 @@ public class ChecksummedSequentialWriter extends SequentialWriter
     {
         super(file, bufferSize, BufferType.ON_HEAP);
         crcWriter = new SequentialWriter(crcPath, 8 * 1024, BufferType.ON_HEAP);
-//<<<<<<< HEAD
-//        crcMetadata = new DataIntegrityMetadata.ChecksumWriter(crcWriter.stream);
-//        
-//        //马上往CRC.db写入4个字节(最开始只放到crcWriter的buffer中)
-//        //注意这个buffer.capacity()是指ChecksummedSequentialWriter(Data.db)对应的buffer，默认是64k
-//=======
         crcMetadata = new DataIntegrityMetadata.ChecksumWriter(crcWriter);
-        crcMetadata.writeChunkSize(buffer.capacity());
+        crcMetadata.writeChunkSize(buffer.capacity()); //默认是64k
     }
 
     @Override

@@ -171,9 +171,15 @@ public class RowUpdateBuilder
 
     public Mutation build()
     {
-        Row.Builder builder = regularBuilder == null ? staticBuilder : regularBuilder;
-        if (builder != null)
-            update.add(builder.build());
+        // 有可能两者都不为null
+        // Row.Builder builder = regularBuilder == null ? staticBuilder : regularBuilder;
+        // if (builder != null)
+        // update.add(builder.build());
+        
+        if (regularBuilder != null)
+            update.add(regularBuilder.build());
+        if (staticBuilder != null)
+            update.add(staticBuilder.build());
         return mutation;
     }
 

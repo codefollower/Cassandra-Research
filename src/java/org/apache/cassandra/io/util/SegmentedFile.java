@@ -57,15 +57,11 @@ import static org.apache.cassandra.utils.Throwables.maybeFail;
 //BufferedSegmentedFile
 //CompressedSegmentedFile
 //MmappedSegmentedFile
-//PoolingSegmentedFile (抽象类)
-//    BufferedPoolingSegmentedFile
-//    CompressedPoolingSegmentedFile
-//其中BufferedSegmentedFile和CompressedSegmentedFile在SSTableReader.openForBatch中使用
-//其余的都在此类中使用，
-//在cassandra.yaml中配置disk_access_mode为mmap时使用MmappedSegmentedFile，其他的使用BufferedPoolingSegmentedFile，
-//如果使用了压缩，那么使用CompressedPoolingSegmentedFile(通过调用getCompressedBuilder()，而不管disk_access_mode参数)
 
-//子类要实现的抽象方法有两个: getSegment、sharedCopy
+//压缩使用CompressedSegmentedFile
+//在cassandra.yaml中配置disk_access_mode为mmap时使用MmappedSegmentedFile，其他的使用BufferedSegmentedFile
+
+//子类要实现的抽象方法有: sharedCopy
 public abstract class SegmentedFile extends SharedCloseableImpl
 {
     public final ChannelProxy channel;

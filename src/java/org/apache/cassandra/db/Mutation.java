@@ -67,16 +67,6 @@ public class Mutation implements IMutation
         this(update.metadata().ksName, update.partitionKey(), Collections.singletonMap(update.metadata().cfId, update));
     }
 
-//<<<<<<< HEAD
-//    //Row相当于Mutation的简化版，只有一个ColumnFamily
-//    //rowKey(对应row.key.key)放在DecoratedKey中
-//    public Mutation(String keyspaceName, Row row)
-//    {
-//        this(keyspaceName, row.key.getKey(), row.cf);
-//    }
-//
-//    protected Mutation(String keyspaceName, ByteBuffer key, Map<UUID, ColumnFamily> modifications)
-//=======
     protected Mutation(String keyspaceName, DecoratedKey key, Map<UUID, PartitionUpdate> modifications)
     {
         this.keyspaceName = keyspaceName;

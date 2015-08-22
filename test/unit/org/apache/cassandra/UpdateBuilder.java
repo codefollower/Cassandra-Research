@@ -69,6 +69,14 @@ public class UpdateBuilder
         currentRow.add(column, value);
         return this;
     }
+    
+    // 我加上的
+    public UpdateBuilder addListEntry(String column, Object value)
+    {
+        assert currentRow != null;
+        currentRow.addListEntry(column, value);
+        return this;
+    }
 
     public PartitionUpdate build()
     {

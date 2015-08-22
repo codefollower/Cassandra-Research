@@ -35,8 +35,6 @@ import static org.apache.cassandra.utils.Throwables.merge;
 
 import org.apache.cassandra.utils.SyncUtil;
 
-//先写到一个64K的buffer，然后再同步到硬盘
-//写满buffer时会自动触发一次内部flush(reBuffer=>flushInternal)
 /**
  * Adds buffering, mark, and fsyncing to OutputStream.  We always fsync on close; we may also
  * fsync incrementally if Config.trickle_fsync is enabled.
@@ -48,21 +46,10 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     // absolute path to the given file
     private final String filePath;
 
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////    protected ByteBuffer buffer; //默认64K
-////    private final int fd;
-////=======
-//    protected ByteBuffer buffer;
-//    private int directoryFD;
-//    // directory should be synced only after first file sync, in other words, only once per file
-//    private boolean directorySynced = false;
-//
-//=======
     // Offset for start of buffer relative to underlying file
     protected long bufferOffset; //bufferOffset是递增的
 
-    protected final FileChannel fchannel; //这才是真写到文件
+    protected final FileChannel fchannel; 
 
     // whether to do trickling fsync() to avoid sudden bursts of dirty buffer flushing by kernel causing read
     // latency spikes
@@ -70,10 +57,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     private int trickleFsyncByteInterval;
     private int bytesSinceTrickleFsync = 0;
 
-//<<<<<<< HEAD
-//    public final DataOutputPlus stream; //只是写到buffer
-//=======
-//>>>>>>> e93977310877595e50a8555a4a3322f29a3e3485
     protected long lastFlushOffset;
 
     protected Runnable runPostFlush;
@@ -160,27 +143,11 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         super(openChannel(file), bufferType.allocate(bufferSize));
         strictFlushing = true;
         fchannel = (FileChannel)channel;
-
-//<<<<<<< HEAD
-//        // Allow children to allocate buffer as direct (snappy compression) if necessary
-////<<<<<<< HEAD
-////        //只有org.apache.cassandra.io.compress.SnappyCompressor.useDirectOutputByteBuffers()返回true
-////        //所以在子类CompressedSequentialWriter的构造函数中当使用SnappyCompressor时offheap为true
-////        buffer = offheap ? ByteBuffer.allocateDirect(bufferSize) : ByteBuffer.allocate(bufferSize); //默认64K
-////=======
-//        buffer = bufferType.allocate(bufferSize);
-//=======
         filePath = file.getAbsolutePath();
 
         //默认是false
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
-//<<<<<<< HEAD
-//        this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024; //默认是10M
-//
-//        directoryFD = CLibrary.tryOpenDirectory(file.getParent());
-//        stream = new WrappedDataOutputStreamPlus(this, this);
-//=======
-        this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024;
+        this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024; //默认是10M
     }
 
     /**
@@ -237,30 +204,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
      */
     protected void syncInternal()
     {
-//<<<<<<< HEAD
-//        if (syncNeeded)
-//        {
-//            flushInternal(); //默认情况下，当启用trickleFsync并且写够10M时，flushInternal内部也会调用syncDataOnlyInternal
-//            syncDataOnlyInternal();
-//
-//            if (!directorySynced) //只可能调用一次，directorySynced初始时为false，除这里之外，没有在其他地方改变过
-//            {
-//                SyncUtil.trySync(directoryFD);
-//                directorySynced = true;
-//            }
-//
-//            syncNeeded = false;
-//        }
-//    }
-//
-//    //调用下面flush方法与调用上面的sync方法的差别是，sync一定触发sync，而flush不一定
-//
-//    /**
-//     * If buffer is dirty, flush it's contents to the operating system. Does not imply fsync().
-//     *
-//     * Currently, for implementation reasons, this also invalidates the buffer.
-//     */
-//=======
         doFlush();
         syncDataOnlyInternal();
     }
@@ -268,24 +211,12 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     @Override
     protected void doFlush()
     {
-        flushData();
+        flushData(); //把buffer的数据写到channel(没有同步到硬盘)
 
         if (trickleFsync)
         {
-//<<<<<<< HEAD
-//            flushData(); //把buffer的数据写到硬盘
-//
-//            if (trickleFsync)
-//            {
-//                bytesSinceTrickleFsync += buffer.position();
-//                if (bytesSinceTrickleFsync >= trickleFsyncByteInterval) //默认每隔10M调用一次sync
-//                {
-//                    syncDataOnlyInternal();
-//                    bytesSinceTrickleFsync = 0;
-//                }
-//=======
             bytesSinceTrickleFsync += buffer.position();
-            if (bytesSinceTrickleFsync >= trickleFsyncByteInterval)
+            if (bytesSinceTrickleFsync >= trickleFsyncByteInterval) //默认每隔10M调用一次sync
             {
                 syncDataOnlyInternal();
                 bytesSinceTrickleFsync = 0;

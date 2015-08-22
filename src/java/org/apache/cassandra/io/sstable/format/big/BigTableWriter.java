@@ -294,21 +294,7 @@ public class BigTableWriter extends SSTableWriter
                                                            header);
         sstable.first = getMinimalKey(first);
         sstable.last = getMinimalKey(last);
-//<<<<<<< HEAD
-//
-//        if (finishType.isFinal)
-//        {
-//            iwriter.bf.close();
-//            iwriter.summary.close();
-//            // try to save the summaries to disk
-//            sstable.saveSummary(iwriter.builder, dbuilder); //在这一步才生成Summary.db文件
-//            iwriter.builder.close();
-//            iwriter = null;
-//            dbuilder.close();
-//            dbuilder = null;
-//        }
-//=======
-//>>>>>>> a2830ef9939637297fdfc34fd7e6ff5913a1f953
+
         return sstable;
     }
 
@@ -326,23 +312,12 @@ public class BigTableWriter extends SSTableWriter
 
             iwriter.prepareToCommit();
 
-//<<<<<<< HEAD
-//        // remove the 'tmp' marker from all components
-//        Descriptor descriptor = this.descriptor;
-//        if (type.isFinal)
-//        {
-//            dataFile.writeFullChecksum(descriptor); //在这一步生成Digest.adler32文件
-//            writeMetadata(descriptor, metadataComponents); //在这一步生成Statistics.db文件
-//            // save the table of components
-//            SSTable.appendTOC(descriptor, components); //在这一步生成TOC.txt文件
-//            descriptor = rename(descriptor, components); //前面生成的文件名都是有tmp前缀的，在这里把它去掉，重命名。
-//=======
             // write sstable statistics
             dataFile.setDescriptor(descriptor).prepareToCommit();
-            writeMetadata(descriptor, metadataComponents);
+            writeMetadata(descriptor, metadataComponents); //在这一步生成Statistics.db文件
 
             // save the table of components
-            SSTable.appendTOC(descriptor, components);
+            SSTable.appendTOC(descriptor, components); //在这一步生成TOC.txt文件
 
             if (openResult)
                 finalReader = openFinal(descriptor, SSTableReader.OpenReason.NORMAL);
@@ -506,6 +481,7 @@ public class BigTableWriter extends SSTableWriter
             summary.prepareToCommit();
             try (IndexSummary summary = iwriter.summary.build(getPartitioner()))
             {
+                //在这一步才生成Summary.db文件
                 SSTableReader.saveSummary(descriptor, first, last, iwriter.builder, dbuilder, summary);
             }
         }

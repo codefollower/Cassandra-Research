@@ -83,9 +83,23 @@ org.apache.cassandra.db.Column的MASK是0
 		8字节:                          markedForDeleteAt
 	} 见: org.apache.cassandra.db.DeletionTime.Serializer.serialize(DeletionTime, DataOutputPlus)
 
-	如果有Static列{
-	}
+	如果有Static列 {
+        1字节:                          flags
+		Static列个数 {
+			1字节:                      flags
+			VInt字节:                   Timestamp (可选的)
+		    VInt字节:                   LocalDeletionTime (可选的)
+		    VInt字节:                   TTL (可选的)
+			cell.path:                  isComplex为true时(TODO)
+			VInt字节:                   Static列值长度 
+			VInt个字节:                 Static列值(可选的)
+		}
+	} 见: org.apache.cassandra.db.rows.UnfilteredSerializer.serialize(Row, SerializationHeader, DataOutputPlus, int)
 	=================
+
+	Row {
+		Clustering: 
+	}
 	
 
     

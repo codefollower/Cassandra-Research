@@ -23,7 +23,6 @@ import java.nio.MappedByteBuffer;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.zip.Adler32;
 import java.util.zip.Checksum;
 
 import com.google.common.primitives.Ints;
@@ -31,7 +30,6 @@ import com.google.common.primitives.Ints;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.util.*;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.memory.BufferPool;
 
 /**

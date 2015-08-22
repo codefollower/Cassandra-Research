@@ -111,14 +111,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             // compressing data with buffer re-use
             buffer.flip();
-//<<<<<<< HEAD
-//            compressed.buffer.clear();
-//            //buffer是输入，压缩后放到compressed中
-//            compressedLength = compressor.compress(buffer, compressed);
-//
-//            // Compressors don't modify sentinels in our BB - we rely on buffer.position() for bufferOffset adjustment
-//            buffer.position(buffer.limit());
-//=======
+            //buffer是输入，压缩后放到compressed中
             compressed.clear();
             compressor.compress(buffer, compressed);
         }
@@ -313,7 +306,6 @@ public class CompressedSequentialWriter extends SequentialWriter
     @Override
     protected SequentialWriter.TransactionalProxy txnProxy()
     {
-        //写Digest.adler32文件，用的是java.util.zip.Adler32.Adler32()
         return new TransactionalProxy();
     }
 
