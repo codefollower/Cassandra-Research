@@ -137,10 +137,8 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         if (metadata.params.bloomFilterFpChance < 1.0)
             components.add(Component.FILTER);
 
-//<<<<<<< HEAD
-//        //压缩是默认开启的，见CreateTableStatement的构造函数，默认用LZ4Compressor
-//        if (metadata.compressionParameters().sstableCompressor != null)
-//=======
+        //默认用LZ4Compressor
+        //见org.apache.cassandra.schema.CompressionParams.DEFAULT
         if (metadata.params.compression.isEnabled())
         {
             components.add(Component.COMPRESSION_INFO);

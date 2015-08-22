@@ -44,21 +44,6 @@ import static org.apache.cassandra.io.sstable.Component.separator;
  */
 public class Descriptor
 {
-//<<<<<<< HEAD
-//    public static enum Type
-//    {
-//        TEMP("tmp", true), TEMPLINK("tmplink", true), FINAL(null, false);
-//        public final boolean isTemporary;
-//        public final String marker;
-//        Type(String marker, boolean isTemporary)
-//        {
-//            this.isTemporary = isTemporary;
-//            this.marker = marker;
-//        }
-//    }
-//
-//
-//=======
     public static String TMP_EXT = ".tmp";
     public final File directory;
     /** version has the following format: <code>[a-z]+</code> */

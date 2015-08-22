@@ -65,3 +65,52 @@ org.apache.cassandra.db.Column的MASK是0
 } 见: org.apache.cassandra.db.ColumnIndex.Builder的build和add
 
 写完一行后，还会跟两字节的结束标志，值是0
+
+
+从3.0版本开始
+文件格式
+=================
+<Row> {
+
+	PartitionHeader
+	=================
+	//org.apache.cassandra.db.ColumnIndex.Builder.writePartitionHeader(UnfilteredRowIterator)
+	2字节:                 key.length //这里的key就是partition_key
+	key.length个字节:      key本身的字节
+
+	DeletionTime {
+		4字节:                          localDeletionTime
+		8字节:                          markedForDeleteAt
+	} 见: org.apache.cassandra.db.DeletionTime.Serializer.serialize(DeletionTime, DataOutputPlus)
+
+	如果有Static列{
+	}
+	=================
+	
+
+    
+    //对每行的数据索引时会直接跳过行头，从行里面的列开始
+	//就是从这里开始
+	//如果此行已经被删除，例如通过delete from t删除一行，
+	//那么就不会包含下面的字段值，但是会包含上面的行头，索引文件还是会写
+	多个<Column> {
+		2字节:              列名.length
+		列名.length个字节:  列名
+		1字节:              列MASK
+		
+		如果是CounterColumn {
+		8字节:              timestampOfLastDelete
+		}
+
+		如果是ExpiringColumn {
+		4字节:              timeToLive
+		4字节:              localDeletionTime
+		}
+
+		8字节:              timestamp
+		4字节:              列值.length
+		列值.length个字节:  列值
+	} 见: org.apache.cassandra.db.ColumnSerializer.serialize(Column, DataOutput)
+} 见: org.apache.cassandra.db.ColumnIndex.Builder的build和add
+
+org.apache.cassandra.db.ColumnIndex.Builder.writePartitionHeader(UnfilteredRowIterator)

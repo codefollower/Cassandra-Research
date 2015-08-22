@@ -178,7 +178,7 @@ public final class Ref<T> implements RefCounted<T>
 
         void release(boolean leak)
         {
-            if (!releasedUpdater.compareAndSet(this, 0, 1)) //如果果返回false表示释放了两次
+            if (!releasedUpdater.compareAndSet(this, 0, 1)) //如果返回false表示释放了两次
             {
                 if (!leak)
                 {

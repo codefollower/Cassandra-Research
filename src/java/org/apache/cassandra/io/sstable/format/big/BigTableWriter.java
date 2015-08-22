@@ -138,41 +138,27 @@ public class BigTableWriter extends SSTableWriter
      *
      * @throws FSWriteError if a write to the dataFile fails
      */
-//<<<<<<< HEAD
-//    //在进行Compaction时使用
-//    public RowIndexEntry append(AbstractCompactedRow row)
-//=======
     public RowIndexEntry append(UnfilteredRowIterator iterator)
     {
         DecoratedKey key = iterator.partitionKey();
-
-//<<<<<<< HEAD
-//    //Memtable进行Flush时调用，最常规的情况
-//    public void append(DecoratedKey decoratedKey, ColumnFamily cf)
-//    {
-//        if (decoratedKey.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
-//=======
         if (key.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
         {
             logger.error("Key size {} exceeds maximum of {}, skipping row", key.getKey().remaining(), FBUtilities.MAX_UNSIGNED_SHORT);
             return null;
         }
-//
-//<<<<<<< HEAD
-//        //beforeAppend返回的是Data.db文件的当前位置，decoratedKey就从这个位置开始存放
-//        long startPosition = beforeAppend(decoratedKey);
-//        long endPosition;
-//        try
-//=======
+
         if (iterator.isEmpty())
             return null;
 
+        //beforeAppend返回的是Data.db文件的当前位置，decoratedKey就从这个位置开始存放
         long startPosition = beforeAppend(key);
 
         try (StatsCollector withStats = new StatsCollector(iterator, metadataCollector))
         {
+            //里面会往Data.db文件中写一行数据
             ColumnIndex index = ColumnIndex.writeAndBuildIndex(withStats, dataFile, header, descriptor.version);
 
+            //返回的RowIndexEntry用于Index.db文件
             RowIndexEntry entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
 
             long endPosition = dataFile.getFilePointer();
@@ -190,24 +176,6 @@ public class BigTableWriter extends SSTableWriter
 
     private void maybeLogLargePartitionWarning(DecoratedKey key, long rowSize)
     {
-//<<<<<<< HEAD
-//        assert cf.hasColumns() || cf.isMarkedForDelete();
-//
-//        ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, key.getKey(), out);
-//        ColumnIndex index = builder.build(cf); //里面会往Data.db文件中写一行数据
-//
-//        out.writeShort(END_OF_ROW); //行结束标志
-//        //返回的RowIndexEntry用于Index.db文件
-//        return RowIndexEntry.create(startPosition, cf.deletionInfo().getTopLevelDeletion(), index);
-//    }
-//
-//    /**
-//     * @throws IOException if a read from the DataInput fails
-//     * @throws FSWriteError if a write to the dataFile fails
-//     */
-//    //在org.apache.cassandra.streaming.StreamReader中调用
-//    public long appendFromStream(DecoratedKey key, CFMetaData metadata, DataInput in, Version version) throws IOException
-//=======
         if (rowSize > DatabaseDescriptor.getCompactionLargePartitionWarningThreshold())
         {
             String keyString = metadata.getKeyValidator().getString(key.getKey());
@@ -496,16 +464,11 @@ public class BigTableWriter extends SSTableWriter
             if (components.contains(Component.FILTER))
             {
                 String path = descriptor.filenameFor(Component.FILTER);
+                //创建BloomFilter对应的文件Filter.db，并向它写数据
                 try (FileOutputStream fos = new FileOutputStream(path);
                      DataOutputStreamPlus stream = new BufferedDataOutputStreamPlus(fos))
                 {
                     // bloom filter
-//<<<<<<< HEAD
-//                    //创建BloomFilter对应的文件Filter.db，并向它写数据
-//                    FileOutputStream fos = new FileOutputStream(path);
-//                    DataOutputStreamPlus stream = new BufferedDataOutputStreamPlus(fos);
-//=======
-//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
                     FilterFactory.serialize(bf, stream);
                     stream.flush();
                     SyncUtil.sync(fos);

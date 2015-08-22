@@ -438,6 +438,7 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
      * Given a list of unwrapped ranges sorted by left position, return an
      * equivalent list of ranges but with no overlapping ranges.
      */
+    //deoverlap是去掉重叠的意思de-overlap
     private static <T extends RingPosition<T>> List<Range<T>> deoverlap(List<Range<T>> ranges)
     {
         if (ranges.isEmpty())

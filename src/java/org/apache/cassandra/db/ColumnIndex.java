@@ -110,16 +110,6 @@ public class ColumnIndex
             return close();
         }
 
-//<<<<<<< HEAD
-//        /**
-//         * The important distinction wrt build() is that we may be building for a row that ends up
-//         * being compacted away entirely, i.e., the input consists only of expired tombstones (or
-//         * columns shadowed by expired tombstone).  Thus, it is the caller's responsibility
-//         * to decide whether to write the header for an empty row.
-//         */
-//        //在进行Compaction时使用
-//        public ColumnIndex buildForCompaction(Iterator<OnDiskAtom> columns) throws IOException
-//=======
         private long currentPosition()
         {
             return writer.getFilePointer() - initialPosition;
@@ -127,6 +117,7 @@ public class ColumnIndex
 
         private void addIndexBlock()
         {
+            //对每行的数据索引时会直接跳过行头，从行里面的列开始
             IndexHelper.IndexInfo cIndexInfo = new IndexHelper.IndexInfo(firstClustering,
                                                                          lastClustering,
                                                                          startPosition,
@@ -149,10 +140,6 @@ public class ColumnIndex
             lastClustering = unfiltered.clustering();
             ++written;
 
-//<<<<<<< HEAD
-//            // if we hit the column index size that we have to index after, go ahead and index it.
-//            if (blockSize >= DatabaseDescriptor.getColumnIndexSize()) //默认是64K
-//=======
             if (unfiltered.kind() == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
             {
                 RangeTombstoneMarker marker = (RangeTombstoneMarker)unfiltered;
@@ -165,10 +152,6 @@ public class ColumnIndex
 
         }
 
-//<<<<<<< HEAD
-//        //对应rowHeaderSize
-//        private void maybeWriteRowHeader() throws IOException
-//=======
         private ColumnIndex close() throws IOException
         {
             UnfilteredSerializer.serializer.writeEndOfPartition(writer);
@@ -178,14 +161,6 @@ public class ColumnIndex
                 return ColumnIndex.EMPTY;
 
             // the last column may have fallen on an index boundary already.  if not, index it explicitly.
-//<<<<<<< HEAD
-//            if (result.columnsIndex.isEmpty() || lastBlockClosing != lastColumn)
-//            {
-//                //对每行的数据索引时会直接跳过行头，从行里面的列开始
-//                IndexHelper.IndexInfo cIndexInfo = new IndexHelper.IndexInfo(firstColumn.name(), lastColumn.name(), indexOffset + startPosition, endPosition - startPosition);
-//                result.columnsIndex.add(cIndexInfo);
-//            }
-//=======
             if (firstClustering != null)
                 addIndexBlock();
 
