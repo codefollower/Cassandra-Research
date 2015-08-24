@@ -840,69 +840,6 @@ public final class CFMetaData
         return columnMetadata.get(name);
     }
 
-//<<<<<<< HEAD
-//    public ColumnDefinition getColumnDefinitionForIndex(String indexName)
-//    {
-//        for (ColumnDefinition def : allColumns())
-//        {
-//            if (indexName.equals(def.getIndexName()))
-//                return def;
-//        }
-//        return null;
-//    }
-//
-//    /**
-//     * Convert a null index_name to appropriate default name according to column status
-//     */
-//    public void addDefaultIndexNames() throws ConfigurationException
-//    {
-//        // if this is ColumnFamily update we need to add previously defined index names to the existing columns first
-//        UUID cfId = Schema.instance.getId(ksName, cfName);
-//        if (cfId != null)
-//        {
-//            CFMetaData cfm = Schema.instance.getCFMetaData(cfId);
-//
-//            for (ColumnDefinition newDef : allColumns())
-//            {
-//                if (!cfm.columnMetadata.containsKey(newDef.name.bytes) || newDef.getIndexType() == null)
-//                    continue;
-//
-//                String oldIndexName = cfm.getColumnDefinition(newDef.name).getIndexName();
-//
-//                if (oldIndexName == null)
-//                    continue;
-//
-//                if (newDef.getIndexName() != null && !oldIndexName.equals(newDef.getIndexName()))
-//                    throw new ConfigurationException("Can't modify index name: was '" + oldIndexName + "' changed to '" + newDef.getIndexName() + "'.");
-//
-//                newDef.setIndexName(oldIndexName);
-//            }
-//        }
-//
-//        Set<String> existingNames = existingIndexNames(null);
-//        for (ColumnDefinition column : allColumns())
-//        {
-//            //如: CREATE INDEX ON testTable (c)
-//            //此时未指定索引名，但是是允许的，这里会自动生成一个索引名
-//            if (column.getIndexType() != null && column.getIndexName() == null)
-//            {
-//                String baseName = getDefaultIndexName(cfName, column.name);
-//                String indexName = baseName;
-//                int i = 0;
-//                while (existingNames.contains(indexName))
-//                    indexName = baseName + '_' + (++i);
-//                column.setIndexName(indexName);
-//            }
-//        }
-//    }
-//
-//    public static String getDefaultIndexName(String cfName, ColumnIdentifier columnName)
-//    {
-//        return (cfName + "_" + columnName + "_idx").replaceAll("\\W", "");
-//    }
-//
-//=======
-//>>>>>>> e92a4b6345c4a3a6b5fa2c14ac0746f9cd2ee9ae
     public static boolean isNameValid(String name)
     {
         return name != null && !name.isEmpty() && name.length() <= Schema.NAME_LENGTH && name.matches("\\w+");
