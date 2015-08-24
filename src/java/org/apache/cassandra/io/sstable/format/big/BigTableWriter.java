@@ -22,10 +22,10 @@ import java.util.Map;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
@@ -43,7 +43,6 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.FilterFactory;
 import org.apache.cassandra.utils.IFilter;
 import org.apache.cassandra.utils.concurrent.Transactional;
-
 import org.apache.cassandra.utils.SyncUtil;
 
 //总共9个Component类型对应9种不同的文件。
@@ -141,6 +140,7 @@ public class BigTableWriter extends SSTableWriter
     public RowIndexEntry append(UnfilteredRowIterator iterator)
     {
         DecoratedKey key = iterator.partitionKey();
+        //System.out.println(key.getToken() + "" + AsciiType.instance.getString(key.getKey()));
         if (key.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
         {
             logger.error("Key size {} exceeds maximum of {}, skipping row", key.getKey().remaining(), FBUtilities.MAX_UNSIGNED_SHORT);

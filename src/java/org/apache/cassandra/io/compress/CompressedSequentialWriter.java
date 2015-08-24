@@ -80,6 +80,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         metadataWriter = CompressionMetadata.Writer.open(parameters, offsetsPath);
 
         this.sstableMetadataCollector = sstableMetadataCollector;
+        //crc也写到压缩文件中，但是不压缩
         crcMetadata = new DataIntegrityMetadata.ChecksumWriter(new DataOutputStream(Channels.newOutputStream(channel)));
     }
 
@@ -268,7 +269,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         @Override
         protected Throwable doCommit(Throwable accumulate)
         {
-            return metadataWriter.commit(accumulate); //在这一步生成CompressionInfo.db文件
+            return metadataWriter.commit(accumulate);
         }
 
         @Override

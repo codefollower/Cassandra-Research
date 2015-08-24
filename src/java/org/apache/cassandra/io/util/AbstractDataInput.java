@@ -19,15 +19,12 @@ package org.apache.cassandra.io.util;
 
 import java.io.*;
 
-//<<<<<<< HEAD
-////java.io.DataInput接口有15个方法，其中8个对应8种基本类型(readXXX，例如readByte、readInt)
-////还有另外7个: 两个readFully、skipBytes、readUnsignedByte、readUnsignedShort、readLine、readUTF(就是对应String)
-////readUnsignedByte、readUnsignedShort直接返回int类型的值，不需要强制转换成byte和short，
-////而readByte和readShort要强制转换成byte和short。
-//
-////AbstractDataInput类上面15个方法中只有skipBytes方法未实现，需要子类实现
-//public abstract class AbstractDataInput extends InputStream implements DataInput
-//=======
+//java.io.DataInput接口有15个方法，其中8个对应8种基本类型(readXXX，例如readByte、readInt)
+//还有另外7个: 两个readFully、skipBytes、readUnsignedByte、readUnsignedShort、readLine、readUTF(就是对应String)
+//readUnsignedByte、readUnsignedShort直接返回int类型的值，不需要强制转换成byte和short，
+//而readByte和readShort要强制转换成byte和short。
+
+//AbstractDataInput类对上面15个方法都实现了
 public abstract class AbstractDataInput extends InputStream implements DataInputPlus
 {
     public abstract void seek(long position) throws IOException;

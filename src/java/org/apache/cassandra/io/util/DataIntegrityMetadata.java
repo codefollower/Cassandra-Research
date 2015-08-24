@@ -61,6 +61,8 @@ public class DataIntegrityMetadata
             this.checksum = checksum;
             this.reader = reader;
             this.dataFilename = dataFilename;
+            //在ChecksummedSequentialWriter(File, int, File)里面一开始就调用了crcMetadata.writeChunkSize，
+            //往CRC文件中写入一个int
             chunkSize = reader.readInt();
         }
 
@@ -213,7 +215,7 @@ public class DataIntegrityMetadata
         public void writeFullChecksum(Descriptor descriptor)
         {
             File outFile = new File(descriptor.filenameFor(Component.DIGEST));
-            try (BufferedWriter out =Files.newBufferedWriter(outFile.toPath(), Charsets.UTF_8))
+            try (BufferedWriter out = Files.newBufferedWriter(outFile.toPath(), Charsets.UTF_8))
             {
                 out.write(String.valueOf(fullChecksum.getValue()));
             }

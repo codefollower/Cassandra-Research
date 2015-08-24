@@ -37,6 +37,7 @@ public class ThrottledReader extends RandomAccessReader
 
     protected void reBuffer()
     {
+        //相当于limiter里有个计数器，现在要获取buffer.capacity()个是否能满足，不能满足就阻塞
         limiter.acquire(buffer.capacity());
         super.reBuffer();
     }

@@ -24,9 +24,9 @@ import java.nio.ByteOrder;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.utils.FBUtilities;
@@ -290,7 +290,7 @@ public class IndexSummary extends WrappedSharedCloseable
                 // default Java serialization order (BIG_ENDIAN) we have to reverse our bytes
                 if (ByteOrder.nativeOrder() != ByteOrder.BIG_ENDIAN)
                     offset = Integer.reverseBytes(offset);
-                out.writeInt(offset);
+                out.writeInt(offset); //序列化到输出流时，要把offsets和entries合并，所以offsets中的每个offset值是entries中的每个entry在输出流中的offset
             }
             out.write(t.entries, 0, t.entriesLength);
         }
@@ -345,8 +345,27 @@ public class IndexSummary extends WrappedSharedCloseable
             // the summary values are indexed from zero, so we apply a correction to the offsets when de/serializing.
             // In this case subtracting X from each of the offsets.
             for (int i = 0 ; i < offsets.size() ; i += 4)
-                offsets.setInt(i, (int) (offsets.getInt(i) - offsets.size()));
+                offsets.setInt(i, (int) (offsets.getInt(i) - offsets.size())); //反序列化时offsets中的offset值从0开始
             return new IndexSummary(partitioner, offsets, offsetCount, entries, entries.size(), fullSamplingSummarySize, minIndexInterval, samplingLevel);
         }
+    }
+    
+    public String toString() {
+        StringBuilder buff = new StringBuilder();
+        buff.append("offsets\n");
+        buff.append("===========\n");
+        for (int i = 0; i < offsetCount; i++) {
+            buff.append(getPositionInSummary(i)).append("\n");
+
+        }
+        buff.append("\nentries\n");
+        buff.append("===========\n");
+
+        for (int i = 0; i < offsetCount; i++) {
+            buff.append(AsciiType.instance.getString(ByteBuffer.wrap(getKey(i)))).append("\n");
+            buff.append(getPosition(i)).append("\n");
+            buff.append("\n");
+        }
+        return buff.toString();
     }
 }

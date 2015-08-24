@@ -45,6 +45,7 @@ public class Downsampling
      *
      * @return A list of `samplingLevel` unique indices between 0 and `samplingLevel`
      */
+    //samplingLevel必须是2的n次方，否则会java.lang.ArrayIndexOutOfBoundsException
     public static List<Integer> getSamplingPattern(int samplingLevel)
     {
         List<Integer> pattern = samplePatternCache.get(samplingLevel);
@@ -86,6 +87,7 @@ public class Downsampling
      *
      * @return a list of original indexes for current summary entries
      */
+    //这里的samplingLevel可以不是2的n次方，结果会返回BASE_SAMPLING_LEVEL对应的samplePattern中的最后samplingLevel个
     public static List<Integer> getOriginalIndexes(int samplingLevel)
     {
         List<Integer> originalIndexes = originalIndexCache.get(samplingLevel);

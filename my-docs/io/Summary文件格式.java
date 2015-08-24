@@ -47,3 +47,34 @@ indexPositions = [0, 2, 4, 6]
 
 参考org.apache.cassandra.io.sstable.IndexSummaryBuilder.build
 
+
+新版本:
+
+offsets和entries分开，
+offsets存放的是entries的相对位置
+
+字节范围 值
+==================
+offsets
+===========
+0-3:     0  //key在概要文件的开始位置
+4-7:     9
+8-11:    18
+12-15:   29
+===========
+
+entries
+===========
+0:       a //key本身的字节
+1-8:     0 //key在写入索引文件时所在的位置
+
+9:       b
+10-17:   2
+
+18:      c
+19-28:   4
+
+29:      d
+30-37:   6
+===========
+==================

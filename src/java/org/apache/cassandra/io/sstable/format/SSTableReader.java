@@ -852,9 +852,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      * @param dbuilder
      * @return true if index summary is loaded successfully from Summary.db file.
      */
-//<<<<<<< HEAD
-//    //加载Summary.db文件
-//=======
+    //加载Summary.db文件
     @SuppressWarnings("resource")
     public boolean loadSummary(SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder)
     {

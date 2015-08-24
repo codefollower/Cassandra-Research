@@ -72,7 +72,7 @@ public class MmappedSegmentedFile extends SegmentedFile
         assert idx != -1 : String.format("Bad position %d for segments %s in %s", position, Arrays.toString(segments), path());
         if (idx < 0)
             // round down to entry at insertion point
-            idx = -(idx + 2);
+            idx = -(idx + 2); //前面那个开始位置小于position的Segment
         return segments[idx];
     }
 
@@ -213,7 +213,7 @@ public class MmappedSegmentedFile extends SegmentedFile
                 long size = boundaries.get(i + 1) - start;
                 MappedByteBuffer segment = size <= MAX_SEGMENT_SIZE
                                            ? channel.map(FileChannel.MapMode.READ_ONLY, start, size)
-                                           : null; //超过2G的之后在getSegment时直接用RandomAccessReader读
+                                           : null; //超过2G了，在调用getSegment时直接用RandomAccessReader读
                 segments[i] = new Segment(start, segment);
             }
             return segments;

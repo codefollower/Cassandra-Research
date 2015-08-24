@@ -24,9 +24,9 @@ import java.nio.ByteBuffer;
  * that when compiling using Java 7 we can link against those new methods and then
  * avoid calling them at runtime if running with Java 7.
  */
-public class CRC32 implements Checksum
+public class CRC32old implements Checksum
 {
-    public CRC32() {}
+    public CRC32old() {}
 
     public void update(int b) {}
 

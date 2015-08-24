@@ -18,9 +18,11 @@
 package org.apache.cassandra.io.sstable.format.big;
 
 import com.google.common.util.concurrent.RateLimiter;
+
 import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.rows.SliceableUnfilteredRowIterator;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.columniterator.SSTableIterator;
@@ -111,6 +113,7 @@ public class BigTableReader extends SSTableReader
      * @param updateCacheAndStats true if updating stats and cache
      * @return The index entry corresponding to the key, or null if the key is not present
      */
+    //如果是Operator.EQ，key的类型只能是DecoratedKey(或它的子类)
     protected RowIndexEntry getPosition(PartitionPosition key, Operator op, boolean updateCacheAndStats, boolean permitMatchPastLast)
     {
         if (op == Operator.EQ)
@@ -202,6 +205,7 @@ public class BigTableReader extends SSTableReader
                     }
                     else
                     {
+                        System.out.println(AsciiType.instance.getString(indexKey));
                         DecoratedKey indexDecoratedKey = decorateKey(indexKey);
                         int comparison = indexDecoratedKey.compareTo(key);
                         int v = op.apply(comparison);

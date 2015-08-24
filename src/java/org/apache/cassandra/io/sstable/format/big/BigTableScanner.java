@@ -264,10 +264,7 @@ public class BigTableScanner implements ISSTableScanner
         private DecoratedKey currentKey;
         private RowIndexEntry currentEntry;
 
-//<<<<<<< HEAD
-//        //只是读一行
-//        protected OnDiskAtomIterator computeNext()
-//=======
+        //只是读一行
         protected UnfilteredRowIterator computeNext()
         {
             try
