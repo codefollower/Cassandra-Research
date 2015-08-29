@@ -58,7 +58,7 @@ public class Slice
             return "ALL";
         }
     };
-    //start和stop是指开始和结束的列名
+
     private final Bound start;
     private final Bound end;
 

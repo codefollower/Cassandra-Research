@@ -17,13 +17,6 @@
  */
 package org.apache.cassandra.utils;
 
-//<<<<<<< HEAD:src/java/org/apache/cassandra/db/columniterator/IdentityQueryFilter.java
-//import org.apache.cassandra.db.composites.Composites;
-//import org.apache.cassandra.db.filter.SliceQueryFilter;
-//
-////包含所有列
-//public class IdentityQueryFilter extends SliceQueryFilter
-//=======
 public interface IndexedSearchIterator<K, V> extends SearchIterator<K, V>
 {
     /**

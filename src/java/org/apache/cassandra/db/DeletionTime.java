@@ -122,6 +122,8 @@ public class DeletionTime implements Comparable<DeletionTime>, IMeasurableMemory
             return 0;
     }
 
+    // supersede: 代替, 取代, 接替
+    // 判断this是否能代替dt
     public boolean supersedes(DeletionTime dt)
     {
         return markedForDeleteAt() > dt.markedForDeleteAt() || (markedForDeleteAt() == dt.markedForDeleteAt() && localDeletionTime() > dt.localDeletionTime());

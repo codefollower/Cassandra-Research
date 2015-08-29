@@ -99,16 +99,6 @@ public class RangeTombstone
      *      iterator. See this comment for more details: https://goo.gl/yyB5mR.
      *   2) This saves some storage space.
      */
-//<<<<<<< HEAD
-//    //supersede: 代替, 取代, 接替
-//    //判断this是否能代替rt，
-//    //相当于this[min, max]包含rt[min, max]并且this.markedForDeleteAt>=rt.markedForDeleteAt
-//    //markedForDeleteAt表示删除某个时间点以前的，
-//    //比如rt.markedForDeleteAt是10号18点，this.markedForDeleteAt是11号18点，
-//    //显然当要删除11号18点前的记录时肯定包含rt.markedForDeleteAt
-//    //[min, max]标识要删除的字段范围，min和max都是字段名
-//    public boolean supersedes(RangeTombstone rt, Comparator<Composite> comparator)
-//=======
     public static class Bound extends Slice.Bound
     {
         public static final Serializer serializer = new Serializer();

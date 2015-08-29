@@ -1021,7 +1021,7 @@ public class BTree
                 int prev = 0;
                 for (int i = 1 ; i < count ; i++)
                 {
-                    if (comparator.compare((V) values[i], (V) values[prev]) != 0)
+                    if (comparator.compare((V) values[i], (V) values[prev]) != 0) //只比较列名
                     {
                         values[c++] = resolver.resolve((V[]) values, prev, i);
                         prev = i;

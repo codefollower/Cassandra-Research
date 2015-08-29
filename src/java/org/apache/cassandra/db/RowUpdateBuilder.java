@@ -152,6 +152,12 @@ public class RowUpdateBuilder
     {
         this(update, timestamp, ttl, null);
     }
+    
+    //我加上的
+    public RowUpdateBuilder(PartitionUpdate update, long timestamp, int ttl, int localDeletionTime)
+    {
+        this(update, timestamp, ttl, localDeletionTime, null);
+    }
 
     // This must be called before any addition or deletion if used.
     public RowUpdateBuilder noRowMarker()
@@ -266,6 +272,7 @@ public class RowUpdateBuilder
         return addRangeTombstone(new RangeTombstone(slice, deletionTime));
     }
 
+    //如果聚簇列有多个字段，这个方法不能用
     public RowUpdateBuilder addRangeTombstone(Object start, Object end)
     {
         ClusteringComparator cmp = update.metadata().comparator;

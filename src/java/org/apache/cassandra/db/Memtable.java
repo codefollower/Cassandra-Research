@@ -25,9 +25,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -93,7 +93,13 @@ public class Memtable implements Comparable<Memtable>
     // We index the memtable by PartitionPosition only for the purpose of being able
     // to select key range using Token.KeyBound. However put() ensures that we
     // actually only store DecoratedKey.
-    //AtomicBTreePartition只是针对一行的，代表某行中的所有列
+    //PartitionPosition接口是java.lang.Comparable<C>的子接口，
+    //往ConcurrentSkipListMap放数据时，
+    //会在java.util.concurrent.ConcurrentSkipListMap.cpr(Comparator, Object, Object)里面转成((Comparable)x).compareTo(y);
+    //而DecoratedKey类实现了PartitionPosition接口
+    //它的DecoratedKey.compareTo(PartitionPosition)方法中会依据不同IPartitioner的子类进行比较，
+    //比如Murmur3Partitioner是对key进行hash后，按hash值的大小来排的，
+    //所以数据放入ConcurrentSkipListMap后并不是按key的自然序来排的。
     private final ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> partitions = new ConcurrentSkipListMap<>();
     public final ColumnFamilyStore cfs;
     private final long creationTime = System.currentTimeMillis();
@@ -142,6 +148,8 @@ public class Memtable implements Comparable<Memtable>
     }
 
     @VisibleForTesting
+    //org.apache.cassandra.db.ColumnFamilyStore.Flush.Flush(ColumnFamilyStore, boolean)也在调用
+    //否则lastReplayPosition字段会是null
     public void setDiscarding(OpOrder.Barrier writeBarrier, AtomicReference<ReplayPosition> lastReplayPosition)
     {
         assert this.writeBarrier == null;
