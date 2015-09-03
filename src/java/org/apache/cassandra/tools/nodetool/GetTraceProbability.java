@@ -15,24 +15,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db;
+package org.apache.cassandra.tools.nodetool;
 
-public interface BatchlogManagerMBean
+import io.airlift.command.Command;
+
+import org.apache.cassandra.tools.NodeProbe;
+import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
+
+@Command(name = "gettraceprobability", description = "Print the current trace probability value")
+public class GetTraceProbability extends NodeToolCmd
 {
-    /**
-     * Counts all batches currently in the batchlog.
-     *
-     * @return total batch count
-     */
-    public int countAllBatches();
-
-    /**
-     * @return total count of batches replayed since node start
-     */
-    public long getTotalBatchesReplayed();
-
-    /**
-     * Forces batchlog replay. Returns immediately if replay is already in progress.
-     */
-    public void forceBatchlogReplay() throws Exception;
+    @Override
+    public void execute(NodeProbe probe)
+    {
+        System.out.println("Current trace probability: " + probe.getTraceProbability());
+    }
 }

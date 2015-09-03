@@ -36,7 +36,8 @@ timestamp_resolution //默认以MICROSECONDS为时间单位，
 					 //对应java.util.concurrent.TimeUnit中的枚举常量名
 
 max_sstable_age_days //默认365天
-base_time_seconds    //默认3600秒，也就是一小时
+base_time_seconds    //默认60秒
+expired_sstable_check_frequency_seconds //默认10分钟
 ==============================
 
 
@@ -46,7 +47,7 @@ SizeTieredCompactionStrategy
 min_sstable_size   //默认50MB
 bucket_low         //默认0.5
 bucket_high        //默认1.5
-cold_reads_to_omit //默认0.05
+cold_reads_to_omit //默认0.05 //从cassandra 2.2开始，已经没有这个参数了
 ==============================
 
 

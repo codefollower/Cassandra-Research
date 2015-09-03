@@ -80,10 +80,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         int minThreshold = cfs.getMinimumCompactionThreshold(); //默认是4
         int maxThreshold = cfs.getMaximumCompactionThreshold(); //默认是32
 
-//<<<<<<< HEAD
-//        //过滤掉发生过异常的SSTableReader
-//        Iterable<SSTableReader> candidates = filterSuspectSSTables(Sets.intersection(cfs.getUncompactingSSTables(), sstables));
-//=======
+        //过滤掉发生过异常的SSTableReader
         Iterable<SSTableReader> candidates = filterSuspectSSTables(filter(cfs.getUncompactingSSTables(), sstables::contains));
 
         List<List<SSTableReader>> buckets = getBuckets(createSSTableAndLengthPairs(candidates), sizeTieredOptions.bucketHigh, sizeTieredOptions.bucketLow, sizeTieredOptions.minSSTableSize);
@@ -107,152 +104,6 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         Collections.sort(sstablesWithTombstones, new SSTableReader.SizeComparator());
         return Collections.singletonList(sstablesWithTombstones.get(0));
     }
-
-//<<<<<<< HEAD
-//    /**
-//     * Removes as many cold sstables as possible while retaining at least 1-coldReadsToOmit of the total reads/sec
-//     * across all sstables
-//     * @param sstables all sstables to consider
-//     * @param coldReadsToOmit the proportion of total reads/sec that will be omitted (0=omit nothing, 1=omit everything)
-//     * @param minThreshold min compaction threshold
-//     * @return a list of sstables with the coldest sstables excluded until the reads they represent reaches coldReadsToOmit
-//     */
-//    @VisibleForTesting
-//    static List<SSTableReader> filterColdSSTables(List<SSTableReader> sstables, double coldReadsToOmit, int minThreshold)
-//    {
-//        if (coldReadsToOmit == 0.0)
-//            return sstables;
-//
-//        // Sort the sstables by hotness (coldest-first). We first build a map because the hotness may change during the sort.
-//        final Map<SSTableReader, Double> hotnessSnapshot = getHotnessMap(sstables);
-//        //执行完sort之后，sstables的值按hotnessSnapshot中的Double值从小到大排列
-//        //相当于sstables中最冷的(最不经常访问的)SSTableReader排在最前面
-//        Collections.sort(sstables, new Comparator<SSTableReader>()
-//        {
-//            public int compare(SSTableReader o1, SSTableReader o2)
-//            {
-//                int comparison = Double.compare(hotnessSnapshot.get(o1), hotnessSnapshot.get(o2));
-//                if (comparison != 0)
-//                    return comparison;
-//
-//                // break ties with size on disk (mainly for system tables and cold tables)
-//                comparison = Long.compare(o1.bytesOnDisk(), o2.bytesOnDisk());
-//                if (comparison != 0)
-//                    return comparison;
-//
-//                // if there's still a tie, use generation, which is guaranteed to be unique.  this ensures that
-//                // our filtering is deterministic, which can be useful when debugging.
-//                return o1.descriptor.generation - o2.descriptor.generation;
-//            }
-//        });
-//
-//        // calculate the total reads/sec across all sstables
-//        double totalReads = 0.0;
-//        for (SSTableReader sstr : sstables)
-//            if (sstr.getReadMeter() != null)
-//                totalReads += sstr.getReadMeter().twoHourRate();
-//
-//        // if this is a system table with no read meters or we don't have any read rates yet, just return them all
-//        if (totalReads == 0.0)
-//            return sstables;
-//
-//        // iteratively ignore the coldest sstables until ignoring one more would put us over the coldReadsToOmit threshold
-//        //coldReadsToOmit默认是0.02，这里的意思是只过滤总的读次数的2%
-//        //也就是说sstables中排在前面的SSTableReader合计的读次数达到总的读次数的2%就退出下面的while循环了
-//        double maxColdReads = coldReadsToOmit * totalReads;
-//
-//        double totalColdReads = 0.0;
-//        int cutoffIndex = 0;
-//        while (cutoffIndex < sstables.size())
-//        {
-//            SSTableReader sstable = sstables.get(cutoffIndex);
-//            if (sstable.getReadMeter() == null)
-//            {
-//                throw new AssertionError("If you're seeing this exception, please attach your logs to CASSANDRA-8238 to help us debug. "+sstable);
-//            }
-//            double reads = sstable.getReadMeter().twoHourRate();
-//            if (totalColdReads + reads > maxColdReads)
-//                break;
-//
-//            totalColdReads += reads;
-//            cutoffIndex++;
-//        }
-//        List<SSTableReader> hotSSTables = new ArrayList<>(sstables.subList(cutoffIndex, sstables.size()));
-//        List<SSTableReader> coldSSTables = sstables.subList(0, cutoffIndex);
-//        logger.debug("hotSSTables={}, coldSSTables={}", hotSSTables.size(), coldSSTables.size());
-//        if (hotSSTables.size() >= minThreshold)
-//            return hotSSTables;
-//        if (coldSSTables.size() < minThreshold)
-//            return Collections.emptyList();
-//
-//        Map<SSTableReader, Set<SSTableReader>> overlapMap = new HashMap<>();
-//        for (int i = 0; i < coldSSTables.size(); i++)
-//        {
-//            SSTableReader sstable = coldSSTables.get(i);
-//            Set<SSTableReader> overlaps = new HashSet<>();
-//            for (int j = 0; j < coldSSTables.size(); j++)
-//            {
-//                SSTableReader innerSSTable = coldSSTables.get(j);
-//                if (ColumnNameHelper.overlaps(sstable.getSSTableMetadata().minColumnNames,
-//                                              sstable.getSSTableMetadata().maxColumnNames,
-//                                              innerSSTable.getSSTableMetadata().minColumnNames,
-//                                              innerSSTable.getSSTableMetadata().maxColumnNames,
-//                                              sstable.metadata.comparator))
-//                {
-//                    overlaps.add(innerSSTable);
-//                }
-//            }
-//            overlapMap.put(sstable, overlaps);
-//        }
-//        List<Set<SSTableReader>> overlapChains = new ArrayList<>();
-//        for (SSTableReader sstable : overlapMap.keySet())
-//            overlapChains.add(createOverlapChain(sstable, overlapMap));
-//
-//        Collections.sort(overlapChains, new Comparator<Set<SSTableReader>>()
-//        {
-//            @Override
-//            public int compare(Set<SSTableReader> o1, Set<SSTableReader> o2)
-//            {
-//                return Longs.compare(SSTableReader.getTotalBytes(o2), SSTableReader.getTotalBytes(o1));
-//            }
-//        });
-//        for (Set<SSTableReader> overlapping : overlapChains)
-//        {
-//            // if we are expecting to only keep 70% of the keys after a compaction, run a compaction on these cold sstables:
-//            if (SSTableReader.estimateCompactionGain(overlapping) < 0.7)
-//                return new ArrayList<>(overlapping);
-//        }
-//        return Collections.emptyList();
-//    }
-//
-////<<<<<<< HEAD
-////        return sstables.subList(cutoffIndex, sstables.size()); //返回的是后面最热的
-////=======
-//    /**
-//     * returns a set with all overlapping sstables starting with s.
-//     * if we have 3 sstables, a, b, c where a overlaps with b, but not c and b overlaps with c, all sstables would be returned.
-//     *
-//     * m contains an sstable -> all overlapping mapping
-//     */
-//    private static Set<SSTableReader> createOverlapChain(SSTableReader s, Map<SSTableReader, Set<SSTableReader>> m)
-//    {
-//        Deque<SSTableReader> sstables = new ArrayDeque<>();
-//        Set<SSTableReader> overlapChain = new HashSet<>();
-//        sstables.push(s);
-//        while (!sstables.isEmpty())
-//        {
-//            SSTableReader sstable = sstables.pop();
-//            if (overlapChain.add(sstable))
-//            {
-//                if (m.containsKey(sstable))
-//                    sstables.addAll(m.get(sstable));
-//            }
-//        }
-//        return overlapChain;
-//    }
-//
-//=======
-//>>>>>>> 57b5578396bec8d54eea0b9d051125f5b9873880
 
     /**
      * @param buckets list of buckets from which to return the most interesting, where "interesting" is the total hotness for reads
@@ -457,11 +308,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         //uncheckedOptions只是copy了options的值
         uncheckedOptions = SizeTieredCompactionStrategyOptions.validateOptions(options, uncheckedOptions);
 
-//<<<<<<< HEAD
-//        //所以这里不会删除options中的值
-//        uncheckedOptions.remove(CFPropDefs.KW_MINCOMPACTIONTHRESHOLD);
-//        uncheckedOptions.remove(CFPropDefs.KW_MAXCOMPACTIONTHRESHOLD);
-//=======
+        //所以这里不会删除options中的值
         uncheckedOptions.remove(CompactionParams.Option.MIN_THRESHOLD.toString());
         uncheckedOptions.remove(CompactionParams.Option.MAX_THRESHOLD.toString());
 

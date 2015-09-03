@@ -3,6 +3,10 @@
 
 
 3.0.0-beta2
+ * Improve batchlog write patch (CASSANDRA-9673)
+ * Re-apply MaterializedView updates on commitlog replay (CASSANDRA-10164)
+ * Require AbstractType.isByteOrderComparable declaration in constructor (CASSANDRA-9901)
+ * Avoid digest mismatch on upgrade to 3.0 (CASSANDRA-9554)
  * Fix Materialized View builder when adding multiple MVs (CASSANDRA-10156)
  * Choose better poolingOptions for protocol v4 in cassandra-stress (CASSANDRA-10182)
  * Fix LWW bug affecting Materialized Views (CASSANDRA-10197)
@@ -15,8 +19,18 @@
  * Validate gc_grace_seconds for batchlog writes and MVs (CASSANDRA-9917)
  * Fix sstablerepairedset (CASSANDRA-10132)
 Merged from 2.2:
+ * Fix repair hang when snapshot failed (CASSANDRA-10057)
  * Fall back to 1/4 commitlog volume for commitlog_total_space on small disks
    (CASSANDRA-10199)
+Merged from 2.1:
+ * Fix handling of streaming EOF (CASSANDRA-10206)
+ * Only check KeyCache when it is enabled
+ * Change streaming_socket_timeout_in_ms default to 1 hour (CASSANDRA-8611)
+ * (cqlsh) update list of CQL keywords (CASSANDRA-9232)
+ * Add nodetool gettraceprobability command (CASSANDRA-10234)
+
+
+2.2.1
  * Fix race during construction of commit log (CASSANDRA-10049)
  * Fix LeveledCompactionStrategyTest (CASSANDRA-9757)
  * Fix broken UnbufferedDataOutputStreamPlus.writeUTF (CASSANDRA-10203)
@@ -25,6 +39,7 @@ Merged from 2.2:
  * (cqlsh) add CLEAR command (CASSANDRA-10086)
  * Support string literals as Role names for compatibility (CASSANDRA-10135)
 Merged from 2.1:
+ * Only check KeyCache when it is enabled
  * Change streaming_socket_timeout_in_ms default to 1 hour (CASSANDRA-8611)
  * (cqlsh) update list of CQL keywords (CASSANDRA-9232)
 

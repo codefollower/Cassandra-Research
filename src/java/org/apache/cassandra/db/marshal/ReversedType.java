@@ -59,6 +59,7 @@ public class ReversedType<T> extends AbstractType<T>
 
     private ReversedType(AbstractType<T> baseType)
     {
+        super(ComparisonType.CUSTOM);
         this.baseType = baseType;
     }
 
@@ -67,7 +68,7 @@ public class ReversedType<T> extends AbstractType<T>
         return baseType.isEmptyValueMeaningless();
     }
 
-    public int compare(ByteBuffer o1, ByteBuffer o2)
+    public int compareCustom(ByteBuffer o1, ByteBuffer o2)
     {
         // An empty byte buffer is always smaller
         if (o1.remaining() == 0)
