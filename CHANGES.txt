@@ -3,6 +3,7 @@
 
 
 3.0.0-beta2
+ * Base table PRIMARY KEY can be assumed to be NOT NULL in MV creation (CASSANDRA-10147)
  * Improve batchlog write patch (CASSANDRA-9673)
  * Re-apply MaterializedView updates on commitlog replay (CASSANDRA-10164)
  * Require AbstractType.isByteOrderComparable declaration in constructor (CASSANDRA-9901)
@@ -19,6 +20,8 @@
  * Validate gc_grace_seconds for batchlog writes and MVs (CASSANDRA-9917)
  * Fix sstablerepairedset (CASSANDRA-10132)
 Merged from 2.2:
+ * Retry snapshot deletion after compaction and gc on Windows (CASSANDRA-10222)
+ * Fix failure to start with space in directory path on Windows (CASSANDRA-10239)
  * Fix repair hang when snapshot failed (CASSANDRA-10057)
  * Fall back to 1/4 commitlog volume for commitlog_total_space on small disks
    (CASSANDRA-10199)
