@@ -198,21 +198,9 @@ public class Directories
 
         String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.cfId));
         int idx = metadata.cfName.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
-//<<<<<<< HEAD
-//        // secondary indicies go in the same directory as the base cf
-//        String directoryName;
-//        if (idx >= 0)
-//        {   
-//            //索引也用一个独立的目条来存放，
-//            //例如keysindextest.KeysIndexTest_index_f1,
-//            //变成keysindextest-71e4fce06fdf11e4954d35ee8e523b2d\.KeysIndexTest_index_f1
-//            directoryName = metadata.cfName.substring(0, idx) + "-" + cfId + File.separator + metadata.cfName.substring(idx);
-//        }
-//        else
-//        {
-//             directoryName = metadata.cfName + "-" + cfId;
-//        }
-//=======
+        // 索引也用一个独立的目条来存放，
+        // 例如keysindextest.KeysIndexTest_index_f1,
+        // 变成keysindextest-71e4fce06fdf11e4954d35ee8e523b2d\.KeysIndexTest_index_f1
         String cfName = idx >= 0 ? metadata.cfName.substring(0, idx) : metadata.cfName;
         String indexNameWithDot = idx >= 0 ? metadata.cfName.substring(idx) : null;
 
