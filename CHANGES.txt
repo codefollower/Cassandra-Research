@@ -3,6 +3,9 @@
 
 
 3.0.0-beta2
+ * Fix columns returned by AbstractBtreePartitions (CASSANDRA-10220)
+ * Fix backward compatibility issue due to AbstractBounds serialization bug (CASSANDRA-9857)
+ * Fix startup error when upgrading nodes (CASSANDRA-10136)
  * Base table PRIMARY KEY can be assumed to be NOT NULL in MV creation (CASSANDRA-10147)
  * Improve batchlog write patch (CASSANDRA-9673)
  * Re-apply MaterializedView updates on commitlog replay (CASSANDRA-10164)
@@ -31,6 +34,8 @@ Merged from 2.1:
  * Change streaming_socket_timeout_in_ms default to 1 hour (CASSANDRA-8611)
  * (cqlsh) update list of CQL keywords (CASSANDRA-9232)
  * Add nodetool gettraceprobability command (CASSANDRA-10234)
+Merged from 2.0:
+ * Disallow decommission when node is in drained state (CASSANDRA-8741)
 
 
 2.2.1
