@@ -187,7 +187,7 @@ public class RowUpdateBuilderTest {
             UnfilteredRowIterator uri = partitionUpdate.unfilteredIterator();
             // scan(uri);
 
-            ColumnFilter.Builder columnFilterBuilder = new ColumnFilter.Builder(null);
+            ColumnFilter.Builder columnFilterBuilder = ColumnFilter.selectionBuilder();
             ColumnDefinition c = metadata.getColumnDefinition(new ColumnIdentifier("RegularColumn1", true));
             // columnFilterBuilder.add(c);
 
