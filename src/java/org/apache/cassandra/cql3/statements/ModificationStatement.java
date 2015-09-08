@@ -904,10 +904,7 @@ public abstract class ModificationStatement implements CQLStatement
             return new ParsedStatement.Prepared(statement, boundNames, boundNames.getPartitionKeyBindIndexes(cfm));
         }
 
-//<<<<<<< HEAD
-//        //PARTITION_KEY和CLUSTERING_COLUMN不能出现在if子句中
-//        public ModificationStatement prepare(VariableSpecifications boundNames) throws InvalidRequestException
-//=======
+        //PARTITION_KEY和CLUSTERING_COLUMN不能出现在if子句中
         public ModificationStatement prepare(VariableSpecifications boundNames)
         {
             CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());

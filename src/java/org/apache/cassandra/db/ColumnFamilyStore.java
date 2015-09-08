@@ -514,7 +514,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         SystemKeyspace.removeTruncationRecord(metadata.cfId);
 
         data.dropSSTables();
-        TransactionLog.waitForDeletions();
+        LifecycleTransaction.waitForDeletions();
         indexManager.invalidateAllIndexesBlocking();
         materializedViewManager.invalidate();
 

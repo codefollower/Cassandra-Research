@@ -29,7 +29,7 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
  */
 public abstract class AbstractMarker extends Term.NonTerminal
 {
-    protected final int bindIndex;
+    protected final int bindIndex; //从0开始
     protected final ColumnSpecification receiver;
 
     //对应prepared语句中的每个?号，bindIndex是?号的位置(从0开始)，receiver是?号对应的字段

@@ -149,15 +149,6 @@ public abstract class Sets
             {
                 // Collections have this small hack that validate cannot be called on a serialized object,
                 // but compose does the validation (so we're fine).
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////                //解析出Set中从客户段那里传来的原始值(可能有多个)
-////                //在org.apache.cassandra.serializers.SetSerializer.deserialize(ByteBuffer)中解析
-////                Set<?> s = (Set<?>)type.compose(value);
-////=======
-//                Set<?> s = (Set<?>)type.getSerializer().deserializeForNativeProtocol(value, version);
-//                SortedSet<ByteBuffer> elements = new TreeSet<ByteBuffer>(type.getElementsType());
-//=======
                 Set<?> s = type.getSerializer().deserializeForNativeProtocol(value, version);
                 SortedSet<ByteBuffer> elements = new TreeSet<>(type.getElementsType());
                 for (Object element : s)

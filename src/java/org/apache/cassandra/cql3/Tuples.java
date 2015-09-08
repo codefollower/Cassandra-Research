@@ -62,6 +62,7 @@ public class Tuples
             this.elements = elements;
         }
 
+        //比如insert into users2(id, f1, f2, f_tuple) values (20, 21, 22, (20,'abc',0.1))
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
             validateAssignableTo(keyspace, receiver);

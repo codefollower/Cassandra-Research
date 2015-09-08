@@ -39,10 +39,7 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.checkTrue;
 //必须指定where并且条件字段必须是primary key
 public class DeleteStatement extends ModificationStatement
 {
-//<<<<<<< HEAD
-//    //对于delete语句，Attributes只支持USING TIMESTAMP，不支持TTL
-//    private DeleteStatement(StatementType type, int boundTerms, CFMetaData cfm, Attributes attrs)
-//=======
+    //对于delete语句，Attributes只支持USING TIMESTAMP，不支持TTL
     private DeleteStatement(int boundTerms,
                             CFMetaData cfm,
                             Operations operations,
@@ -77,10 +74,7 @@ public class DeleteStatement extends ModificationStatement
             // ... or a range of rows deletion.
             else
             {
-//<<<<<<< HEAD
-//                update.add(params.makeRangeTombstone(cbuilder)); //删除连续的多个列
-//=======
-                update.add(params.makeRangeTombstone(cfm.comparator, clustering));
+                update.add(params.makeRangeTombstone(cfm.comparator, clustering)); //删除二级聚簇中的多行记录
             }
         }
         else //delete xxx from 语法
@@ -141,11 +135,7 @@ public class DeleteStatement extends ModificationStatement
             this.whereClause = whereClause;
         }
 
-//<<<<<<< HEAD
-//        //不能用delete xxx from这种格式删除PARTITION_KEY和CLUSTERING_COLUMN这两种字段
-//        protected ModificationStatement prepareInternal(CFMetaData cfm, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException
-//=======
-
+        //不能用delete xxx from这种格式删除PARTITION_KEY和CLUSTERING_COLUMN这两种字段
         @Override
         protected ModificationStatement prepareInternal(CFMetaData cfm,
                                                         VariableSpecifications boundNames,

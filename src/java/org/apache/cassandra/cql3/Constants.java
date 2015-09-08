@@ -19,8 +19,6 @@ package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -37,8 +35,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  */
 public abstract class Constants
 {
-    private static final Logger logger = LoggerFactory.getLogger(Constants.class);
-
     public enum Type
     {
         STRING, INTEGER, UUID, FLOAT, DATE, TIME, BOOLEAN, HEX;
@@ -70,9 +66,6 @@ public abstract class Constants
         }
     };
 
-//<<<<<<< HEAD
-//    //非prepared语句的情况
-//=======
     public static final Term.Terminal NULL_VALUE = new Value(null)
     {
         @Override
@@ -89,6 +82,7 @@ public abstract class Constants
         }
     };
 
+    //非prepared语句的情况
     public static class Literal implements Term.Raw
     {
         private final Type type;

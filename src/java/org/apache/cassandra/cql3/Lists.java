@@ -135,6 +135,8 @@ public abstract class Lists
             {
                 // Collections have this small hack that validate cannot be called on a serialized object,
                 // but compose does the validation (so we're fine).
+                //deserializeForNativeProtocol会把client传过来的ByteBuffer转成相应的类型(比如String)
+                //而下面的decompose又转成ByteBuffer(比如把String转成ByteBuffer)
                 List<?> l = type.getSerializer().deserializeForNativeProtocol(value, version);
                 List<ByteBuffer> elements = new ArrayList<>(l.size());
                 for (Object element : l)

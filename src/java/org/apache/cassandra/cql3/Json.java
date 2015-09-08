@@ -58,7 +58,7 @@ public class Json
 
     /**
      * Represents a literal JSON string in an INSERT JSON statement.
-     * For example: INSERT INTO mytable (key, col) JSON '{"key": 0, "col": 0}';
+     * For example: INSERT INTO mytable (key, col) JSON '{"key": 0, "col": 0}'; //不需要(key, col)
      */
     public static class Literal implements Raw
     {

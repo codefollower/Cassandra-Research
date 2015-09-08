@@ -373,8 +373,8 @@ public class QueryProcessor implements QueryHandler
     public static ResultMessage.Prepared prepare(String queryString, ClientState clientState, boolean forThrift)
     {
         ResultMessage.Prepared existing = getStoredPreparedStatement(queryString, clientState.getRawKeyspace(), forThrift);
-        if (existing != null)
-            return existing;
+        //if (existing != null)
+        //    return existing;
 
         ParsedStatement.Prepared prepared = getStatement(queryString, clientState);
         int boundTerms = prepared.statement.getBoundTerms();

@@ -46,7 +46,6 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.lifecycle.TransactionLog;
 import org.apache.cassandra.db.rows.SliceableUnfilteredRowIterator;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
@@ -923,7 +922,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                     if (summaryEntriesChecked == Downsampling.BASE_SAMPLING_LEVEL)
                         return true;
                 }
-                RowIndexEntry.Serializer.skip(in);
+                RowIndexEntry.Serializer.skip(in, descriptor.version);
                 i++;
             }
         }
@@ -1200,7 +1199,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                 while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
                 {
                     summaryBuilder.maybeAddEntry(decorateKey(ByteBufferUtil.readWithShortLength(primaryIndex)), indexPosition);
-                    RowIndexEntry.Serializer.skip(primaryIndex);
+                    RowIndexEntry.Serializer.skip(primaryIndex, descriptor.version);
                 }
 
                 return summaryBuilder.build(getPartitioner());
@@ -1606,7 +1605,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                 if (indexDecoratedKey.compareTo(token) > 0)
                     return indexDecoratedKey;
 
-                RowIndexEntry.Serializer.skip(in);
+                RowIndexEntry.Serializer.skip(in, descriptor.version);
             }
         }
         catch (IOException e)
@@ -1647,7 +1646,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      * @return true if the this is the first time the file was marked obsolete.  Calling this
      * multiple times is usually buggy (see exceptions in Tracker.unmarkCompacting and removeOldSSTablesSize).
      */
-    public void markObsolete(TransactionLog.SSTableTidier tidier)
+    public void markObsolete(Runnable tidier)
     {
         if (logger.isDebugEnabled())
             logger.debug("Marking {} compacted", getFilename());
@@ -2183,7 +2182,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         // sstable have been released
         private ScheduledFuture readMeterSyncFuture;
         // shared state managing if the logical sstable has been compacted; this is used in cleanup
-        private volatile TransactionLog.SSTableTidier obsoletion;
+        private volatile Runnable obsoletion;
 
         GlobalTidy(final SSTableReader reader)
         {

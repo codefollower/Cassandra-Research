@@ -2,6 +2,13 @@
  * Add transparent data encryption core classes (CASSANDRA-9945)
 
 
+3.0.0-rc1
+ * Small optimizations of sstable index serialization (CASSANDRA-10232)
+ * Support for both encrypted and unencrypted native transport connections (CASSANDRA-9590)
+Merged from 2.2:
+ * Handle missing RoleManager in config after upgrade to 2.2 (CASSANDRA-10209)
+
+
 3.0.0-beta2
  * Fix columns returned by AbstractBtreePartitions (CASSANDRA-10220)
  * Fix backward compatibility issue due to AbstractBounds serialization bug (CASSANDRA-9857)

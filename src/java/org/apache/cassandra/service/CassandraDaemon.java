@@ -144,8 +144,12 @@ public class CassandraDaemon
 
     private static final CassandraDaemon instance = new CassandraDaemon();
 
-    public Server thriftServer; //用于thrift客户端
-    public Server nativeServer; //用于CQL3客户端
+//<<<<<<< HEAD
+//    public Server thriftServer; //用于thrift客户端
+//    public Server nativeServer; //用于CQL3客户端
+//=======
+    public Server thriftServer;
+    private NativeTransportService nativeTransportService;
 
     private final boolean runManaged;
     protected final StartupChecks startupChecks;
@@ -387,10 +391,13 @@ public class CassandraDaemon
         thriftServer = new ThriftServer(rpcAddr, rpcPort, listenBacklog); //只是构造一个实例，并没启动
 
         // Native transport
-        //用于支持CQL
-        InetAddress nativeAddr = DatabaseDescriptor.getRpcAddress();
-        int nativePort = DatabaseDescriptor.getNativeTransportPort();
-        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
+//<<<<<<< HEAD
+//        //用于支持CQL
+//        InetAddress nativeAddr = DatabaseDescriptor.getRpcAddress();
+//        int nativePort = DatabaseDescriptor.getNativeTransportPort();
+//        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort); //只是构造一个实例，并没启动
+//=======
+        nativeTransportService = new NativeTransportService();
 
         completeSetup();
     }
@@ -458,7 +465,8 @@ public class CassandraDaemon
         String nativeFlag = System.getProperty("cassandra.start_native_transport");
         if ((nativeFlag != null && Boolean.parseBoolean(nativeFlag)) || (nativeFlag == null && DatabaseDescriptor.startNativeTransport()))
         {
-            nativeServer.start();
+            startNativeTransport();
+            StorageService.instance.setRpcReady(true);
         }
         else
             logger.info("Not starting native transport as requested. Use JMX (StorageService->startNativeTransport()) or nodetool (enablebinary) to start it");
@@ -480,9 +488,12 @@ public class CassandraDaemon
         // On linux, this doesn't entirely shut down Cassandra, just the RPC server.
         // jsvc takes care of taking the rest down
         logger.info("Cassandra shutting down...");
-        thriftServer.stop();
-        nativeServer.stop();
-
+        if (thriftServer != null)
+            thriftServer.stop();
+        if (nativeTransportService != null)
+            nativeTransportService.destroy();
+        StorageService.instance.setRpcReady(false);
+        
         // On windows, we need to stop the entire system as prunsrv doesn't have the jsvc hooks
         // We rely on the shutdown hook to drain the node
         if (FBUtilities.isWindows())
@@ -585,6 +596,26 @@ public class CassandraDaemon
             }
         }
     }
+
+    public void startNativeTransport()
+    {
+        if (nativeTransportService == null)
+            throw new IllegalStateException("setup() must be called first for CassandraDaemon");
+        else
+            nativeTransportService.start();
+    }
+
+    public void stopNativeTransport()
+    {
+        if (nativeTransportService != null)
+            nativeTransportService.stop();
+    }
+
+    public boolean isNativeTransportRunning()
+    {
+        return nativeTransportService != null ? nativeTransportService.isRunning() : false;
+    }
+
 
     /**
      * A convenience method to stop and destroy the daemon in one shot.
