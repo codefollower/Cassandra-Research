@@ -85,15 +85,9 @@ public class UpdateStatement extends ModificationStatement
             // value is of type "EmptyType").
             if (cfm.isCompactTable() && updates.isEmpty())
             {
-//<<<<<<< HEAD
-//                //列如: CREATE TABLE IF NOT EXISTS t ( block_id int, f2 int, PRIMARY KEY (block_id, f2)) WITH COMPACT STORAGE
-//                //然后: INSERT INTO t(block_id, f2) VALUES (1, 2)
-//                //插入的列名是f2的值，列值是空字节数组
-//                if (CompactTables.hasEmptyCompactValue(cfm))
-//                    updates = Collections.<Operation>singletonList(new Constants.Setter(cfm.compactValueColumn(), EMPTY));
-//                else
-//                    throw new InvalidRequestException(String.format("Column %s is mandatory for this COMPACT STORAGE table", cfm.compactValueColumn().name));
-//=======
+                //列如: CREATE TABLE IF NOT EXISTS t ( block_id int, f2 int, PRIMARY KEY (block_id, f2)) WITH COMPACT STORAGE
+                //然后: INSERT INTO t(block_id, f2) VALUES (1, 2)
+                //插入的列名是f2的值，列值是空字节数组
                 checkTrue(CompactTables.hasEmptyCompactValue(cfm),
                           "Column %s is mandatory for this COMPACT STORAGE table",
                           cfm.compactValueColumn().name);

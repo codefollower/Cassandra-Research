@@ -73,25 +73,10 @@ public abstract class ModificationStatement implements CQLStatement
     public final CFMetaData cfm;
     private final Attributes attrs;
 
-//<<<<<<< HEAD
-//    //只能是PARTITION_KEY和CLUSTERING_COLUMN中的字段
-//    protected final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<>();
-//
-//    //只能是REGULAR和COMPACT_VALUE字段
-//    private final List<Operation> regularOperations = new ArrayList<>();
-//    private final List<Operation> staticOperations = new ArrayList<>();
-//=======
     private final StatementRestrictions restrictions;
 
     private final Operations operations;
 
-//<<<<<<< HEAD
-//    // Separating normal and static conditions makes things somewhat easier
-//    private List<ColumnCondition> columnConditions; //只能是REGULAR和COMPACT_VALUE字段
-//    private List<ColumnCondition> staticConditions;
-//    private boolean ifNotExists;
-//    private boolean ifExists;
-//=======
     private final PartitionColumns updatedColumns;
 
     private final Conditions conditions;
@@ -292,75 +277,6 @@ public abstract class ModificationStatement implements CQLStatement
 
     public boolean hasIfExistCondition()
     {
-//<<<<<<< HEAD
-//        return ifExists;
-//    }
-//
-//    private void addKeyValues(ColumnDefinition def, Restriction values) throws InvalidRequestException
-//    {
-//        if (def.kind == ColumnDefinition.Kind.CLUSTERING)
-//            hasNoClusteringColumns = false;
-//        if (processedKeys.put(def.name, values) != null)
-//            throw new InvalidRequestException(String.format("Multiple definitions found for PRIMARY KEY part %s", def.name));
-//    }
-//
-//    public void addKeyValue(ColumnDefinition def, Term value) throws InvalidRequestException
-//    {
-//        addKeyValues(def, new SingleColumnRestriction.EQRestriction(def, value));
-//    }
-//
-//    //对应Update和Delete的where子句
-//    //Update和Delete的where子句必须包含，where子句中只支持and，
-//    //并且只能出现PARTITION_KEY和CLUSTERING_COLUMN，
-//    //并且只有PARTITION_KEY和CLUSTERING_COLUMN能使用"="操作符，
-//    //并且只有PARTITION_KEY能使用"in"操作符。
-//    public void processWhereClause(List<Relation> whereClause, VariableSpecifications names) throws InvalidRequestException
-//    {
-//        for (Relation relation : whereClause)
-//        {
-//            if (relation.isMultiColumn())
-//            {
-//                throw new InvalidRequestException(
-//                        String.format("Multi-column relations cannot be used in WHERE clauses for UPDATE and DELETE statements: %s", relation));
-//            }
-//            //如果是TokenRelation，这里就出cast异常了
-////            SingleColumnRelation rel = (SingleColumnRelation) relation;
-////
-////            if (rel.onToken())
-////                throw new InvalidRequestException(String.format("The token function cannot be used in WHERE clauses for UPDATE and DELETE statements: %s", relation));
-//
-//            if (relation.onToken())
-//                throw new InvalidRequestException(String.format("The token function cannot be used in WHERE clauses for UPDATE and DELETE statements: %s", relation));
-//            
-//            SingleColumnRelation rel = (SingleColumnRelation) relation;
-//            
-//            ColumnIdentifier id = rel.getEntity().prepare(cfm);
-//            ColumnDefinition def = cfm.getColumnDefinition(id);
-//            if (def == null)
-//                throw new InvalidRequestException(String.format("Unknown key identifier %s", id));
-//
-//            switch (def.kind)
-//            {
-//                case PARTITION_KEY:
-//                case CLUSTERING:
-//                    Restriction restriction;
-//
-//                    if (rel.isEQ() || (def.isPartitionKey() && rel.isIN()))
-//                    {
-//                        restriction = rel.toRestriction(cfm, names);
-//                    }
-//                    else
-//                    {
-//                        throw new InvalidRequestException(String.format("Invalid operator %s for PRIMARY KEY part %s", rel.operator(), def.name));
-//                    }
-//
-//                    addKeyValues(def, restriction);
-//                    break;
-//                default:
-//                    throw new InvalidRequestException(String.format("Non PRIMARY KEY %s found in where clause", def.name));
-//            }
-//        }
-//=======
         return conditions.isIfExists();
     }
 
@@ -368,27 +284,9 @@ public abstract class ModificationStatement implements CQLStatement
     public List<ByteBuffer> buildPartitionKeyNames(QueryOptions options)
     throws InvalidRequestException
     {
-//<<<<<<< HEAD
-//        MultiCBuilder keyBuilder = MultiCBuilder.create(cfm.getKeyValidatorAsClusteringComparator());
-//        for (ColumnDefinition def : cfm.partitionKeyColumns())
-//        {
-//            Restriction r = checkNotNull(processedKeys.get(def.name), "Missing mandatory PRIMARY KEY part %s", def.name);
-//            r.appendTo(keyBuilder, options);
-//        }
-//
-//        //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
-//        //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
-//        //就会得到两个PARTITION_KEY: (x,y)和(x,z)
-//        NavigableSet<Clustering> clusterings = keyBuilder.build();
-//        List<ByteBuffer> keys = new ArrayList<ByteBuffer>(clusterings.size());
-//        for (Clustering clustering : clusterings)
-//        {
-//            ByteBuffer key = CFMetaData.serializePartitionKey(clustering);
-//            ThriftValidation.validateKey(cfm, key);
-//            keys.add(key);
-//        }
-//        return keys;
-//=======
+        //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
+        //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
+        //就会得到两个PARTITION_KEY: (x,y)和(x,z)
         return restrictions.getPartitionKeys(options);
     }
 
@@ -407,32 +305,6 @@ public abstract class ModificationStatement implements CQLStatement
      */
     private boolean appliesOnlyToStaticColumns()
     {
-//<<<<<<< HEAD
-//        CBuilder builder = CBuilder.create(cfm.comparator);
-//        MultiCBuilder multiBuilder = MultiCBuilder.wrap(builder);
-//
-//        ColumnDefinition firstEmptyKey = null;
-//        for (ColumnDefinition def : cfm.clusteringColumns())
-//        {
-//            Restriction r = processedKeys.get(def.name);
-//            if (r == null)
-//            {
-//                firstEmptyKey = def;
-//                //满足这个if条件的只有update语句，并且是CreateTableStatement.comparator中的第4种情况
-//                checkFalse(requireFullClusteringKey() && !cfm.isDense() && cfm.isCompound(),
-//                           "Missing mandatory PRIMARY KEY part %s", def.name);
-//            }
-//            else if (firstEmptyKey != null) //CLUSTERING_COLUMN中最前面的字段不允许为空，比如a、b两字段，不能只出现b
-//            {
-//                throw invalidRequest("Missing PRIMARY KEY part %s since %s is set", firstEmptyKey.name, def.name);
-//            }
-//            else
-//            {
-//                r.appendTo(multiBuilder, options);
-//            }
-//        }
-//        return builder;
-//=======
         return appliesOnlyToStaticColumns(operations, conditions);
     }
 
@@ -457,12 +329,8 @@ public abstract class ModificationStatement implements CQLStatement
         return false;
     }
 
-//<<<<<<< HEAD
-//    //在executeWithoutCondition时使用，但是在executeWithCondition时不使用
-//    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex需要读
-//    protected Map<DecoratedKey, Partition> readRequiredLists(Collection<ByteBuffer> partitionKeys, CBuilder cbuilder, boolean local, ConsistencyLevel cl)
-//    throws RequestExecutionException, RequestValidationException
-//=======
+    //在executeWithoutCondition时使用，但是在executeWithCondition时不使用
+    //只有Lists类的Discarder、DiscarderByIndex、SetterByIndex需要读
     private Map<DecoratedKey, Partition> readRequiredLists(Collection<ByteBuffer> partitionKeys,
                                                            ClusteringIndexFilter filter,
                                                            DataLimits limits,
@@ -904,7 +772,6 @@ public abstract class ModificationStatement implements CQLStatement
             return new ParsedStatement.Prepared(statement, boundNames, boundNames.getPartitionKeyBindIndexes(cfm));
         }
 
-        //PARTITION_KEY和CLUSTERING_COLUMN不能出现在if子句中
         public ModificationStatement prepare(VariableSpecifications boundNames)
         {
             CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
@@ -973,6 +840,7 @@ public abstract class ModificationStatement implements CQLStatement
                 ColumnCondition condition = entry.right.prepare(keyspace(), def);
                 condition.collectMarkerSpecification(boundNames);
 
+                //partition_key和clustering_column不能出现在if子句中
                 checkFalse(def.isPrimaryKeyColumn(), "PRIMARY KEY column '%s' cannot have IF conditions", id);
                 builder.add(condition);
             }

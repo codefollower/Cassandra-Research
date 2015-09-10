@@ -38,13 +38,6 @@ import org.apache.cassandra.utils.FBUtilities;
 public class UpdateParameters
 {
     public final CFMetaData metadata;
-//<<<<<<< HEAD
-//
-//    public final QueryOptions options;
-//    public final long timestamp; //有可能是client端指定的时间
-//    private final int ttl;
-//    public final int localDeletionTime; //server端的当前时间(以秒为单位)
-//=======
     public final PartitionColumns updatedColumns;
     public final QueryOptions options;
 

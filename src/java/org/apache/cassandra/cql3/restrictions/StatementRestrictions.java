@@ -612,9 +612,6 @@ public final class StatementRestrictions
      *
      * @return <code>true</code> if the query returns a range of columns, <code>false</code> otherwise.
      */
-    //isColumnRange()返回false只有两种情况:
-    //1. SimpleSparseCellNameType
-    //2. SimpleDenseCellNameType和CompoundDenseCellNameType且所有的CLUSTERING_COLUMN都在where中出现并且不是Slice查询
     public boolean isColumnRange()
     {
         // For static compact tables we want to ignore the fake clustering column (note that if we weren't special casing,
