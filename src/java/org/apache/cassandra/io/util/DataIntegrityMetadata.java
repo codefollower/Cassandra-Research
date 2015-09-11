@@ -112,7 +112,7 @@ public class DataIntegrityMetadata
         {
             this.descriptor = descriptor;
             checksum = descriptor.version.uncompressedChecksumType().newInstance();
-            digestReader = RandomAccessReader.open(new File(descriptor.filenameFor(Component.DIGEST)));
+            digestReader = RandomAccessReader.open(new File(descriptor.filenameFor(Component.digestFor(descriptor.version.uncompressedChecksumType()))));
             dataReader = RandomAccessReader.open(new File(descriptor.filenameFor(Component.DATA)));
             try
             {
@@ -209,8 +209,10 @@ public class DataIntegrityMetadata
 
         public void writeFullChecksum(Descriptor descriptor)
         {
-            File outFile = new File(descriptor.filenameFor(Component.DIGEST));
-            try (BufferedWriter out = Files.newBufferedWriter(outFile.toPath(), Charsets.UTF_8))
+            if (descriptor.digestComponent == null)
+                throw new NullPointerException("Null digest component for " + descriptor.ksname + '.' + descriptor.cfname + " file " + descriptor.baseFilename());
+            File outFile = new File(descriptor.filenameFor(descriptor.digestComponent));
+            try (BufferedWriter out =Files.newBufferedWriter(outFile.toPath(), Charsets.UTF_8))
             {
                 out.write(String.valueOf(fullChecksum.getValue()));
             }
