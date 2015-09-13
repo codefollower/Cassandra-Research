@@ -43,6 +43,7 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
         return new FromResultSet(rs);
     }
 
+    //未使用
     public static UntypedResultSet create(List<Map<String, ByteBuffer>> results)
     {
         return new FromResultList(results);

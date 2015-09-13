@@ -256,6 +256,8 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
         }
     }
 
+    //虽然也实现了Selectable.Raw接中，但是不会出现在select语句的查询字段(或表达式)中
+    //UpdateStatement.ParsedInsertJson.prepareInternal中有使用
     public static class ColumnIdentifierValue implements Raw
     {
         private final ColumnIdentifier identifier;

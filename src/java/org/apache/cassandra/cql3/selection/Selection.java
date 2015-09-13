@@ -196,7 +196,7 @@ public abstract class Selection
         SelectionColumnMapping mapping = collectColumnMappings(cfm, rawSelectors, factories);
 
         return (processesSelection(rawSelectors) || rawSelectors.size() != defs.size())
-               ? new SelectionWithProcessing(cfm, defs, mapping, factories)
+               ? new SelectionWithProcessing(cfm, defs, mapping, factories) //比如带函数的select
                : new SimpleSelection(cfm, defs, mapping, false);
     }
 
