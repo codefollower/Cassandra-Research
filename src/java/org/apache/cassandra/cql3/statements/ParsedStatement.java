@@ -24,11 +24,17 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.exceptions.RequestValidationException;
 
+//Parser对CQL解析完后，得到一个ParsedStatement，
+//对ParsedStatement调用prepare之后得到一个Prepared实例，这个Prepared实例中包含一个CQLStatement
+//有些CQL例如DDL类的CQL没有分开，而是用同一个类来继承ParsedStatement并实现CQLStatement
+//例如DropTriggerStatement，在解析时，Parser会生成一个DropTriggerStatement实例，
+//调用DropTriggerStatement的prepare方法后生成的Prepared实例中的CQLStatement还是它自己
 public abstract class ParsedStatement
 {
     private VariableSpecifications variables;
 
-    public VariableSpecifications getBoundVariables()
+    //只有select/insert/update/delete/batch这5种句型使用
+    public VariableSpecifications getBoundVariables() //在子类执行prepare()时调用
     {
         return variables;
     }
@@ -38,6 +44,8 @@ public abstract class ParsedStatement
     //先触发setBoundVariables，再到Prepared(CQLStatement, List<ColumnSpecification>)
     //如果是WHERE id=:a AND f1=:b这种类型，boundNames就是a、b
     //如果是WHERE id=? AND f1=?这种类型，boundNames就是null、null
+    //Parser对CQL解析完之后都会自动调用这个方法(见Cql.g文法文件，里面有个@after)
+    //如果没有?号或绑定变量，就是一个empty的ArrayList
     public void setBoundVariables(List<ColumnIdentifier> boundNames)
     {
         this.variables = new VariableSpecifications(boundNames);
@@ -58,18 +66,22 @@ public abstract class ParsedStatement
             this.partitionKeyBindIndexes = partitionKeyBindIndexes;
         }
 
+        //凡是调用这个函数的类说明他们对应的CQL支持?号占位符
+        //例如select/insert/update/delete/batch
         public Prepared(CQLStatement statement, VariableSpecifications names, Short[] partitionKeyBindIndexes)
         {
             this(statement, names.getSpecifications(), partitionKeyBindIndexes);
         }
 
         //凡是调用这个函数的类说明他们对应的CQL是不支持?号占位符的
+        //例如各类ddl语句
         public Prepared(CQLStatement statement)
         {
             this(statement, Collections.<ColumnSpecification>emptyList(), null);
         }
     }
 
+    //未见使用
     public Iterable<Function> getFunctions()
     {
         return Collections.emptyList();

@@ -31,9 +31,9 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 /**
  * Abstract class for statements that alter the schema.
  */
-//对应drop/create keyspace/type/table/index/trigger
-//以及alter keyspace/type/table
-//index/trigger没有alter
+//create/drop语句总共9个: keyspace、table、index、trigger、aggregate、function、materialized view、role、type
+//只有index、trigger、aggregate、function没有alter
+//但是create/drop/alter role并不属于SchemaAlteringStatement
 
 //通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
 //调用顺序setBoundVariables->prepareKeyspace->prepare->getBoundTerms->checkAccess->validate->execute
@@ -41,7 +41,8 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
 {
     private final boolean isColumnFamilyLevel;
 
-    protected SchemaAlteringStatement() //对应alter/drop/create keyspace或type，不需要列族
+    //keyspace、type、aggregate、function不需要列族
+    protected SchemaAlteringStatement()
     {
         super(null);
         this.isColumnFamilyLevel = false;

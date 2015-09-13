@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.cql3;
 
-//对于CREATE TABLE simplex.songs这样的sql，
+//对于CREATE TABLE simplex.songs这样的cql，
 //ksName = simplex
 //cfName = songs
 //按RDBMS来看，ksName就是模式名，cfName就是表名，
@@ -26,6 +26,7 @@ public class CFName extends KeyspaceElementName
 {
     private String cfName;
 
+    //CQL中的标识符，如果不加双引号，都是小写，加双引号后保持原样
     public void setColumnFamily(String cf, boolean keepCase) //在CqlParser中调用，如果列族名加了引号，那么keepCase为true
     {
         cfName = toInternalName(cf, keepCase);

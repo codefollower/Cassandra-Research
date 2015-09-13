@@ -39,10 +39,10 @@ public class CreateRoleStatement extends AuthenticationStatement
 
     public void checkAccess(ClientState state) throws UnauthorizedException
     {
-        super.checkPermission(state, Permission.CREATE, RoleResource.root());
+        super.checkPermission(state, Permission.CREATE, RoleResource.root()); //检查当前用户是否有root角色资源的创建权限
         if (opts.getSuperuser().isPresent())
         {
-            if (opts.getSuperuser().get() && !state.getUser().isSuper()) //只有超级用户才有create user的权限
+            if (opts.getSuperuser().get() && !state.getUser().isSuper()) //只有超级用户才有create superuser的权限
                 throw new UnauthorizedException("Only superusers can create a role with superuser status");
         }
     }

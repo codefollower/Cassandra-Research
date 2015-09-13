@@ -20,8 +20,6 @@ package org.apache.cassandra.triggers;
  * 
  */
 
-
-import java.nio.ByteBuffer;
 import java.util.Collection;
 
 import org.apache.cassandra.db.Mutation;

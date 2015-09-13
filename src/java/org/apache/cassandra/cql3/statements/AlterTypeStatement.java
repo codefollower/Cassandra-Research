@@ -70,15 +70,6 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         return new Renames(name, renames);
     }
 
-//<<<<<<< HEAD
-//    //重合名类型自身，如: ALTER TYPE type1 RENAME TO type2
-//    public static AlterTypeStatement typeRename(UTName name, UTName newName)
-//    {
-//        return new TypeRename(name, newName);
-//    }
-//
-//=======
-//>>>>>>> f314c61f81af7be86c719a9851a49da272bd7963
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
     {
         state.hasKeyspaceAccess(keyspace(), Permission.ALTER);

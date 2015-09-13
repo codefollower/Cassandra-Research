@@ -24,7 +24,7 @@ import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
 //通常由QueryProcessor.process(String, ConsistencyLevel)方法开始
-//调用顺序getBoundsTerms()->checkAccess->validate->execute
+//调用顺序getBoundsTerms->checkAccess->validate->execute
 public interface CQLStatement
 {
     /**
@@ -67,5 +67,5 @@ public interface CQLStatement
      * of the statement
      * @return functions all functions found (may contain duplicates)
      */
-    public Iterable<Function> getFunctions();
+    public Iterable<Function> getFunctions(); //在checkAccess(ClientState)中有使用
 }

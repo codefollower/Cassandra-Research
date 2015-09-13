@@ -373,7 +373,7 @@ public class ClientState
         return user.getPermissions(resource);
     }
 
-    //我加上的，用于测试，触发memtable的flush
-    //见org.apache.cassandra.cql3.statements.ModificationStatement.executeWithoutCondition(QueryState, QueryOptions)
-    public int  count = 0;
+    // 我加上的，用于测试，触发memtable的flush
+    // 见org.apache.cassandra.cql3.statements.ModificationStatement.executeWithoutCondition(QueryState, QueryOptions)
+    public int count = 0;
 }

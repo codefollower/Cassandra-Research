@@ -43,7 +43,7 @@ public class DropRoleStatement extends AuthenticationStatement
         // caching info about roles which don't exist (CASSANDRA-9189)
         if (DatabaseDescriptor.getRoleManager().isExistingRole(role)
             && Roles.hasSuperuserStatus(role)
-            && !state.getUser().isSuper()) //只有超级用户才有drop user的权限
+            && !state.getUser().isSuper()) //只有超级用户才有drop superuser的权限
             throw new UnauthorizedException("Only superusers can drop a role with superuser status");
     }
 

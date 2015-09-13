@@ -104,7 +104,7 @@ public class PermissionsCache implements PermissionsCacheMBean
         return DatabaseDescriptor.getPermissionsUpdateInterval();
     }
 
-    //当permissionsCache在最初调用initPermissionsCache()不为null时，
+    //当PermissionsCache在最初调用initCache()不为null时，
     //这里传进去的Pair.create(user, resource)会保留在CacheLoader中，默认保存两秒
     //这样如果连续的两次访问只要间隔不超过两秒就不会去读system_auth.permissions表
     private LoadingCache<Pair<AuthenticatedUser, IResource>, Set<Permission>> initCache(

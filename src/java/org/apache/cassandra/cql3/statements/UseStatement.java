@@ -26,7 +26,7 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 
 //比如USE simplex，这样就不需要每次都指定keyspace名了，会放在ClientState中，只要连接一直不关就会一直有效
-//调用顺序UseStatement(String keyspace)=>setBoundTerms->prepare()->getBoundsTerms()->checkAccess->validate->execute
+//调用顺序UseStatement(String keyspace)=>setBoundVariables->prepare()->getBoundTerms()->checkAccess->validate->execute
 public class UseStatement extends ParsedStatement implements CQLStatement
 {
     private final String keyspace;

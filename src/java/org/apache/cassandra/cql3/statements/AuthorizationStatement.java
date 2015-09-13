@@ -29,6 +29,7 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
+//授权类型的语句
 public abstract class AuthorizationStatement extends ParsedStatement implements CQLStatement
 {
     @Override
