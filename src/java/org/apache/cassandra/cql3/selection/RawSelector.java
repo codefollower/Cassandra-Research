@@ -45,6 +45,8 @@ public class RawSelector
      */
     public static List<Selectable> toSelectables(List<RawSelector> raws, final CFMetaData cfm)
     {
+        //返回的List<Selectable>会包含List<RawSelector> raws，它的size就是raws的size，但是没有调用apply，在遍历的时候才调用
+        //如果调用List<Selectable>的 toString，也会调用apply，然后返回输出是每个Selectable子类的toString
         return Lists.transform(raws, new Function<RawSelector, Selectable>()
         {
             public Selectable apply(RawSelector raw)

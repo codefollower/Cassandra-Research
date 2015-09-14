@@ -43,7 +43,7 @@ public abstract class Selector implements AssignmentTestable
      */
     public static abstract class Factory
     {
-        public Iterable<Function> getFunctions()
+        public Iterable<Function> getFunctions() //只有AbstractFunctionSelector生成的Factory覆盖这个方法
         {
             return Collections.emptySet();
         }

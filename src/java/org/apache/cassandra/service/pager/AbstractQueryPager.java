@@ -19,7 +19,6 @@ package org.apache.cassandra.service.pager;
 
 import java.util.NoSuchElementException;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.*;

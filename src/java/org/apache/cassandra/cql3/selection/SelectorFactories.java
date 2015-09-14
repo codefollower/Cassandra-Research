@@ -78,7 +78,7 @@ final class SelectorFactories implements Iterable<Selector.Factory>
     {
         factories = new ArrayList<>(selectables.size());
 
-        for (Selectable selectable : selectables)
+        for (Selectable selectable : selectables) //从这里开始才会调用每个Selectable.Raw.prepare(CFMetaData)
         {
             Factory factory = selectable.newSelectorFactory(cfm, defs);
             containsWritetimeFactory |= factory.isWritetimeSelectorFactory();

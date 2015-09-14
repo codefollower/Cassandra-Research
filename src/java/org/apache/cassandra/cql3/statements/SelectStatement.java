@@ -20,12 +20,11 @@ package org.apache.cassandra.cql3.statements;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 
 import org.slf4j.LoggerFactory;
-
 import org.slf4j.Logger;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
@@ -47,7 +46,6 @@ import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.view.MaterializedView;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.exceptions.*;
-import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.service.ClientState;
@@ -59,6 +57,7 @@ import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkFalse;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkNotNull;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkTrue;
@@ -686,6 +685,7 @@ public class SelectStatement implements CQLStatement
         }
     }
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     private static void addValue(Selection.ResultSetBuilder result, ColumnDefinition def, Row row, int nowInSec, int protocolVersion)
     {
         if (def.isComplex())
@@ -947,8 +947,8 @@ public class SelectStatement implements CQLStatement
         /** If ALLOW FILTERING was not specified, this verifies that it is not needed */
         private void checkNeedsFiltering(StatementRestrictions restrictions) throws InvalidRequestException
         {
-            //在进行rowKey的范围查询或按辅助索引查询时，如果没有显示指定"ALLOW FILTERING"，那么对于一些特殊情况会发生错误
-            //查询大量的记录导致性能问题
+            //在进行rowKey的范围查询或按辅助索引查询时，如果没有显示指定"ALLOW FILTERING"，
+            //查询大量的记录会导致性能问题
             // non-key-range non-indexed queries cannot involve filtering underneath
             if (!parameters.allowFiltering && (restrictions.isKeyRange() || restrictions.usesSecondaryIndexing()))
             {
@@ -978,7 +978,7 @@ public class SelectStatement implements CQLStatement
         @Override
         public String toString()
         {
-            return Objects.toStringHelper(this)
+            return MoreObjects.toStringHelper(this)
                           .add("name", cfName)
                           .add("selectClause", selectClause)
                           .add("whereClause", whereClause)

@@ -47,7 +47,7 @@ public class QueryPagers
                                  int nowInSec,
                                  boolean isForThrift) throws RequestValidationException, RequestExecutionException
     {
-        SinglePartitionReadCommand command = SinglePartitionReadCommand.create(isForThrift, metadata, nowInSec, columnFilter, RowFilter.NONE, limits, key, filter);
+        SinglePartitionReadCommand<?> command = SinglePartitionReadCommand.create(isForThrift, metadata, nowInSec, columnFilter, RowFilter.NONE, limits, key, filter);
         final SinglePartitionPager pager = new SinglePartitionPager(command, null);
 
         int count = 0;

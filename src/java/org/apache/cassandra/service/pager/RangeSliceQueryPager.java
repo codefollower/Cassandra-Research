@@ -19,9 +19,6 @@ package org.apache.cassandra.service.pager;
 
 import java.util.Optional;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.rows.Row;
@@ -37,8 +34,6 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
 //按rowKey范围查询
 public class RangeSliceQueryPager extends AbstractQueryPager
 {
-    private static final Logger logger = LoggerFactory.getLogger(RangeSliceQueryPager.class);
-
     private volatile DecoratedKey lastReturnedKey;
     private volatile Clustering lastReturnedClustering;
 

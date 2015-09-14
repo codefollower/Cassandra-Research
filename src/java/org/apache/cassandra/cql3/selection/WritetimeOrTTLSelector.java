@@ -78,6 +78,7 @@ final class WritetimeOrTTLSelector extends Selector
 
         isSet = true;
 
+        //在ResultSetBuilder(Selection, boolean)中把rs.timestamps初始化为Long.MIN_VALUE，把rs.ttls初始化为-1
         if (isWritetime)
         {
             long ts = rs.timestamps[idx];

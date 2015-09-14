@@ -19,9 +19,6 @@ package org.apache.cassandra.service.pager;
 
 import java.nio.ByteBuffer;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.filter.*;
@@ -34,8 +31,6 @@ import org.apache.cassandra.db.filter.*;
 //只用于单rowKey查询
 public class SinglePartitionPager extends AbstractQueryPager
 {
-    private static final Logger logger = LoggerFactory.getLogger(SinglePartitionPager.class);
-
     private final SinglePartitionReadCommand<?> command;
 
     private volatile Clustering lastReturned;
