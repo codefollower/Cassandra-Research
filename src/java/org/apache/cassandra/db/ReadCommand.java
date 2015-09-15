@@ -45,12 +45,6 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
-//<<<<<<< HEAD
-////ReadCommand的子类都是只查一个rowKey，
-////而AbstractRangeCommand的子类都是查一个rowKey范围的，名字都含有Range，
-////ReadCommand和AbstractRangeCommand都能配不同的IDiskAtomFilter
-//public abstract class ReadCommand implements IReadCommand, Pageable
-//=======
 /**
  * General interface for storage-engine read commands (common to both range and
  * single partition commands).

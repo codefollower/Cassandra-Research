@@ -63,7 +63,7 @@ public interface ReadQuery
             return QueryPager.EMPTY;
         }
 
-        public QueryPager getLocalPager()
+        public QueryPager getLocalPager() //未使用
         {
             return QueryPager.EMPTY;
         }

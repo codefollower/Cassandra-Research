@@ -62,7 +62,7 @@ import static org.apache.cassandra.cql3.QueryProcessor.executeInternalWithPaging
 public class BatchlogManager implements BatchlogManagerMBean
 {
     public static final String MBEAN_NAME = "org.apache.cassandra.db:type=BatchlogManager";
-    private static final long REPLAY_INTERVAL = 10 * 1000; // milliseconds
+    private static final long REPLAY_INTERVAL = 60 * 10 * 1000;// 我改了//10 * 1000; // milliseconds
     static final int DEFAULT_PAGE_SIZE = 128;
 
     private static final Logger logger = LoggerFactory.getLogger(BatchlogManager.class);

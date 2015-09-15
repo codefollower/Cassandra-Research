@@ -259,6 +259,7 @@ public abstract class UnfilteredPartitionIterators
 
         final MergeIterator<UnfilteredRowIterator, UnfilteredRowIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<UnfilteredRowIterator, UnfilteredRowIterator>()
         {
+            //把iterators中Partition Key相等的Partition(相当于UnfilteredRowIterator)合并在一起
             private final List<UnfilteredRowIterator> toMerge = new ArrayList<>(iterators.size());
 
             @Override
@@ -285,7 +286,7 @@ public abstract class UnfilteredPartitionIterators
 
             protected void onKeyChange()
             {
-                toMerge.clear();
+                toMerge.clear(); //说明转到下一个Partition Key了
             }
         });
 

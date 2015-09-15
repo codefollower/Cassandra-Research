@@ -30,6 +30,13 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
  * reference on the returned objects for longer than the iteration, it must
  * make a copy of it explicitely.
  */
+//每个Partition Key对应一个Partition
+//每个Partition中按聚簇列分成很多行，
+
+//如果改成UnfilteredPartitionIterator extends Iterator<Partition>会更好理解，
+//这样每次next都返回一个Partition，这就是迭代每个Partition的意思，
+//而Partition可以调用它的unfilteredIterator方法得到一个UnfilteredRowIterator
+//也就是迭代这个Partition中的每一行，这里相当于自动调用unfilteredIterator方法了
 public interface UnfilteredPartitionIterator extends Iterator<UnfilteredRowIterator>, AutoCloseable
 {
     /**
