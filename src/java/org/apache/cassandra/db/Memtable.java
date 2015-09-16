@@ -315,7 +315,7 @@ public class Memtable implements Comparable<Memtable>
         return minLocalDeletionTime;
     }
 
-    public Partition getPartition(DecoratedKey key) //只找单个rowkey的情况
+    public Partition getPartition(DecoratedKey key) //只找单个Partition key的情况
     {
         return partitions.get(key);
     }

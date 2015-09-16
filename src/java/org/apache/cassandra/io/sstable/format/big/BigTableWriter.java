@@ -111,7 +111,7 @@ public class BigTableWriter extends SSTableWriter
         assert decoratedKey != null : "Keys must not be null"; // empty keys ARE allowed b/c of indexed column values
         //if (lastWrittenKey != null && lastWrittenKey.compareTo(decoratedKey) >= 0)
         //    throw new RuntimeException("Last written key " + lastWrittenKey + " >= current key " + decoratedKey + " writing into " + getFilename());
-        return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
+        return (lastWrittenKey == null) ? 0 : dataFile.position();
     }
 
     private void afterAppend(DecoratedKey decoratedKey, long dataEnd, RowIndexEntry index) throws IOException
@@ -160,7 +160,7 @@ public class BigTableWriter extends SSTableWriter
             //返回的RowIndexEntry用于Index.db文件
             RowIndexEntry entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
 
-            long endPosition = dataFile.getFilePointer();
+            long endPosition = dataFile.position();
             long rowSize = endPosition - startPosition;
             maybeLogLargePartitionWarning(key, rowSize);
             metadataCollector.addPartitionSizeInBytes(rowSize);
@@ -360,7 +360,7 @@ public class BigTableWriter extends SSTableWriter
 
     public long getFilePointer()
     {
-        return dataFile.getFilePointer();
+        return dataFile.position();
     }
 
     public long getOnDiskFilePointer()
@@ -411,7 +411,7 @@ public class BigTableWriter extends SSTableWriter
         public void append(DecoratedKey key, RowIndexEntry indexEntry, long dataEnd) throws IOException
         {
             bf.add(key);
-            long indexStart = indexFile.getFilePointer();
+            long indexStart = indexFile.position();
             try
             {
                 ByteBufferUtil.writeWithShortLength(key.getKey(), indexFile);
@@ -421,7 +421,7 @@ public class BigTableWriter extends SSTableWriter
             {
                 throw new FSWriteError(e, indexFile.getPath());
             }
-            long indexEnd = indexFile.getFilePointer();
+            long indexEnd = indexFile.position();
 
             if (logger.isTraceEnabled())
                 logger.trace("wrote index entry: {} at {}", indexEntry, indexStart);
@@ -471,7 +471,7 @@ public class BigTableWriter extends SSTableWriter
             flushBf();
 
             // truncate index file
-            long position = iwriter.indexFile.getFilePointer();
+            long position = iwriter.indexFile.position();
             iwriter.indexFile.setDescriptor(descriptor).prepareToCommit();
             FileUtils.truncate(iwriter.indexFile.getPath(), position);
 
