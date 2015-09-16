@@ -726,7 +726,8 @@ createIndexStatement returns [CreateIndexStatement expr]
     ;
 
 indexIdent returns [IndexTarget.Raw id]
-    : c=cident                   { $id = IndexTarget.Raw.valuesOf(c); }
+    : c=cident                   { $id = IndexTarget.Raw.simpleIndexOn(c); }
+    | K_VALUES '(' c=cident ')'  { $id = IndexTarget.Raw.valuesOf(c); }
     | K_KEYS '(' c=cident ')'    { $id = IndexTarget.Raw.keysOf(c); }
     | K_ENTRIES '(' c=cident ')' { $id = IndexTarget.Raw.keysAndValuesOf(c); }
     | K_FULL '(' c=cident ')'    { $id = IndexTarget.Raw.fullCollection(c); }
@@ -740,7 +741,7 @@ indexIdent returns [IndexTarget.Raw id]
  *  PRIMARY KEY (<pkColumns>)
  *  WITH <property> = <value> AND ...;
  */
-createMaterializedViewStatement returns [CreateMaterializedViewStatement expr]
+createMaterializedViewStatement returns [CreateViewStatement expr]
     @init {
         boolean ifNotExists = false;
         List<ColumnIdentifier.Raw> partitionKeys = new ArrayList<>();
@@ -753,7 +754,7 @@ createMaterializedViewStatement returns [CreateMaterializedViewStatement expr]
         '(' '(' k1=cident { partitionKeys.add(k1); } ( ',' kn=cident { partitionKeys.add(kn); } )* ')' ( ',' c1=cident { compositeKeys.add(c1); } )* ')'
     |   '(' k1=cident { partitionKeys.add(k1); } ( ',' cn=cident { compositeKeys.add(cn); } )* ')'
         )
-        { $expr = new CreateMaterializedViewStatement(cf, basecf, sclause, wclause, partitionKeys, compositeKeys, ifNotExists); }
+        { $expr = new CreateViewStatement(cf, basecf, sclause, wclause, partitionKeys, compositeKeys, ifNotExists); }
         ( K_WITH cfamProperty[expr.properties] ( K_AND cfamProperty[expr.properties] )*)?
     ;
 
@@ -820,14 +821,14 @@ alterTableStatement returns [AlterTableStatement expr]
     }
     ;
 
-alterMaterializedViewStatement returns [AlterMaterializedViewStatement expr]
+alterMaterializedViewStatement returns [AlterViewStatement expr]
     @init {
         TableAttributes attrs = new TableAttributes();
     }
     : K_ALTER K_MATERIALIZED K_VIEW name=columnFamilyName
           K_WITH properties[attrs]
     {
-        $expr = new AlterMaterializedViewStatement(name, attrs);
+        $expr = new AlterViewStatement(name, attrs);
     }
     ;
     
@@ -886,10 +887,10 @@ dropIndexStatement returns [DropIndexStatement expr]
 /**
  * DROP MATERIALIZED VIEW [IF EXISTS] <view_name>
  */
-dropMaterializedViewStatement returns [DropMaterializedViewStatement expr]
+dropMaterializedViewStatement returns [DropViewStatement expr]
     @init { boolean ifExists = false; }
     : K_DROP K_MATERIALIZED K_VIEW (K_IF K_EXISTS { ifExists = true; } )? cf=columnFamilyName
-      { $expr = new DropMaterializedViewStatement(cf, ifExists); }
+      { $expr = new DropViewStatement(cf, ifExists); }
     ;
 
 /**
