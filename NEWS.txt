@@ -118,6 +118,18 @@ Changed Defaults
      of the total space of the commitlog volume. (Before: always used
      8192)
 
+New features
+------------
+   - Custom QueryHandlers can retrieve the column specifications for the bound
+     variables from QueryOptions by using the hasColumnSpecifications()
+     and getColumnSpecifications() methods.
+
+New features
+------------
+   - Custom QueryHandlers can retrieve the column specifications for the bound
+     variables from QueryOptions by using the hasColumnSpecifications()
+     and getColumnSpecifications() methods.
+
 
 2.2.1
 =====
@@ -216,6 +228,14 @@ New features
    - The toTimestamp(date) and toUnixTimestamp(date) functions have been added to allow
      to convert from date into timestamp type and bigint raw value.
    - SizeTieredCompactionStrategy parameter cold_reads_to_omit has been removed.
+
+
+2.1.10
+=====
+
+New features
+------------
+   - The syntax TRUNCATE TABLE X is now accepted as an alias for TRUNCATE X
 
 
 2.1.9
