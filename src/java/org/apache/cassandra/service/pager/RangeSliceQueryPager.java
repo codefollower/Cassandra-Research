@@ -35,19 +35,17 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
 public class RangeSliceQueryPager extends AbstractQueryPager
 {
     private volatile DecoratedKey lastReturnedKey;
-    private volatile Clustering lastReturnedClustering;
+    private volatile PagingState.RowMark lastReturnedRow;
 
-    public RangeSliceQueryPager(PartitionRangeReadCommand command, PagingState state)
+    public RangeSliceQueryPager(PartitionRangeReadCommand command, PagingState state, int protocolVersion)
     {
-        super(command);
+        super(command, protocolVersion);
         assert !command.isNamesQuery();
 
         if (state != null)
         {
             lastReturnedKey = command.metadata().decorateKey(state.partitionKey);
-            lastReturnedClustering = state.cellName.hasRemaining()
-                                   ? LegacyLayout.decodeClustering(command.metadata(), state.cellName)
-                                   : null;
+            lastReturnedRow = state.rowMark;
             restoreState(lastReturnedKey, state.remaining, state.remainingInPartition);
         }
     }
@@ -56,7 +54,7 @@ public class RangeSliceQueryPager extends AbstractQueryPager
     {
         return lastReturnedKey == null
              ? null
-             : new PagingState(lastReturnedKey.getKey(), LegacyLayout.encodeClustering(command.metadata(), lastReturnedClustering), maxRemaining(), remainingInPartition());
+             : new PagingState(lastReturnedKey.getKey(), lastReturnedRow, maxRemaining(), remainingInPartition());
     }
 
     protected ReadCommand nextPageReadCommand(int pageSize)
@@ -77,7 +75,7 @@ public class RangeSliceQueryPager extends AbstractQueryPager
             AbstractBounds<PartitionPosition> bounds = makeKeyBounds(lastReturnedKey, includeLastKey);
             if (includeLastKey)
             {
-                pageRange = fullRange.forPaging(bounds, command.metadata().comparator, lastReturnedClustering, false);
+                pageRange = fullRange.forPaging(bounds, command.metadata().comparator, lastReturnedRow.clustering(command.metadata()), false);
                 limits = command.limits().forPaging(pageSize, lastReturnedKey.getKey(), remainingInPartition());
             }
             else
@@ -97,7 +95,7 @@ public class RangeSliceQueryPager extends AbstractQueryPager
         if (last != null)
         {
             lastReturnedKey = key;
-            lastReturnedClustering = last.clustering();
+            lastReturnedRow = PagingState.RowMark.create(command.metadata(), last, protocolVersion);
         }
     }
 

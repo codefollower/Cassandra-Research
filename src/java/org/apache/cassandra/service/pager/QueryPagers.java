@@ -24,6 +24,7 @@ import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.service.ClientState;
+import org.apache.cassandra.transport.Server;
 
 /**
  * Static utility methods for paging.
@@ -47,8 +48,8 @@ public class QueryPagers
                                  int nowInSec,
                                  boolean isForThrift) throws RequestValidationException, RequestExecutionException
     {
-        SinglePartitionReadCommand<?> command = SinglePartitionReadCommand.create(isForThrift, metadata, nowInSec, columnFilter, RowFilter.NONE, limits, key, filter);
-        final SinglePartitionPager pager = new SinglePartitionPager(command, null);
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.create(isForThrift, metadata, nowInSec, columnFilter, RowFilter.NONE, limits, key, filter);
+        final SinglePartitionPager pager = new SinglePartitionPager(command, null, Server.CURRENT_VERSION);
 
         int count = 0;
         while (!pager.isExhausted())
