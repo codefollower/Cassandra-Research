@@ -39,6 +39,7 @@ options {
 
     import org.apache.cassandra.auth.*;
     import org.apache.cassandra.cql3.*;
+    import org.apache.cassandra.cql3.restrictions.CustomIndexExpression;
     import org.apache.cassandra.cql3.statements.*;
     import org.apache.cassandra.cql3.selection.*;
     import org.apache.cassandra.cql3.functions.*;
@@ -309,7 +310,8 @@ selectStatement returns [SelectStatement.RawStatement expr]
                                                                              isDistinct,
                                                                              allowFiltering,
                                                                              isJson);
-          $expr = new SelectStatement.RawStatement(cf, params, sclause, wclause, limit);
+          WhereClause where = wclause == null ? WhereClause.empty() : wclause.build();
+          $expr = new SelectStatement.RawStatement(cf, params, sclause, where, limit);
       }
     ;
 
@@ -345,9 +347,19 @@ countArgument
     | i=INTEGER { if (!i.getText().equals("1")) addRecognitionError("Only COUNT(1) is supported, got COUNT(" + i.getText() + ")");}
     ;
 
-whereClause returns [List<Relation> clause]
-    @init{ $clause = new ArrayList<Relation>(); }
-    : relation[$clause] (K_AND relation[$clause])*
+whereClause returns [WhereClause.Builder clause]
+    @init{ $clause = new WhereClause.Builder(); }
+    : relationOrExpression[$clause] (K_AND relationOrExpression[$clause])*
+    ;
+
+relationOrExpression [WhereClause.Builder clause]
+    : relation[$clause]
+    | customIndexExpression[$clause]
+    ;
+
+customIndexExpression [WhereClause.Builder clause]
+    @init{IndexName name = new IndexName();}
+    : 'expr(' idxName[name] ',' t=term ')' { clause.add(new CustomIndexExpression(name, t));}
     ;
 
 orderByClause[Map<ColumnIdentifier.Raw, Boolean> orderings]
@@ -437,7 +449,7 @@ updateStatement returns [UpdateStatement.ParsedUpdate expr]
           return new UpdateStatement.ParsedUpdate(cf,
                                                   attrs,
                                                   operations,
-                                                  wclause,
+                                                  wclause.build(),
                                                   conditions == null ? Collections.<Pair<ColumnIdentifier.Raw, ColumnCondition.Raw>>emptyList() : conditions,
                                                   ifExists);
      }
@@ -471,7 +483,7 @@ deleteStatement returns [DeleteStatement.Parsed expr]
           return new DeleteStatement.Parsed(cf,
                                             attrs,
                                             columnDeletions,
-                                            wclause,
+                                            wclause.build(),
                                             conditions == null ? Collections.<Pair<ColumnIdentifier.Raw, ColumnCondition.Raw>>emptyList() : conditions,
                                             ifExists);
       }
@@ -717,20 +729,21 @@ createIndexStatement returns [CreateIndexStatement expr]
         IndexPropDefs props = new IndexPropDefs();
         boolean ifNotExists = false;
         IndexName name = new IndexName();
+        List<IndexTarget.Raw> targets = new ArrayList<>();
     }
     : K_CREATE (K_CUSTOM { props.isCustom = true; })? K_INDEX (K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
-        (idxName[name])? K_ON cf=columnFamilyName '(' id=indexIdent ')'
+        (idxName[name])? K_ON cf=columnFamilyName '(' (indexIdent[targets] (',' indexIdent[targets])*)? ')'
         (K_USING cls=STRING_LITERAL { props.customClass = $cls.text; })?
         (K_WITH properties[props])?
-      { $expr = new CreateIndexStatement(cf, name, id, props, ifNotExists); }
+      { $expr = new CreateIndexStatement(cf, name, targets, props, ifNotExists); }
     ;
 
-indexIdent returns [IndexTarget.Raw id]
-    : c=cident                   { $id = IndexTarget.Raw.simpleIndexOn(c); }
-    | K_VALUES '(' c=cident ')'  { $id = IndexTarget.Raw.valuesOf(c); }
-    | K_KEYS '(' c=cident ')'    { $id = IndexTarget.Raw.keysOf(c); }
-    | K_ENTRIES '(' c=cident ')' { $id = IndexTarget.Raw.keysAndValuesOf(c); }
-    | K_FULL '(' c=cident ')'    { $id = IndexTarget.Raw.fullCollection(c); }
+indexIdent [List<IndexTarget.Raw> targets]
+    : c=cident                   { $targets.add(IndexTarget.Raw.simpleIndexOn(c)); }
+    | K_VALUES '(' c=cident ')'  { $targets.add(IndexTarget.Raw.valuesOf(c)); }
+    | K_KEYS '(' c=cident ')'    { $targets.add(IndexTarget.Raw.keysOf(c)); }
+    | K_ENTRIES '(' c=cident ')' { $targets.add(IndexTarget.Raw.keysAndValuesOf(c)); }
+    | K_FULL '(' c=cident ')'    { $targets.add(IndexTarget.Raw.fullCollection(c)); }
     ;
 
 /**
@@ -1408,7 +1421,7 @@ relationType returns [Operator op]
     | '!=' { $op = Operator.NEQ; }
     ;
 
-relation[List<Relation> clauses]
+relation[WhereClause.Builder clauses]
     : name=cident type=relationType t=term { $clauses.add(new SingleColumnRelation(name, type, t)); }
     | K_TOKEN l=tupleOfIdentifiers type=relationType t=term
         { $clauses.add(new TokenRelation(l, type, t)); }

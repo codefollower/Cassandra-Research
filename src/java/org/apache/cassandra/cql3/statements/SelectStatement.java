@@ -23,9 +23,9 @@ import java.util.*;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
-
-import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
@@ -726,16 +726,16 @@ public class SelectStatement implements CQLStatement
     {
         public final Parameters parameters;
         public final List<RawSelector> selectClause;
-        public final List<Relation> whereClause;
+        public final WhereClause whereClause;
         public final Term.Raw limit;
 
         //where子句只支持and不支持or
-        public RawStatement(CFName cfName, Parameters parameters, List<RawSelector> selectClause, List<Relation> whereClause, Term.Raw limit)
+        public RawStatement(CFName cfName, Parameters parameters, List<RawSelector> selectClause, WhereClause whereClause, Term.Raw limit)
         {
             super(cfName);
             this.parameters = parameters;
             this.selectClause = selectClause;
-            this.whereClause = whereClause == null ? Collections.<Relation>emptyList() : whereClause;
+            this.whereClause = whereClause;
             this.limit = limit;
         }
 

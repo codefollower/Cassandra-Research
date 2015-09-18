@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.cql3.statements;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -158,7 +157,7 @@ public class UpdateStatement extends ModificationStatement
             checkFalse(columnNames.size() != columnValues.size(), "Unmatched column names/values");
             checkContainsNoDuplicates(columnNames, "The column names contains duplicates");
 
-            List<Relation> relations = new ArrayList<>();
+            WhereClause.Builder whereClause = new WhereClause.Builder();
             Operations operations = new Operations();
             boolean hasClusteringColumnsSet = false;
 
@@ -173,7 +172,7 @@ public class UpdateStatement extends ModificationStatement
 
                 if (def.isPrimaryKeyColumn())
                 {
-                    relations.add(new SingleColumnRelation(columnNames.get(i), Operator.EQ, value));
+                    whereClause.add(new SingleColumnRelation(columnNames.get(i), Operator.EQ, value));
                 }
                 else
                 {
@@ -187,7 +186,7 @@ public class UpdateStatement extends ModificationStatement
 
             StatementRestrictions restrictions = new StatementRestrictions(StatementType.INSERT,
                                                                            cfm,
-                                                                           relations,
+                                                                           whereClause.build(),
                                                                            boundNames,
                                                                            applyOnlyToStaticColumns,
                                                                            false,
@@ -227,7 +226,7 @@ public class UpdateStatement extends ModificationStatement
             Collection<ColumnDefinition> defs = cfm.allColumns();
             Json.Prepared prepared = jsonValue.prepareAndCollectMarkers(cfm, defs, boundNames);
 
-            List<Relation> relations = new ArrayList<>();
+            WhereClause.Builder whereClause = new WhereClause.Builder();
             Operations operations = new Operations();
             boolean hasClusteringColumnsSet = false;
 
@@ -239,9 +238,9 @@ public class UpdateStatement extends ModificationStatement
                 Term.Raw raw = prepared.getRawTermForColumn(def);
                 if (def.isPrimaryKeyColumn())
                 {
-                    relations.add(new SingleColumnRelation(new ColumnIdentifier.ColumnIdentifierValue(def.name),
-                                                           Operator.EQ,
-                                                           raw));
+                    whereClause.add(new SingleColumnRelation(new ColumnIdentifier.ColumnIdentifierValue(def.name),
+                                                             Operator.EQ,
+                                                             raw));
                 }
                 else
                 {
@@ -255,7 +254,7 @@ public class UpdateStatement extends ModificationStatement
 
             StatementRestrictions restrictions = new StatementRestrictions(StatementType.INSERT,
                                                                            cfm,
-                                                                           relations,
+                                                                           whereClause.build(),
                                                                            boundNames,
                                                                            applyOnlyToStaticColumns,
                                                                            false,
@@ -275,7 +274,7 @@ public class UpdateStatement extends ModificationStatement
     {
         // Provided for an UPDATE
         private final List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> updates;
-        private final List<Relation> whereClause;
+        private final WhereClause whereClause;
 
         /**
          * Creates a new UpdateStatement from a column family name, columns map, consistency
@@ -290,7 +289,7 @@ public class UpdateStatement extends ModificationStatement
         public ParsedUpdate(CFName name,
                             Attributes.Raw attrs,
                             List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> updates,
-                            List<Relation> whereClause,
+                            WhereClause whereClause,
                             List<Pair<ColumnIdentifier.Raw, ColumnCondition.Raw>> conditions,
                             boolean ifExists)
         {
