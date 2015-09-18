@@ -411,7 +411,7 @@ public class CompressionMetadata
             count = chunkIndex;
         }
 
-        protected Throwable doPreCleanup(Throwable failed)
+        protected Throwable doPostCleanup(Throwable failed)
         {
             return offsets.close(failed);
         }
@@ -423,7 +423,7 @@ public class CompressionMetadata
 
         protected Throwable doAbort(Throwable accumulate)
         {
-            return FileUtils.deleteWithConfirm(filePath, false, accumulate);
+            return accumulate;
         }
     }
 
