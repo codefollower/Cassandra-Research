@@ -154,7 +154,7 @@ public class LongBTreeTest
     @Test
     public void testToArray() throws InterruptedException
     {
-        testRandomSelection(perThreadTrees, 4,
+        testRandomSelection2(perThreadTrees, 4,
                             (selection) ->
                             {
                                 Integer[] array = new Integer[selection.canonicalList.size() + 1];
@@ -266,14 +266,14 @@ public class LongBTreeTest
 
     private void testRandomSelection(int perThreadTrees, int perTreeSelections, BTreeTestFactory testRun) throws InterruptedException
     {
-        testRandomSelection(perThreadTrees, perTreeSelections, (selection) -> {
+        testRandomSelection2(perThreadTrees, perTreeSelections, (selection) -> {
             TestEachKey testEachKey = testRun.get(selection);
             for (Integer key : selection.testKeys)
                 testEachKey.testOne(key);
         });
     }
 
-    private void testRandomSelection(int perThreadTrees, int perTreeSelections, Consumer<RandomSelection> testRun) throws InterruptedException
+    private void testRandomSelection2(int perThreadTrees, int perTreeSelections, Consumer<RandomSelection> testRun) throws InterruptedException
     {
         testRandomSelection(perThreadTrees, perTreeSelections, true, true, true, testRun);
     }
@@ -606,7 +606,7 @@ public class LongBTreeTest
         TreeSet<Integer> canon = new TreeSet<>();
         for (int i = 0 ; i < 10000000 ; i++)
             canon.add(i);
-        Object[] btree = BTree.build(Arrays.asList(Integer.MIN_VALUE, Integer.MAX_VALUE), UpdateFunction.noOp());
+        Object[] btree = BTree.build(Arrays.asList(Integer.MIN_VALUE, Integer.MAX_VALUE), UpdateFunction.<Integer>noOp());
         btree = BTree.update(btree, naturalOrder(), canon, UpdateFunction.<Integer>noOp());
         canon.add(Integer.MIN_VALUE);
         canon.add(Integer.MAX_VALUE);
