@@ -113,14 +113,14 @@ public class RangeSliceQueryPager extends AbstractQueryPager
         if (bounds instanceof Range || bounds instanceof Bounds)
         {
             return includeLastKey
-                 ? new Bounds<PartitionPosition>(lastReturnedKey, bounds.right)
-                 : new Range<PartitionPosition>(lastReturnedKey, bounds.right);
+                 ? new Bounds<PartitionPosition>(lastReturnedKey, bounds.right) //是[left, right]
+                 : new Range<PartitionPosition>(lastReturnedKey, bounds.right); //是(left, right]
         }
         else
         {
             return includeLastKey
-                 ? new IncludingExcludingBounds<PartitionPosition>(lastReturnedKey, bounds.right)
-                 : new ExcludingBounds<PartitionPosition>(lastReturnedKey, bounds.right);
+                 ? new IncludingExcludingBounds<PartitionPosition>(lastReturnedKey, bounds.right) //是[left, right)
+                 : new ExcludingBounds<PartitionPosition>(lastReturnedKey, bounds.right); //是(left, right)
         }
     }
 }

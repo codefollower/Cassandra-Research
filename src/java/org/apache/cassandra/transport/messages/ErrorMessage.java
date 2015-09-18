@@ -17,15 +17,18 @@
  */
 package org.apache.cassandra.transport.messages;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.List;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.CodecException;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicate;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
@@ -151,7 +154,18 @@ public class ErrorMessage extends Message.Response
         {
             final TransportException err = getBackwardsCompatibleException(msg, version);
             dest.writeInt(err.code().value);
-            CBUtil.writeString(err.getMessage(), dest);
+
+            //我加上的，方便在client查看出现错误的代码行
+            if (err instanceof Exception) {
+                Exception e = (Exception) err;
+                StringWriter writer = new StringWriter();
+                e.printStackTrace(new PrintWriter(writer));
+                CBUtil.writeString(writer.toString(), dest);
+            } else {
+                CBUtil.writeString(err.getMessage(), dest);
+            }
+            
+            //CBUtil.writeString(err.getMessage(), dest);
 
             switch (err.code())
             {

@@ -34,6 +34,7 @@ import org.apache.cassandra.utils.btree.BTreeSet;
 /**
  * A filter selecting rows given their clustering value.
  */
+//where中指定了所有的聚簇列，并且都用=号或者在in中
 public class ClusteringIndexNamesFilter extends AbstractClusteringIndexFilter
 {
     static final InternalDeserializer deserializer = new NamesDeserializer();

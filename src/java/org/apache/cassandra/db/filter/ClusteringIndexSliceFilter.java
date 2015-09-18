@@ -120,6 +120,9 @@ public class ClusteringIndexSliceFilter extends AbstractClusteringIndexFilter
         return slices.makeSliceIterator(iterator);
     }
 
+    //UnfilteredRowIterator中里也有filter这个词，但它代表返回的行中没有把已经标记为删除的字段过滤，
+    //而这里的ColumnFilter才是按查询请求只把要查询的字段过滤出来，但是如果有已经标记为删除的字段是不会过滤掉的，
+    //嗯，写这个代码的家伙不知为何要用这样充满误解的命名方式
     public UnfilteredRowIterator getUnfilteredRowIterator(ColumnFilter columnFilter, Partition partition)
     {
         return partition.unfilteredIterator(columnFilter, slices, reversed);

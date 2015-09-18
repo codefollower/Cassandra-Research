@@ -71,3 +71,9 @@ num_tokens: 3
 #memtable_total_space_in_mb: 1
 enable_user_defined_functions: true
 
+#方便在eclipse中debug，不用来来回回reload
+permissions_validity_in_ms: 200000000
+permissions_update_interval_in_ms: 200000000
+roles_validity_in_ms: 200000000
+roles_update_interval_in_ms: 200000000
+

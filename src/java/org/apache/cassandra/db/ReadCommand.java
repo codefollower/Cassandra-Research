@@ -68,8 +68,8 @@ public abstract class ReadCommand implements ReadQuery
     private final CFMetaData metadata;
     private final int nowInSec;
 
-    private final ColumnFilter columnFilter;
-    private final RowFilter rowFilter;
+    private final ColumnFilter columnFilter; //要读的字段，比如select语句中的selection和where子句中的非primary key
+    private final RowFilter rowFilter; //where子句中的非primary key组成的条件(也有可能包含primary key) //看getRowFilter的注释
     private final DataLimits limits;
 
     // SecondaryIndexManager will attempt to provide the most selective of any available indexes

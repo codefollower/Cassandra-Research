@@ -295,14 +295,14 @@ public final class StatementRestrictions
         }
         else
         {
-        // If there is a queriable index, no special condition are required on the other restrictions.
-        // But we still need to know 2 things:
-        // - If we don't have a queriable index, is the query ok
-        // - Is it queriable without 2ndary index, which is always more efficient
-        // If a component of the partition key is restricted by a relation, all preceding
-        // components must have a EQ. Only the last partition key component can be in IN relation.
-        if (partitionKeyRestrictions.isOnToken())
-            isKeyRange = true;
+            // If there is a queriable index, no special condition are required on the other restrictions.
+            // But we still need to know 2 things:
+            // - If we don't have a queriable index, is the query ok
+            // - Is it queriable without 2ndary index, which is always more efficient
+            // If a component of the partition key is restricted by a relation, all preceding
+            // components must have a EQ. Only the last partition key component can be in IN relation.
+            if (partitionKeyRestrictions.isOnToken())
+                isKeyRange = true;
 
             if (hasUnrestrictedPartitionKeyComponents())
             {

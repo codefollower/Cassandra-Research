@@ -76,3 +76,9 @@ num_tokens: 2
 
 #broadcast_address: 127.0.0.2
 enable_user_defined_functions: true
+
+#方便在eclipse中debug，不用来来回回reload
+permissions_validity_in_ms: 200000000
+permissions_update_interval_in_ms: 200000000
+roles_validity_in_ms: 200000000
+roles_update_interval_in_ms: 200000000

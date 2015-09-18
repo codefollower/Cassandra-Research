@@ -137,6 +137,7 @@ public class SelectStatement implements CQLStatement
         if (selection.isWildcard())
             return ColumnFilter.all(cfm);
 
+        //用ColumnFilter.selectionBuilder()也不出现异常，为什么不用？
         ColumnFilter.Builder builder = ColumnFilter.allColumnsBuilder(cfm);
         // Adds all selected columns
         for (ColumnDefinition def : selection.getColumns())

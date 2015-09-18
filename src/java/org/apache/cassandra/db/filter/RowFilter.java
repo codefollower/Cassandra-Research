@@ -432,7 +432,8 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
                         {
                             ByteBuffer composite = ByteBufferUtil.readWithShortLength(in);
                             key = CompositeType.extractComponent(composite, 0);
-                            value = CompositeType.extractComponent(composite, 0);
+                            //value = CompositeType.extractComponent(composite, 0); //是1
+                            value = CompositeType.extractComponent(composite, 1);
                         }
                         else
                         {
