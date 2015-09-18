@@ -207,7 +207,7 @@ public class SelectStatement implements CQLStatement
 
         int pageSize = getPageSize(options);
 
-        if (pageSize <= 0 || query.limits().count() <= pageSize)
+        if (pageSize <= 0 || query.limits().count() <= pageSize) //有limit时，如果limit<=fetchSize就不分页了
             return execute(query, options, state, nowInSec);
 
         QueryPager pager = query.getPager(options.getPagingState(), options.getProtocolVersion());

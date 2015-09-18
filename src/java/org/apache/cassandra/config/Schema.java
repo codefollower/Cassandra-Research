@@ -96,8 +96,11 @@ public class Schema
      */
     public Schema()
     {
-        load(SchemaKeyspace.metadata());
-        load(SystemKeyspace.metadata());
+        if (!Config.isClientMode())
+        {
+            load(SchemaKeyspace.metadata());
+            load(SystemKeyspace.metadata());
+        }
     }
 
     /**
@@ -586,7 +589,7 @@ public class Schema
         Keyspace.clear(ksm.name);
         clearKeyspaceMetadata(ksm);
 
-        keyspace.writeOrder.awaitNewBarrier();
+        Keyspace.writeOrder.awaitNewBarrier();
 
         // force a new segment in the CL
         CommitLog.instance.forceRecycleAllSegments(droppedCfs);

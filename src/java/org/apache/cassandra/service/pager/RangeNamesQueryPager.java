@@ -31,7 +31,7 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
  * that the counter returned by columnCounter() will count 1 for each internal
  * row.
  */
-//按rowKey范围查询
+//按Partition Key范围查询，同时聚簇列全出现在where中，并且使用=、in
 public class RangeNamesQueryPager extends AbstractQueryPager
 {
     private volatile DecoratedKey lastReturnedKey;

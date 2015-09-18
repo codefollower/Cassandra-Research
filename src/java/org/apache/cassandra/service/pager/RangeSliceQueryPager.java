@@ -31,7 +31,7 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
  * Note: this only work for CQL3 queries for now (because thrift queries expect
  * a different limit on the rows than on the columns, which complicates it).
  */
-//按rowKey范围查询
+//按Partition Key范围查询，取反(聚簇列全出现在where中，并且使用=、in)，相当于RangeNamesQueryPager之外的情况
 public class RangeSliceQueryPager extends AbstractQueryPager
 {
     private volatile DecoratedKey lastReturnedKey;

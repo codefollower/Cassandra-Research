@@ -286,7 +286,11 @@ public abstract class ModificationStatement implements CQLStatement
         //只有PARTITION_KEY中的最后一个字段允许在in操作中使用多个值
         //例如PARTITION_KEY是a与b，那么where a=x and b in(y, z)
         //就会得到两个PARTITION_KEY: (x,y)和(x,z)
-        return restrictions.getPartitionKeys(options);
+        List<ByteBuffer> partitionKeys = restrictions.getPartitionKeys(options);
+        for (ByteBuffer key : partitionKeys)
+            QueryProcessor.validateKey(key);
+
+        return partitionKeys;
     }
 
     public NavigableSet<Clustering> createClustering(QueryOptions options)

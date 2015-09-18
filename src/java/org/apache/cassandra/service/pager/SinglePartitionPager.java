@@ -28,7 +28,7 @@ import org.apache.cassandra.db.filter.*;
  *
  * For use by MultiPartitionPager.
  */
-//只用于单rowKey查询
+//只用于单Partition Key查询
 public class SinglePartitionPager extends AbstractQueryPager
 {
     private final SinglePartitionReadCommand<?> command;
@@ -40,6 +40,8 @@ public class SinglePartitionPager extends AbstractQueryPager
         super(command, protocolVersion);
         this.command = command;
 
+        //如果Partition Key对应的聚簇列有多行记录，
+        //当client设置了fetch size时，第一次没取完，会自动把PagingState传回来，然后接着取
         if (state != null)
         {
             lastReturned = state.rowMark;
