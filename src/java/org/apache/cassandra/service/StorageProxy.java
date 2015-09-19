@@ -1143,14 +1143,7 @@ public class StorageProxy implements StorageProxyMBean
             }
             else
             {
-//<<<<<<< HEAD
-//                //目标节点临时不可用时，先存到system.hints表
-//                if (!shouldHint(destination))
-//                    continue;
-//
-//                // Schedule a local hint
-//                submitHint(mutation, destination, responseHandler);
-//=======
+                //目标节点临时不可用时，先存到本地
                 if (shouldHint(destination))
                 {
                     if (endpointsToHint == null)
@@ -1169,7 +1162,7 @@ public class StorageProxy implements StorageProxyMBean
         if (dcGroups != null)
         {
             // for each datacenter, send the message to one node to relay the write to other replicas
-            if (message == null)
+            if (message == null) //这个if是多余的，如果dcGroups不为null，message也不为null
                 message = mutation.createMessage();
 
             for (Collection<InetAddress> dcTargets : dcGroups.values())

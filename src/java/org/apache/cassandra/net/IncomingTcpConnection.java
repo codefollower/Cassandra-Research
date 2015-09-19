@@ -177,10 +177,7 @@ public class IncomingTcpConnection extends Thread implements Closeable
         }
     }
 
-//<<<<<<< HEAD
-//    //对应OutboundTcpConnection.writeInternal(MessageOut, int)
-//    private InetAddress receiveMessage(DataInput input, int version) throws IOException
-//=======
+    //对应OutboundTcpConnection.writeInternal(MessageOut, int)
     private InetAddress receiveMessage(DataInputPlus input, int version) throws IOException
     {
         int id;

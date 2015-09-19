@@ -21,6 +21,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.File;
 import java.io.IOException;
+import java.util.function.Supplier;
 
 import com.google.common.util.concurrent.RateLimiter;
 
@@ -58,7 +59,7 @@ import static org.apache.cassandra.utils.Throwables.maybeFail;
 //在cassandra.yaml中配置disk_access_mode为mmap时使用MmappedSegmentedFile，其他的使用BufferedSegmentedFile
 
 //子类要实现的抽象方法有: sharedCopy
-public abstract class SegmentedFile extends SharedCloseableImpl
+public abstract class SegmentedFile extends SharedCloseableImpl implements IChecksummedFile
 {
     public final ChannelProxy channel;
     public final int bufferSize;
@@ -67,6 +68,7 @@ public abstract class SegmentedFile extends SharedCloseableImpl
     // This differs from length for compressed files (but we still need length for
     // SegmentIterator because offsets in the file are relative to the uncompressed size)
     public final long onDiskLength; //未压缩的长度，length与onDiskLength只有在未压缩时才相等
+    private Supplier<Double> crcCheckChanceSupplier = () -> 1.0;
 
     /**
      * Use getBuilder to get a Builder to construct a SegmentedFile.
@@ -147,6 +149,16 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         RandomAccessReader reader = createReader();
         reader.seek(position);
         return reader;
+    }
+
+    public Supplier<Double> getCrcCheckChanceSupplier()
+    {
+        return crcCheckChanceSupplier;
+    }
+
+    public void setCrcCheckChanceSupplier(Supplier<Double> crcCheckChanceSupplier)
+    {
+        this.crcCheckChanceSupplier = crcCheckChanceSupplier;
     }
 
     public void dropPageCache(long before)

@@ -129,7 +129,7 @@ public class LZ4Compressor implements ICompressor
 
     public Set<String> supportedOptions()
     {
-        return new HashSet<>(Arrays.asList(CompressionParams.CRC_CHECK_CHANCE));
+        return new HashSet<>();
     }
 
     public BufferType preferredBufferType()

@@ -224,12 +224,15 @@ public class SelectStatement implements CQLStatement
         if (selection.isAggregate() && pageSize <= 0)
             pageSize = DEFAULT_COUNT_PAGE_SIZE;
 
-        return  pageSize;
+        return pageSize;
     }
 
     public ReadQuery getQuery(QueryOptions options, int nowInSec) throws RequestValidationException
     {
         DataLimits limit = getLimit(options);
+        //对于select id, f1, name from users where id=1 and f1=1 and f2=2 and f3=3 and f4=5
+        //id和f1是Partition Key，按理说不是Range了，但是f4是普通字段，如果在id或f1上建索引，
+        //此时restrictions.usesSecondaryIndexing()返回true
         if (restrictions.isKeyRange() || restrictions.usesSecondaryIndexing())
             return getRangeCommand(options, limit, nowInSec); //多行
 

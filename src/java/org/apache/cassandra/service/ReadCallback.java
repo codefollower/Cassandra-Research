@@ -108,10 +108,6 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
         }
     }
 
-//<<<<<<< HEAD
-//    //TResolved不是类，是范型类型的名字
-//    public TResolved get() throws ReadFailureException, ReadTimeoutException, DigestMismatchException
-//=======
     public void awaitResults() throws ReadFailureException, ReadTimeoutException
     {
         boolean signaled = await(command.getTimeout(), TimeUnit.MILLISECONDS);

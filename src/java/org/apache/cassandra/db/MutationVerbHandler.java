@@ -34,36 +34,16 @@ import org.apache.cassandra.tracing.Tracing;
 //最后s4/s5/s6都直接给s1发送响应，虽然s5/s6没有事先与s1有直接交互，但是每个server都能随时接收消息的，通过id就能确定了
 public class MutationVerbHandler implements IVerbHandler<Mutation>
 {
-//<<<<<<< HEAD
-//    private static final boolean TEST_FAIL_WRITES = System.getProperty("cassandra.test.fail_writes", "false").equalsIgnoreCase("true");
-//
-//    //最开始时是s4接到Mutation.FORWARD_TO
-//    //然后s5/s6接到Mutation.FORWARD_FROM
-//    public void doVerb(MessageIn<Mutation> message, int id)  throws IOException
-//    {
-//            // Check if there were any forwarding headers in this message
-//            byte[] from = message.parameters.get(Mutation.FORWARD_FROM); //对应的是s1
-//            InetAddress replyTo;
-//            if (from == null)
-//            {
-//                replyTo = message.from; //message.from对应的是s1
-//                byte[] forwardBytes = message.parameters.get(Mutation.FORWARD_TO);
-//                if (forwardBytes != null)
-//                    forwardToLocalNodes(message.payload, message.verb, forwardBytes, message.from);
-//            }
-//            else
-//            {
-//                replyTo = InetAddress.getByAddress(from);
-//            }
-//=======
+    //最开始时是s4接到Mutation.FORWARD_TO
+    //然后s5/s6接到Mutation.FORWARD_FROM
     public void doVerb(MessageIn<Mutation> message, int id)  throws IOException
     {
-        // Check if there were any forwarding headers in this message
+        // Check if there were any forwarding headers in this message //对应的是s1
         byte[] from = message.parameters.get(Mutation.FORWARD_FROM);
         InetAddress replyTo;
         if (from == null)
         {
-            replyTo = message.from;
+            replyTo = message.from; //message.from对应的是s1
             byte[] forwardBytes = message.parameters.get(Mutation.FORWARD_TO);
             if (forwardBytes != null)
                 forwardToLocalNodes(message.payload, message.verb, forwardBytes, message.from);
