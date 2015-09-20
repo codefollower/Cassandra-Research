@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 
 import com.google.common.collect.MapMaker;
 
@@ -51,6 +52,8 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
      */
     public final long prefixComparison;
     private final boolean interned;
+
+    private static final Pattern UNQUOTED_IDENTIFIER = Pattern.compile("[a-z][a-z0-9_]*");
 
     private static final long EMPTY_SIZE = ObjectSizes.measure(new ColumnIdentifier(ByteBufferUtil.EMPTY_BYTE_BUFFER, "", false));
 
@@ -147,6 +150,15 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
         return text;
     }
 
+    /**
+     * Returns a string representation of the identifier that is safe to use directly in CQL queries.
+     * In necessary, the string will be double-quoted, and any quotes inside the string will be escaped.
+     */
+    public String toCQLString()
+    {
+        return maybeQuote(text);
+    }
+
     public long unsharedHeapSize()
     {
         return EMPTY_SIZE
@@ -195,6 +207,12 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
     {
 
         public ColumnIdentifier prepare(CFMetaData cfm);
+
+        /**
+         * Returns a string representation of the identifier that is safe to use directly in CQL queries.
+         * In necessary, the string will be double-quoted, and any quotes inside the string will be escaped.
+         */
+        public String toCQLString();
     }
 
     public static class Literal implements Raw
@@ -254,6 +272,11 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
         {
             return text;
         }
+
+        public String toCQLString()
+        {
+            return maybeQuote(text);
+        }
     }
 
     //虽然也实现了Selectable.Raw接中，但是不会出现在select语句的查询字段(或表达式)中
@@ -297,5 +320,17 @@ public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Select
         {
             return identifier.toString();
         }
+
+        public String toCQLString()
+        {
+            return maybeQuote(identifier.text);
+        }
+    }
+
+    private static String maybeQuote(String text)
+    {
+        if (UNQUOTED_IDENTIFIER.matcher(text).matches())
+            return text;
+        return "\"" + text.replace("\"", "\"\"") + "\"";
     }
 }

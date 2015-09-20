@@ -276,18 +276,6 @@ public abstract class ReadCommand implements ReadQuery
      */
     public abstract ReadCommand copy();
 
-    /**
-     * Whether the provided row, identified by its primary key components, is selected by
-     * this read command.
-     *
-     * @param partitionKey the partition key for the row to test.
-     * @param clustering the clustering for the row to test.
-     *
-     * @return whether the row of partition key {@code partitionKey} and clustering
-     * {@code clustering} is selected by this command.
-     */
-    public abstract boolean selects(DecoratedKey partitionKey, Clustering clustering);
-
     protected abstract UnfilteredPartitionIterator queryStorage(ColumnFamilyStore cfs, ReadOrderGroup orderGroup);
 
     protected abstract int oldestUnrepairedTombstone();
@@ -1308,6 +1296,12 @@ public abstract class ReadCommand implements ReadQuery
 
                 selectionBuilder.add(cellName.column);
             }
+
+            // for compact storage tables without clustering keys, the column holding the selected value is named
+            // 'value' internally we add it to the selection here to prevent errors due to unexpected column names
+            // when serializing the initial local data response
+            if (metadata.isStaticCompactTable() && clusterings.isEmpty())
+                selectionBuilder.addAll(metadata.partitionColumns());
 
             in.readBoolean();  // countCql3Rows
 

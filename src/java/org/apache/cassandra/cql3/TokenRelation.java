@@ -20,6 +20,7 @@ package org.apache.cassandra.cql3;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.google.common.base.Joiner;
 
@@ -65,6 +66,16 @@ public final class TokenRelation extends Relation
         return true;
     }
 
+    public Term.Raw getValue()
+    {
+        return value;
+    }
+
+    public List<? extends Term.Raw> getInValues()
+    {
+        return null;
+    }
+
     @Override
     protected Restriction newEQRestriction(CFMetaData cfm, VariableSpecifications boundNames) throws InvalidRequestException
     {
@@ -97,6 +108,12 @@ public final class TokenRelation extends Relation
     }
 
     @Override
+    protected Restriction newIsNotRestriction(CFMetaData cfm, VariableSpecifications boundNames) throws InvalidRequestException
+    {
+        throw invalidRequest("%s cannot be used with the token function", operator());
+    }
+
+    @Override
     protected Term toTerm(List<? extends ColumnSpecification> receivers,
                           Raw raw,
                           String keyspace,
@@ -105,6 +122,15 @@ public final class TokenRelation extends Relation
         Term term = raw.prepare(keyspace, receivers.get(0));
         term.collectMarkerSpecification(boundNames);
         return term;
+    }
+
+    public Relation renameIdentifier(ColumnIdentifier.Raw from, ColumnIdentifier.Raw to)
+    {
+        if (!entities.contains(from))
+            return this;
+
+        List<ColumnIdentifier.Raw> newEntities = entities.stream().map(e -> e.equals(from) ? to : e).collect(Collectors.toList());
+        return new TokenRelation(newEntities, operator(), value);
     }
 
     @Override

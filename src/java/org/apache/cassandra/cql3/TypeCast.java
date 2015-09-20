@@ -21,7 +21,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
 //例如: "INSERT INTO t(f1) VALUES ((text)'ab')";
-public class TypeCast implements Term.Raw
+public class TypeCast extends Term.Raw
 {
     private final CQL3Type.Raw type;
     private final Term.Raw term;
@@ -59,8 +59,7 @@ public class TypeCast implements Term.Raw
             return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
     }
 
-    @Override
-    public String toString()
+    public String getText()
     {
         return "(" + type + ")" + term;
     }

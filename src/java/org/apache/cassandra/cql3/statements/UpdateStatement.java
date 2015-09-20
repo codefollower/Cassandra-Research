@@ -190,6 +190,7 @@ public class UpdateStatement extends ModificationStatement
                                                                            boundNames,
                                                                            applyOnlyToStaticColumns,
                                                                            false,
+                                                                           false,
                                                                            false);
 
             return new UpdateStatement(StatementType.INSERT,
@@ -257,6 +258,7 @@ public class UpdateStatement extends ModificationStatement
                                                                            whereClause.build(),
                                                                            boundNames,
                                                                            applyOnlyToStaticColumns,
+                                                                           false,
                                                                            false,
                                                                            false);
 

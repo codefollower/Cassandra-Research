@@ -59,7 +59,7 @@ public abstract class AbstractMarker extends Term.NonTerminal
      * A parsed, but non prepared, bind marker.
      */
     //对应prepared语句中的每个?号，非prepared语句就不用此类，而是用Constants、Lists、Maps、Sets中的Literal类
-    public static class Raw implements Term.Raw
+    public static class Raw extends Term.Raw
     {
         protected final int bindIndex;
 
@@ -88,7 +88,34 @@ public abstract class AbstractMarker extends Term.NonTerminal
         }
 
         @Override
-        public String toString()
+        public String getText()
+        {
+            return "?";
+        }
+    }
+
+    /** A MultiColumnRaw version of AbstractMarker.Raw */
+    public static abstract class MultiColumnRaw extends Term.MultiColumnRaw
+    {
+        protected final int bindIndex;
+
+        public MultiColumnRaw(int bindIndex)
+        {
+            this.bindIndex = bindIndex;
+        }
+
+        public NonTerminal prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
+        {
+            throw new AssertionError("MultiColumnRaw..prepare() requires a list of receivers");
+        }
+
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
+        {
+            return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+        }
+
+        @Override
+        public String getText()
         {
             return "?";
         }
