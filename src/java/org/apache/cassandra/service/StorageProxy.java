@@ -1371,18 +1371,21 @@ public class StorageProxy implements StorageProxyMBean
         return true;
     }
 
+    //在cas方法中调用
     public static RowIterator readOne(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel)
     throws UnavailableException, IsBootstrappingException, ReadFailureException, ReadTimeoutException, InvalidRequestException
     {
         return readOne(command, consistencyLevel, null);
     }
 
+    //只有前面一个readOne调用
     public static RowIterator readOne(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel, ClientState state)
     throws UnavailableException, IsBootstrappingException, ReadFailureException, ReadTimeoutException, InvalidRequestException
     {
         return PartitionIterators.getOnlyElement(read(SinglePartitionReadCommand.Group.one(command), consistencyLevel, state), command);
     }
 
+    //未见调用
     public static PartitionIterator read(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel)
     throws UnavailableException, IsBootstrappingException, ReadFailureException, ReadTimeoutException, InvalidRequestException
     {
@@ -1850,15 +1853,6 @@ public class StorageProxy implements StorageProxyMBean
             this.handler = handler;
         }
 
-//<<<<<<< HEAD
-//            // when dealing with LocalStrategy keyspaces, we can skip the range splitting and merging (which can be
-//            // expensive in clusters with vnodes)
-//            List<? extends AbstractBounds<RowPosition>> ranges;
-//            if (keyspace.getReplicationStrategy() instanceof LocalStrategy)
-//                ranges = command.keyRange.unwrap();
-//            else //根据rowKey(是command.keyRange)取得一个范围，如果没指定rowKey只是按索引字段查，还是会把查询请求发给所有节点的
-//                ranges = getRestrictedRanges(command.keyRange);
-//=======
         private void waitForResponse() throws ReadTimeoutException
         {
             if (result != null)

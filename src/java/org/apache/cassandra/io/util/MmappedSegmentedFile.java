@@ -31,11 +31,6 @@ public class MmappedSegmentedFile extends SegmentedFile
 {
     private static final Logger logger = LoggerFactory.getLogger(MmappedSegmentedFile.class);
 
-//<<<<<<< HEAD
-//    // in a perfect world, MAX_SEGMENT_SIZE would be final, but we need to test with a smaller size to stay sane.
-//    //JVM最大内存映射是2G，而2G = 2 * 1024 * 1024 * 1024 = 2,147,483,648 = 2的31次方{约等于Integer.MAX_VALUE(2的31次方-1)}
-//    public static long MAX_SEGMENT_SIZE = Integer.MAX_VALUE; //2,147,483,647 = 2的31次方-1
-//=======
     private final MmappedRegions regions;
 
     public MmappedSegmentedFile(ChannelProxy channel, int bufferSize, long length, MmappedRegions regions)

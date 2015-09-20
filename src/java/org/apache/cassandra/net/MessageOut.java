@@ -55,6 +55,7 @@ public class MessageOut<T>
         this(verb, null, null);
     }
 
+    //为什么不像MessageIn那样调用MessagingService.verbSerializers.get(verb)来自动获取serializer ?
     public MessageOut(MessagingService.Verb verb, T payload, IVersionedSerializer<T> serializer)
     {
         this(verb,

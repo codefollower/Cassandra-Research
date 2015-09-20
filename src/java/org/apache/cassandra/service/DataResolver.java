@@ -44,7 +44,7 @@ public class DataResolver extends ResponseResolver
         super(keyspace, command, consistency, maxResponseCount);
     }
 
-    public PartitionIterator getData()
+    public PartitionIterator getData() //只需要读一个节点的时候
     {
         ReadResponse response = responses.iterator().next().payload;
         return UnfilteredPartitionIterators.filter(response.makeIterator(command.metadata(), command), command.nowInSec());

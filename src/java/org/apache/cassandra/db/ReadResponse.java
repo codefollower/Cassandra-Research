@@ -125,6 +125,7 @@ public abstract class ReadResponse
         private final ColumnFilter received;
         private LocalDataResponse(UnfilteredPartitionIterator iter, ColumnFilter received)
         {
+            //如果接受请求的当前节点就是数据所在的节点之一，为什么还要所数据序列化?
             super(iter.metadata(), build(iter, received), SerializationHelper.Flag.LOCAL);
             this.received = received;
         }
@@ -153,6 +154,7 @@ public abstract class ReadResponse
     }
 
     // built on the coordinator node receiving a response
+    // 这个类只用于测试
     private static class RemoteDataResponse extends DataResponse
     {
         protected RemoteDataResponse(ByteBuffer data)
