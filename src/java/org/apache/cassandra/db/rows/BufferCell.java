@@ -220,9 +220,9 @@ public class BufferCell extends AbstractCell
     {
         private final static int IS_DELETED_MASK             = 0x01; // Whether the cell is a tombstone or not.
         private final static int IS_EXPIRING_MASK            = 0x02; // Whether the cell is expiring.
-        private final static int HAS_EMPTY_VALUE_MASK        = 0x04; // Wether the cell has an empty value. This will be the case for tombstone in particular.
-        private final static int USE_ROW_TIMESTAMP_MASK      = 0x08; // Wether the cell has the same timestamp than the row this is a cell of.
-        private final static int USE_ROW_TTL_MASK            = 0x10; // Wether the cell has the same ttl than the row this is a cell of.
+        private final static int HAS_EMPTY_VALUE_MASK        = 0x04; // Whether the cell has an empty value. This will be the case for tombstone in particular.
+        private final static int USE_ROW_TIMESTAMP_MASK      = 0x08; // Whether the cell has the same timestamp than the row this is a cell of.
+        private final static int USE_ROW_TTL_MASK            = 0x10; // Whether the cell has the same ttl than the row this is a cell of.
 
         public void serialize(Cell cell, DataOutputPlus out, LivenessInfo rowLiveness, SerializationHeader header) throws IOException
         {

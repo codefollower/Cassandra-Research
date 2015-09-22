@@ -35,6 +35,7 @@ import org.apache.cassandra.net.*;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 
+//在org.apache.cassandra.service.DataResolver.RepairMergeListener.MergeListener.close()中发送ReadRepair
 public class DataResolver extends ResponseResolver
 {
     private final List<AsyncOneResponse> repairResults = Collections.synchronizedList(new ArrayList<>());

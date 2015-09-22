@@ -50,18 +50,19 @@ import org.junit.Test;
 
 public class CFMetaDataTest {
 
+    public static final String ksName = "k1";
+    public static final String tableName = "t1";
+    public static ColumnFamilyStore cfs;
+    public static ColumnIdentifier staticColumn1;
+
     public static void createKeyspace(String name, KeyspaceParams params, CFMetaData... tables) {
         MigrationManager.announceNewKeyspace(KeyspaceMetadata.create(name, params, Tables.of(tables)), true);
     }
 
-    ColumnFamilyStore cfs;
-    ColumnIdentifier staticColumn1;
+    public static CFMetaData getCFMetaData() {
 
-    @Test
-    public void test() {
         // SchemaLoader.prepareServer();
-        String ksName = "k1";
-        String tableName = "t1";
+
         CFMetaData.Builder builder = CFMetaData.Builder.create(ksName, tableName);
 
         builder.addPartitionKey("pk1", AsciiType.instance);
@@ -77,17 +78,30 @@ public class CFMetaDataTest {
         builder.addStaticColumn(staticColumn1, AsciiType.instance);
         builder.addRegularColumn(new ColumnIdentifier("RegularColumn1", true), AsciiType.instance);
         builder.addRegularColumn(new ColumnIdentifier("RegularColumn2", true), //
-                ListType.getInstance(AsciiType.instance, true)); //isMultiCell=true
+                ListType.getInstance(AsciiType.instance, true)); // isMultiCell=true
 
         CFMetaData md = builder.build();
 
         createKeyspace(ksName, KeyspaceParams.simple(1), md);
 
+        return md;
+    }
+    
+    public static Descriptor getDescriptor() {
+        cfs = Keyspace.open(ksName).getColumnFamilyStore(tableName);
+        String file = cfs.getSSTablePath(cfs.getDirectories().getDirectoryForNewSSTables());
+        return Descriptor.fromFilename(file);
+    }
+
+    @Test
+    public void test() {
+        getCFMetaData();
+
         cfs = Keyspace.open(ksName).getColumnFamilyStore(tableName);
         String file = cfs.getSSTablePath(cfs.getDirectories().getDirectoryForNewSSTables());
         System.out.println(file);
 
-         new TestableBTW();
+        new TestableBTW();
 
         // try {
         // write();
@@ -110,7 +124,7 @@ public class CFMetaDataTest {
 
                 String sc1 = "sc-" + j;
                 String rc1 = "rc-" + j;
-                update.add("StaticColumn1", sc1); //同一个PartitionKey只有一个StaticColumn，这里总是rc-9，因为会覆盖上一个
+                update.add("StaticColumn1", sc1); // 同一个PartitionKey只有一个StaticColumn，这里总是rc-9，因为会覆盖上一个
                 update.add("RegularColumn1", rc1);
                 ArrayList<String> list = new ArrayList<>();
                 list.add("a" + j);
@@ -176,11 +190,11 @@ public class CFMetaDataTest {
                     String rc1 = "rc-" + j;
                     update.add("StaticColumn1", sc1);
                     update.add("RegularColumn1", rc1);
-//                    ArrayList<String> list = new ArrayList<>();
-//                    list.add("a" + j);
-//                    list.add("b" + j);
-//                    update.add("RegularColumn2", list);
-                    
+                    // ArrayList<String> list = new ArrayList<>();
+                    // list.add("a" + j);
+                    // list.add("b" + j);
+                    // update.add("RegularColumn2", list);
+
                     String e1 = "a" + j;
                     String e2 = "b" + j;
                     update.addListEntry("RegularColumn2", e1);

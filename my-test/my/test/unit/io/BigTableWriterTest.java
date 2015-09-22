@@ -35,124 +35,114 @@
 */
 package my.test.unit.io;
 
-import java.io.File;
-import java.io.IOException;
+import my.test.unit.TestBase;
 
-import junit.framework.Assert;
-
-import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.UpdateBuilder;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionTime;
+import org.apache.cassandra.db.RowUpdateBuilder;
 import org.apache.cassandra.db.SerializationHeader;
-import org.apache.cassandra.db.marshal.AsciiType;
-import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.compaction.OperationType;
+import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.EncodingStats;
-import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.sstable.SSTableRewriterTest;
-import org.apache.cassandra.io.sstable.SSTableTxnWriter;
-import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.utils.concurrent.AbstractTransactionalTest;
-import org.junit.BeforeClass;
+import org.apache.cassandra.io.sstable.format.SSTableWriter;
+import org.junit.Test;
 
-public class BigTableWriterTest extends AbstractTransactionalTest
-{
-    public static final String KEYSPACE1 = "BigTableWriterTest";
-    public static final String CF_STANDARD = "Standard1";
+public class BigTableWriterTest extends TestBase {
 
-    private static ColumnFamilyStore cfs;
+    @Test
+    public void test() {
+        CFMetaData metadata = getCFMetaData(true);
+        Descriptor descriptor = getDescriptor();
+        System.out.println(descriptor);
+        long keyCount = 0;
+        long repairedAt = 0;
+        int sstableLevel = 0;
+        SerializationHeader header = new SerializationHeader(metadata, metadata.partitionColumns(),
+                EncodingStats.NO_STATS);
+        LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE, metadata);
 
-    @BeforeClass
-    public static void defineSchema() throws Exception
-    {
-        //SchemaLoader.prepareServer();
-        SchemaLoader.createKeyspace(KEYSPACE1,
-                                    KeyspaceParams.simple(1),
-                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD, 0, Int32Type.instance, AsciiType.instance, Int32Type.instance));
-        cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD);
+        SSTableWriter writer = SSTableWriter.create(metadata, descriptor, keyCount, repairedAt, sstableLevel, header,
+                txn);
+
+        write(metadata, writer);
+
+        writer.prepareToCommit();
+        writer.commit(null);
+        writer.close();
     }
 
-    protected TestableTransaction newTest() throws IOException
-    {
-        return new TestableBTW();
-    }
+    void write(CFMetaData metadata, SSTableWriter writer) {
+        int count = 128 * 3 + 1;
+        for (int i = 0; i < count; i++) {
+            String pk1 = "pk1-" + i;
+            String pk2 = "pk2-" + i;
 
-    private static class TestableBTW extends TestableTransaction
-    {
-        final File file;
-        final Descriptor descriptor;
-        final SSTableTxnWriter writer;
+            DecoratedKey partitionKey = makeKey(metadata, pk1, pk2);
 
-        private TestableBTW()
-        {
-            this(cfs.getSSTablePath(cfs.getDirectories().getDirectoryForNewSSTables()));
-        }
+            PartitionUpdate partitionUpdate = new PartitionUpdate(metadata, partitionKey, metadata.partitionColumns(),
+                    4);
 
-        private TestableBTW(String file)
-        {
-            this(file, SSTableTxnWriter.create(cfs, file, 0, 0, new SerializationHeader(cfs.metadata, cfs.metadata.partitionColumns(), EncodingStats.NO_STATS)));
-        }
+            long markedForDeleteAt = 100;
+            int localDeletionTime = 200;
+            int ttl = 20;
 
-        private TestableBTW(String file, SSTableTxnWriter sw)
-        {
-            super(sw);
-            this.file = new File(file);
-            this.descriptor = Descriptor.fromFilename(file);
-            this.writer = sw;
+            for (int j = 0; j < 10; j++) {
+                RowUpdateBuilder rowUpdateBuilder = new RowUpdateBuilder(partitionUpdate, markedForDeleteAt, ttl,
+                        localDeletionTime);
+                String cc1 = "cc1-" + j;
+                String cc2 = "cc2-" + j;
 
-            for (int i = 0; i < 100; i++)
-            {
-                UpdateBuilder update = UpdateBuilder.create(cfs.metadata, i);
-                for (int j = 0; j < 10; j++)
-                    update.newRow(j).add("val", SSTableRewriterTest.random(0, 1000));
-                writer.append(update.build().unfilteredIterator());
+                rowUpdateBuilder.clustering(cc1, cc2);
+
+                String sc1 = "sc-" + j;
+                String rc1 = "rc-" + j;
+                // 同一个PartitionKey只有一个StaticColumn，这里总是rc-9，因为会覆盖上一个
+                rowUpdateBuilder.add("StaticColumn1", sc1);
+                rowUpdateBuilder.add("RegularColumn1", rc1);
+                // ArrayList<String> list = new ArrayList<>();
+                // list.add("a" + j);
+                // list.add("b" + j);
+                // rowUpdateBuilder.add("RegularColumn2", list);
+
+                String e1 = "a" + j;
+                String e2 = "b" + j;
+                if (i == 0) {
+                    StringBuilder s = new StringBuilder();
+                    s.append(e2);
+                    for (int m = 0; m < 500; m++) {
+                        s.append(m).append(StringBuilder.class.getName());
+                    }
+                    e2 = s.toString();
+                }
+                rowUpdateBuilder.addListEntry("RegularColumn2", e1);
+                rowUpdateBuilder.addListEntry("RegularColumn2", e2);
+
+                rowUpdateBuilder.addSetEntry("RegularColumn3", e1);
+                rowUpdateBuilder.addSetEntry("RegularColumn3", e2);
+
+                String k1 = "k" + j;
+                String k2 = "k" + j * 2;
+                rowUpdateBuilder.addMapEntry("RegularColumn4", k1, e1);
+                rowUpdateBuilder.addMapEntry("RegularColumn4", k2, e2);
+
+                // 没有用，还是会用前面的add加入的值
+                // rowUpdateBuilder.delete("RegularColumn1");
+
+                // ClusteringComparator cmp = metadata.comparator;
+                // Slice slice = Slice.make(cmp.make("cc1-0", "cc2-0"), cmp.make("cc1-9", "cc2-9"));
+                // rowUpdateBuilder.addRangeTombstone(slice);
+
+                rowUpdateBuilder.build();
             }
-        }
 
-        protected void assertInProgress() throws Exception
-        {
-            assertExists(Component.DATA, Component.PRIMARY_INDEX);
-            assertNotExists(Component.FILTER, Component.SUMMARY);
-            Assert.assertTrue(file.length() > 0);
-        }
-
-        protected void assertPrepared() throws Exception
-        {
-            assertExists(Component.DATA, Component.PRIMARY_INDEX, Component.FILTER, Component.SUMMARY);
-        }
-
-        protected void assertAborted() throws Exception
-        {
-            assertNotExists(Component.DATA, Component.PRIMARY_INDEX, Component.FILTER, Component.SUMMARY);
-            Assert.assertFalse(file.exists());
-        }
-
-        protected void assertCommitted() throws Exception
-        {
-            assertPrepared();
-        }
-
-        @Override
-        protected boolean commitCanThrow()
-        {
-            return true;
-        }
-
-        private void assertExists(Component ... components)
-        {
-            for (Component component : components)
-                Assert.assertTrue(new File(descriptor.filenameFor(component)).exists());
-        }
-
-        private void assertNotExists(Component ... components)
-        {
-            for (Component component : components)
-                Assert.assertFalse(component.toString(), new File(descriptor.filenameFor(component)).exists());
+            if (i == 0) {
+                DeletionTime dt = new DeletionTime(2000, 200);
+                partitionUpdate.addPartitionDeletion(dt);
+            }
+            writer.append(partitionUpdate.unfilteredIterator());
         }
     }
-
 }
-
-
-

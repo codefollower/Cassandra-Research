@@ -26,6 +26,7 @@ import java.util.List;
 import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.io.sstable.IndexHelper;
 import org.apache.cassandra.io.sstable.format.Version;
@@ -59,6 +60,7 @@ public class RowIndexEntry<T> implements IMeasurableMemory
         // we only consider the columns summary when determining whether to create an IndexedEntry,
         // since if there are insufficient columns to be worth indexing we're going to seek to
         // the beginning of the row anyway, so we might as well read the tombstone there as well.
+        // 当前Partition里的聚簇行长度之和累计超过DatabaseDescriptor.getColumnIndexSize()时会弄一个IndexBlock
         if (index.columnsIndex.size() > 1)
             return new IndexedEntry(position, deletionTime, index.partitionHeaderLength, index.columnsIndex);
         else

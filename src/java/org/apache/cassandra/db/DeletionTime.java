@@ -45,8 +45,9 @@ public class DeletionTime implements Comparable<DeletionTime>, IMeasurableMemory
 
     public static final Serializer serializer = new Serializer();
 
-    private final long markedForDeleteAt;
-    private final int localDeletionTime;
+    //这两字段都是一个意思，代表对象删除的时间，只是粒度不同，由谁生成也可能不同
+    private final long markedForDeleteAt; //如果应用没有指定，会用系统生成的，精确到微秒
+    private final int localDeletionTime; //系统生成的，只精确到秒
 
     public DeletionTime(long markedForDeleteAt, int localDeletionTime)
     {

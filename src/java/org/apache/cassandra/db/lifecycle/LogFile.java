@@ -43,6 +43,11 @@ final class LogFile
     static LogFile make(File logFile, int folderDescriptor)
     {
         Matcher matcher = LogFile.FILE_REGEX.matcher(logFile.getName());
+
+        //我加上的，如果没启用assert，是不会调用下面那行assert matcher.matches()的，
+        //这会导致java.lang.IllegalStateException: No match found
+        matcher.matches();
+
         assert matcher.matches() && matcher.groupCount() == 3;
 
         // For now we don't need this but it is there in case we need to change

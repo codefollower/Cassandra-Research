@@ -150,7 +150,7 @@ public abstract class AbstractReadExecutor
     /**
      * @return an executor appropriate for the configured speculative read policy
      */
-    public static AbstractReadExecutor getReadExecutor(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel) throws UnavailableException
+    public static AbstractReadExecutor getReadExecutor(SinglePartitionReadCommand<?> command, ConsistencyLevel consistencyLevel) throws UnavailableException
     {
         Keyspace keyspace = Keyspace.open(command.metadata().ksName);
         //getLiveSortedEndpoints会得到一个最合适的节点列表
@@ -214,6 +214,7 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
+            //第一个要数据，其他的只要摘要
             makeDataRequests(targetReplicas.subList(0, 1));
             if (targetReplicas.size() > 1)
                 makeDigestRequests(targetReplicas.subList(1, targetReplicas.size()));
@@ -330,6 +331,8 @@ public abstract class AbstractReadExecutor
         @Override
         public void executeAsync()
         {
+            //如果节点数>1，向前两个节点要数据，其他节点要摘要
+            //如果节点数<=1，只能向第一个节点要数据
             makeDataRequests(targetReplicas.subList(0, targetReplicas.size() > 1 ? 2 : 1));
             if (targetReplicas.size() > 2)
                 makeDigestRequests(targetReplicas.subList(2, targetReplicas.size()));

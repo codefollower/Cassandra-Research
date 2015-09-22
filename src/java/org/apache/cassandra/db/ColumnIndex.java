@@ -120,7 +120,7 @@ public class ColumnIndex
 
         private void addIndexBlock()
         {
-            //对每行的数据索引时会直接跳过行头，从行里面的列开始
+            //对Partition数据索引时会直接跳过PartitionHeader，从非静态行开始
             IndexHelper.IndexInfo cIndexInfo = new IndexHelper.IndexInfo(firstClustering,
                                                                          lastClustering,
                                                                          startPosition,

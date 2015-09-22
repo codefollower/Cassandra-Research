@@ -32,40 +32,6 @@ import org.apache.cassandra.serializers.MarshalException;
 
 public class ColumnDefinition extends ColumnSpecification implements Comparable<ColumnDefinition>
 {
-//<<<<<<< HEAD
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////    // system.schema_columns column names
-////    /*
-////    CREATE TABLE schema_columns (
-////            //这4个对应超类ColumnSpecification中的4个字段
-////            keyspace_name text,
-////            columnfamily_name text,
-////            column_name text,
-////            validator text,
-////            //这4个对应此类的5个字段
-////            index_type text,
-////            index_options text,
-////            index_name text,
-////            component_index int,
-////            type text, //对应ColumnDefinition.kind字段
-////            PRIMARY KEY(keyspace_name, columnfamily_name, column_name)
-////        ) WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640
-////    */
-////    //下面7个字段就对应schema_columns中的后7个字段名
-////    private static final String COLUMN_NAME = "column_name";
-////    private static final String TYPE = "validator"; //其实就是字段的类型，使用validator这名字一点都不直观
-////    private static final String INDEX_TYPE = "index_type"; //对应org.apache.cassandra.config.IndexType
-////    private static final String INDEX_OPTIONS = "index_options";
-////    private static final String INDEX_NAME = "index_name";
-////    private static final String COMPONENT_INDEX = "component_index";
-////    private static final String KIND = "type"; //对应枚举类型ColumnDefinition.Kind
-////
-////=======
-////>>>>>>> bf599fb5b062cbcc652da78b7d699e7a01b949ad
-//=======
-//    public static final Comparator<Object> asymmetricColumnDataComparator = (a, b) -> ((ColumnData) a).column().compareTo((ColumnDefinition) b);
-//=======
     public static final Comparator<Object> asymmetricColumnDataComparator =
         (a, b) -> ((ColumnData) a).column().compareTo((ColumnDefinition) b);
 
@@ -100,7 +66,6 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     }
 
-    //超类ColumnSpecification有4个字段，此类有5个字段，刚好9个，刚好对应system.schema_columns表中的9个字段
     public final Kind kind;
 
     /*
@@ -168,11 +133,6 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
     {
         this(cfm.ksName,
              cfm.cfName,
-//<<<<<<< HEAD
-//             //cfm.getComponentComparator(componentIndex, kind)返回的值用于生成字段名的字符串形式
-//             //见org.apache.cassandra.cql3.statements.CreateTableStatement.getColumns(CFMetaData)中的注释
-//             new ColumnIdentifier(name, cfm.getComponentComparator(componentIndex, kind)),
-//=======
              ColumnIdentifier.getInterned(name, cfm.getColumnDefinitionNameComparator(kind)),
              type,
              position,
@@ -242,12 +202,8 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         return new ColumnDefinition(ksName, cfName, name, newType, position, kind);
     }
 
-    //SimpleSparseCellNameType和SimpleDenseCellNameType的情况componentIndex是null
     public boolean isOnAllComponents()
     {
-//<<<<<<< HEAD
-//        return componentIndex == null; //例如PARTITION_KEY中只包含一个字段时，或者COMPACT_VALUE的情况也是null
-//=======
         return position == NO_POSITION;
     }
 
@@ -345,25 +301,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         else
             return kind == Kind.STATIC;
     }
-////每一个字段对应schema_columns表中的一条记录
-//public void toSchema(Mutation mutation, long timestamp)
-//{
-//    ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SchemaColumnsTable);
-//    Composite prefix = SystemKeyspace.SchemaColumnsTable.comparator.make(cfName, name.toString());
-//    CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
-//
-//    //对应schema_columns表除keyspace_name和columnfamily_name、column_name之外的6个普通字段
-//    //keyspace_name字段是PARTITION_KEY，
-//    //而columnfamily_name、column_name字段是CLUSTERING_COLUMN
-//    //columnfamily_name、column_name这两个字段的值串接后会加到每个普通字段名之前
-//    adder.add(TYPE, type.toString());
-//    adder.add(INDEX_TYPE, indexType == null ? null : indexType.toString());
-//    adder.add(INDEX_OPTIONS, json(indexOptions));
-//    adder.add(INDEX_NAME, indexName);
-//    adder.add(COMPONENT_INDEX, componentIndex);
-//    adder.add(KIND, kind.serialize());
-//    cf.toString();
-//}
+ 
     /**
      * Converts the specified column definitions into column identifiers.
      *

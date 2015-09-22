@@ -57,6 +57,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     final List<InetAddress> endpoints;
     private final ReadCommand command;
     private final ConsistencyLevel consistencyLevel;
+    //比直接AtomicInteger received好，因为大多数时间都是直接读received，不需要调用AtomicInteger.get
     private static final AtomicIntegerFieldUpdater<ReadCallback> recievedUpdater
             = AtomicIntegerFieldUpdater.newUpdater(ReadCallback.class, "received");
     private volatile int received = 0;

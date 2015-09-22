@@ -354,6 +354,8 @@ public class BigTableWriter extends SSTableWriter
         }
     }
 
+    //如果dataFile是压缩后的文件，getOnDiskFilePointer跟getFilePointer是不一样的，否则一样
+    //见org.apache.cassandra.io.compress.CompressedSequentialWriter.getOnDiskFilePointer()
     public long getFilePointer()
     {
         return dataFile.position();
