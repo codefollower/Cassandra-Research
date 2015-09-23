@@ -517,7 +517,7 @@ public abstract class Message
 
                 QueryState qstate = connection.validateNewMessage(request.type, connection.getVersion(), request.getStreamId());
 
-                logger.debug("Received: {}, v={}", request, connection.getVersion());
+                logger.trace("Received: {}, v={}", request, connection.getVersion());
                 response = request.execute(qstate);
                 response.setStreamId(request.getStreamId());
                 response.setWarnings(ClientWarn.getWarnings());
@@ -536,7 +536,7 @@ public abstract class Message
                 ClientWarn.resetWarnings();
             }
 
-            logger.debug("Responding: {}, v={}", response, connection.getVersion());
+            logger.trace("Responding: {}, v={}", response, connection.getVersion());
             flush(new FlushItem(ctx, response, request.getSourceFrame()));
         }
 
@@ -611,7 +611,7 @@ public abstract class Message
                 if (ioExceptionsAtDebugLevel.contains(exception.getMessage()))
                 {
                     // Likely unclean client disconnects
-                    logger.debug(message, exception);
+                    logger.trace(message, exception);
                 }
                 else
                 {

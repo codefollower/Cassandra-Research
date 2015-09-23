@@ -306,7 +306,7 @@ public class Keyspace
         this.viewManager = new ViewManager(this);
         for (CFMetaData cfm : metadata.tablesAndViews())
         {
-            logger.debug("Initializing {}.{}", getName(), cfm.cfName);
+            logger.trace("Initializing {}.{}", getName(), cfm.cfName);
             initCf(cfm.cfId, cfm.cfName, loadSSTables);
         }
         this.viewManager.reload();
@@ -427,7 +427,7 @@ public class Keyspace
             {
                 if ((System.currentTimeMillis() - mutation.createdAt) > DatabaseDescriptor.getWriteRpcTimeout())
                 {
-                    logger.debug("Could not acquire lock for {}", ByteBufferUtil.bytesToHex(mutation.key().getKey()));
+                    logger.trace("Could not acquire lock for {}", ByteBufferUtil.bytesToHex(mutation.key().getKey()));
                     Tracing.trace("Could not acquire MV lock");
                     throw new WriteTimeoutException(WriteType.VIEW, ConsistencyLevel.LOCAL_ONE, 0, 1);
                 }
@@ -508,8 +508,8 @@ public class Keyspace
      */
     public static void indexPartition(DecoratedKey key, ColumnFamilyStore cfs, Set<Index> indexes)
     {
-        if (logger.isDebugEnabled())
-            logger.debug("Indexing partition {} ", cfs.metadata.getKeyValidator().getString(key.getKey()));
+        if (logger.isTraceEnabled())
+            logger.trace("Indexing partition {} ", cfs.metadata.getKeyValidator().getString(key.getKey()));
 
         SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fullPartitionRead(cfs.metadata,
                                                                                       FBUtilities.nowInSeconds(),

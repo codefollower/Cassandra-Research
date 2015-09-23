@@ -89,7 +89,7 @@ public class PasswordAuthenticator implements IAuthenticator
         }
         catch (RequestExecutionException e)
         {
-            logger.debug("Error performing internal authentication", e);
+            logger.trace("Error performing internal authentication", e);
             throw new AuthenticationException(e.toString());
         }
     }
@@ -204,7 +204,7 @@ public class PasswordAuthenticator implements IAuthenticator
         //在org.apache.cassandra.transport.Client.encodeCredentialsForSasl(Map<String, String>)也有
         private void decodeCredentials(byte[] bytes) throws AuthenticationException
         {
-            logger.debug("Decoding credentials from client token");
+            logger.trace("Decoding credentials from client token");
             byte[] user = null;
             byte[] pass = null;
             int end = bytes.length;
