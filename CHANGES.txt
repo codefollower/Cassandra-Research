@@ -2,6 +2,11 @@
  * Add transparent data encryption core classes (CASSANDRA-9945)
 
 
+3.0
+Merged from 2.2:
+ * cqlsh prompt includes name of keyspace after failed `use` statement (CASSANDRA-10369)
+
+
 3.0.0-rc1
  * Fix mixed version read request compatibility for compact static tables
    (CASSANDRA-10373)
@@ -26,9 +31,13 @@
  * Small optimizations of sstable index serialization (CASSANDRA-10232)
  * Support for both encrypted and unencrypted native transport connections (CASSANDRA-9590)
 Merged from 2.2:
+ * Configurable page size in cqlsh (CASSANDRA-9855)
  * Defer default role manager setup until all nodes are on 2.2+ (CASSANDRA-9761)
  * Handle missing RoleManager in config after upgrade to 2.2 (CASSANDRA-10209)
 Merged from 2.1:
+ * Avoid misleading pushed notifications when multiple nodes
+   share an rpc_address (CASSANDRA-10052)
+ * Fix dropping undroppable when message queue is full (CASSANDRA-10113)
  * Fix potential ClassCastException during paging (CASSANDRA-10352)
  * Prevent ALTER TYPE from creating circular references (CASSANDRA-10339)
  * Fix cache handling of 2i and base tables (CASSANDRA-10155, 10359)

@@ -347,23 +347,7 @@ public class CassandraDaemon
 
         ScheduledExecutors.optionalTasks.schedule(viewRebuild, StorageService.RING_DELAY, TimeUnit.MILLISECONDS);
 
-
         SystemKeyspace.finishStartup();
-        
-        //从这里开始才启动集群相关的东西
-        // start server internals
-        StorageService.instance.registerDaemon(this);
-        try
-        {
-            StorageService.instance.initServer();
-        }
-        catch (ConfigurationException e)
-        {
-            System.err.println(e.getMessage() + "\nFatal configuration error; unable to start server.  See log for stacktrace.");
-            exitOrFail(1, "Fatal configuration error", e);
-        }
-
-        Mx4jTool.maybeLoad(); //使用Mx4j通过http的方式访问JMX，默认不支持，除非增加mx4j-tools.jar到类路径
 
         // Metrics
         String metricsReporterConfigFile = System.getProperty("cassandra.metricsReporterConfigFile");
@@ -380,6 +364,21 @@ public class CassandraDaemon
                 logger.warn("Failed to load metrics-reporter-config, metric sinks will not be activated", e);
             }
         }
+
+        //从这里开始才启动集群相关的东西
+        // start server internals
+        StorageService.instance.registerDaemon(this);
+        try
+        {
+            StorageService.instance.initServer();
+        }
+        catch (ConfigurationException e)
+        {
+            System.err.println(e.getMessage() + "\nFatal configuration error; unable to start server.  See log for stacktrace.");
+            exitOrFail(1, "Fatal configuration error", e);
+        }
+
+        Mx4jTool.maybeLoad(); //使用Mx4j通过http的方式访问JMX，默认不支持，除非增加mx4j-tools.jar到类路径
 
         //在本机上测试时，如果节点广播地址不是127.0.0.1就会等待一段时间
         if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
@@ -576,9 +575,12 @@ public class CassandraDaemon
                 //Allow the server to start even if the bean can't be registered
             }
 
-            try {
+            try
+            {
                 DatabaseDescriptor.forceStaticInitialization(); //注意: debug代码时，运行流程从这里开始转向DatabaseDescriptor类的static块
-            } catch (ExceptionInInitializerError e) {
+            }
+            catch (ExceptionInInitializerError e)
+            {
                 throw e.getCause();
             }
 
@@ -651,7 +653,8 @@ public class CassandraDaemon
         stop();
         destroy();
         // completely shut down cassandra
-        if(!runManaged) {
+        if(!runManaged)
+        {
             System.exit(0);
         }
     }
@@ -711,21 +714,24 @@ public class CassandraDaemon
         instance.activate();
     }
 
-    private void exitOrFail(int code, String message) {
+    private void exitOrFail(int code, String message)
+    {
         exitOrFail(code, message, null);
     }
 
-    private void exitOrFail(int code, String message, Throwable cause) {
-            if(runManaged) {
-                RuntimeException t = cause!=null ? new RuntimeException(message, cause) : new RuntimeException(message);
-                throw t;
-            }
-            else {
-                logger.error(message, cause);
-                System.exit(code);
-            }
-
+    private void exitOrFail(int code, String message, Throwable cause)
+    {
+        if (runManaged)
+        {
+            RuntimeException t = cause!=null ? new RuntimeException(message, cause) : new RuntimeException(message);
+            throw t;
         }
+        else
+        {
+            logger.error(message, cause);
+            System.exit(code);
+        }
+    }
 
     static class NativeAccess implements NativeAccessMBean
     {
