@@ -165,6 +165,7 @@ public class CounterMutation implements IMutation
             {
                 return Iterables.concat(Iterables.transform(update, new Function<Row, Iterable<Object>>()
                 {
+                    @SuppressWarnings("unchecked")
                     public Iterable<Object> apply(final Row row)
                     {
                         return Iterables.concat(Iterables.transform(row, new Function<ColumnData, Object>()
@@ -247,7 +248,7 @@ public class CounterMutation implements IMutation
 
         int nowInSec = FBUtilities.nowInSeconds();
         ClusteringIndexNamesFilter filter = new ClusteringIndexNamesFilter(names.build(), false);
-        SinglePartitionReadCommand cmd = SinglePartitionReadCommand.create(cfs.metadata, nowInSec, key(), builder.build(), filter);
+        SinglePartitionReadCommand<?> cmd = SinglePartitionReadCommand.create(cfs.metadata, nowInSec, key(), builder.build(), filter);
         PeekingIterator<PartitionUpdate.CounterMark> markIter = Iterators.peekingIterator(marks.iterator());
         try (OpOrder.Group op = cfs.readOrdering.start(); RowIterator partition = UnfilteredRowIterators.filter(cmd.queryMemtableAndDisk(cfs, op), nowInSec))
         {

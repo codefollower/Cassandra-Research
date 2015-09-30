@@ -33,6 +33,7 @@ import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+//从SSTable中读出某个Partition，然后遍历这个Partition中的每一行
 abstract class AbstractSSTableIterator implements SliceableUnfilteredRowIterator
 {
     protected final SSTableReader sstable;

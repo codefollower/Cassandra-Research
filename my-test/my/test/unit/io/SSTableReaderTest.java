@@ -52,6 +52,7 @@ public class SSTableReaderTest {
 
     @BeforeClass
     public static void defineSchema() throws Exception {
+        System.setProperty("cassandra.test.compression", "true");
         SchemaLoader.prepareServer();
         SchemaLoader.createKeyspace(KEYSPACE1, KeyspaceParams.simple(1),
                 SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD));

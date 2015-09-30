@@ -33,16 +33,12 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 // TODO convert this to a Builder pattern instead of encouraging M.add directly,
 // which is less-efficient since we have to keep a mutable HashMap around
-//类似于HBase的Put，代表一行记录，key就是rowKey，modifications就是要修改的列，只不过这些列被放到不同的ColumnFamily中
 public class Mutation implements IMutation
 {
     public static final MutationSerializer serializer = new MutationSerializer();
-    private static final Logger logger = LoggerFactory.getLogger(Mutation.class);
 
     public static final String FORWARD_TO = "FWD_TO";
     public static final String FORWARD_FROM = "FWD_FRM";
