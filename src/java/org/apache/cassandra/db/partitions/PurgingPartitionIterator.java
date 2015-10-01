@@ -85,6 +85,7 @@ public abstract class PurgingPartitionIterator extends WrappingUnfilteredPartiti
     {
         UnfilteredRowIterator toReturn = next;
         next = null;
+        updateProgress();
         return toReturn;
     }
 
