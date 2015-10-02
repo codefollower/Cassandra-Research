@@ -22,12 +22,10 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.rows.SliceableUnfilteredRowIterator;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.columniterator.SSTableIterator;
 import org.apache.cassandra.db.columniterator.SSTableReversedIterator;
-import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.Component;
@@ -50,7 +48,8 @@ import java.util.*;
  * SSTableReaders are open()ed by Keyspace.onStart; after that they are created by SSTableWriter.renameAndOpen.
  * Do not re-call open() on existing SSTable files; use the references kept by ColumnFamilyStore post-start instead.
  */
-//getScanner方法是读多行，iterator只读一行
+//getScanner方法是读多个partition，iterator只读一个partition
+@SuppressWarnings("rawtypes")
 public class BigTableReader extends SSTableReader
 {
     private static final Logger logger = LoggerFactory.getLogger(BigTableReader.class);

@@ -38,6 +38,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
  * for the starting key than for other keys (because the previous page we had
  * queried may have ended in the middle of a partition).
  */
+//可以指定Partition Key和聚簇列的条件
 public class DataRange
 {
     public static final Serializer serializer = new Serializer();

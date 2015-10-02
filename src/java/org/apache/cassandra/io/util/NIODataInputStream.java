@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;

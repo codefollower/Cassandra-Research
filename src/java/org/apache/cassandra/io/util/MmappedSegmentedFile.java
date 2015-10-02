@@ -52,16 +52,6 @@ public class MmappedSegmentedFile extends SegmentedFile
 
     public RandomAccessReader createReader()
     {
-//<<<<<<< HEAD
-//        assert 0 <= position && position < length: String.format("%d >= %d in %s", position, length, path());
-//        Segment seg = new Segment(position, null);
-//        int idx = Arrays.binarySearch(segments, seg);
-//        assert idx != -1 : String.format("Bad position %d for segments %s in %s", position, Arrays.toString(segments), path());
-//        if (idx < 0)
-//            // round down to entry at insertion point
-//            idx = -(idx + 2); //前面那个开始位置小于position的Segment
-//        return segments[idx];
-//=======
         return new RandomAccessReader.Builder(channel)
                .overrideLength(length)
                .regions(regions)
@@ -70,22 +60,6 @@ public class MmappedSegmentedFile extends SegmentedFile
 
     public RandomAccessReader createReader(RateLimiter limiter)
     {
-//<<<<<<< HEAD
-//        Segment segment = floor(position);
-//        if (segment.right != null)
-//        {
-//            // segment is mmap'd
-//            return new ByteBufferDataInput(segment.right, path(), segment.left, (int) (position - segment.left));
-//        }
-//
-//        //超过2G的情况，见Builder.createSegments(String)中的注释
-//        // we can have single cells or partitions larger than 2Gb, which is our maximum addressable range in a single segment;
-//        // in this case we open as a normal random access reader
-//        // FIXME: brafs are unbounded, so this segment will cover the rest of the file, rather than just the row
-//        RandomAccessReader file = RandomAccessReader.open(channel, bufferSize, -1L);
-//        file.seek(position);
-//        return file;
-//=======
         return new RandomAccessReader.Builder(channel)
                .overrideLength(length)
                .bufferSize(bufferSize)
@@ -129,37 +103,6 @@ public class MmappedSegmentedFile extends SegmentedFile
         Builder()
         {
             super();
-//<<<<<<< HEAD
-//            boundaries = new ArrayList<>();
-//            boundaries.add(0L); //先填0
-//        }
-//
-//        public void addPotentialBoundary(long boundary)
-//        {
-//            if (boundary - currentStart <= MAX_SEGMENT_SIZE) //不到2G
-//            {
-//                // boundary fits into current segment: expand it
-//                currentSize = boundary - currentStart;
-//                return;
-//            }
-//
-//            // close the current segment to try and make room for the boundary
-//            if (currentSize > 0)
-//            {
-//                currentStart += currentSize;
-//                boundaries.add(currentStart);
-//            }
-//            currentSize = boundary - currentStart;
-//
-//            // if we couldn't make room, the boundary needs its own segment
-//            if (currentSize > MAX_SEGMENT_SIZE) //新的size还大于2G
-//            {
-//                currentStart = boundary;
-//                boundaries.add(currentStart);
-//                currentSize = 0;
-//            }
-//=======
-//>>>>>>> 5bb80362d2d0533884f5a3af8892e6ff62d0bfff
         }
 
         public SegmentedFile complete(ChannelProxy channel, int bufferSize, long overrideLength)
@@ -172,29 +115,6 @@ public class MmappedSegmentedFile extends SegmentedFile
 
         private void updateRegions(ChannelProxy channel, long length)
         {
-//<<<<<<< HEAD
-//            // if we're early finishing a range that doesn't span multiple segments, but the finished file now does,
-//            // we remove these from the end (we loop incase somehow this spans multiple segments, but that would
-//            // be a loco dataset
-//            while (length < boundaries.get(boundaries.size() - 1)) //因为get(0)是开始位置，当要计算片段个数时必须减1
-//                boundaries.remove(boundaries.size() -1);
-//
-//            // add a sentinel value == length
-//            List<Long> boundaries = new ArrayList<>(this.boundaries);
-//            if (length != boundaries.get(boundaries.size() - 1))
-//                boundaries.add(length);
-//
-//            int segcount = boundaries.size() - 1;
-//            Segment[] segments = new Segment[segcount];
-//            for (int i = 0; i < segcount; i++)
-//            {
-//                long start = boundaries.get(i);
-//                long size = boundaries.get(i + 1) - start;
-//                MappedByteBuffer segment = size <= MAX_SEGMENT_SIZE
-//                                           ? channel.map(FileChannel.MapMode.READ_ONLY, start, size)
-//                                           : null; //超过2G了，在调用getSegment时直接用RandomAccessReader读
-//                segments[i] = new Segment(start, segment);
-//=======
             if (regions != null && !regions.isValid(channel))
             {
                 Throwable err = regions.close(null);
@@ -213,13 +133,7 @@ public class MmappedSegmentedFile extends SegmentedFile
         @Override
         public void serializeBounds(DataOutput out, Version version) throws IOException
         {
-//<<<<<<< HEAD
-//            super.serializeBounds(out);
-//            out.writeInt(boundaries.size()); //开始的0位置也算在内
-//            for (long position: boundaries)
-//                out.writeLong(position);
-//=======
-            if (!version.hasBoundaries())
+            if (!version.hasBoundaries()) //从3.0版本开始没有Boundaries了
                 return;
 
             super.serializeBounds(out, version);

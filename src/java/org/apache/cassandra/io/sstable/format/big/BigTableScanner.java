@@ -22,6 +22,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.cassandra.utils.AbstractIterator;
+
 import com.google.common.collect.Iterators;
 import com.google.common.util.concurrent.RateLimiter;
 
@@ -48,6 +49,7 @@ import static org.apache.cassandra.dht.AbstractBounds.isEmpty;
 import static org.apache.cassandra.dht.AbstractBounds.maxLeft;
 import static org.apache.cassandra.dht.AbstractBounds.minRight;
 
+@SuppressWarnings("rawtypes")
 public class BigTableScanner implements ISSTableScanner
 {
     private final AtomicBoolean isClosed = new AtomicBoolean(false);

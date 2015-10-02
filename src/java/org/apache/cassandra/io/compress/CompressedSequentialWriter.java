@@ -80,7 +80,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         metadataWriter = CompressionMetadata.Writer.open(parameters, offsetsPath);
 
         this.sstableMetadataCollector = sstableMetadataCollector;
-        //crc也写到压缩文件中，但是不压缩
+        //crc也写到压缩文件中(写到Data.db文件)，但是不压缩
         crcMetadata = new DataIntegrityMetadata.ChecksumWriter(new DataOutputStream(Channels.newOutputStream(channel)));
     }
 

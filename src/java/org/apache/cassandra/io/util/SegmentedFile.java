@@ -139,11 +139,6 @@ public abstract class SegmentedFile extends SharedCloseableImpl implements IChec
                .build();
     }
 
-//<<<<<<< HEAD
-//    //注意并不是返回Segment类的实例，而是FileDataInput
-//    //方法名起得并不那么直观
-//    public FileDataInput getSegment(long position)
-//=======
     public FileDataInput createReader(long position)
     {
         RandomAccessReader reader = createReader();
@@ -330,65 +325,10 @@ public abstract class SegmentedFile extends SharedCloseableImpl implements IChec
         }
     }
 
-//<<<<<<< HEAD
-//    //只在MmappedSegmentedFile中使用
-//    static final class Segment extends Pair<Long, MappedByteBuffer> implements Comparable<Segment>
-//    {
-//        public Segment(long offset, MappedByteBuffer segment)
-//        {
-//            super(offset, segment);
-//        }
-//
-//        public final int compareTo(Segment that)
-//        {
-//            return (int)Math.signum(this.left - that.left); //返回0、1或-1(表示=、>、<)
-//        }
-//    }
-//
-//    /**
-//     * A lazy Iterator over segments in forward order from the given position.  It is caller's responsibility
-//     * to close the FileDataIntputs when finished.
-//     */
-//    final class SegmentIterator implements Iterator<FileDataInput>
-//    {
-//        private long nextpos;
-//        public SegmentIterator(long position)
-//        {
-//            this.nextpos = position;
-//        }
-//
-//        public boolean hasNext()
-//        {
-//            return nextpos < length;
-//        }
-//
-//        public FileDataInput next()
-//        {
-//            long position = nextpos;
-//            if (position >= length)
-//                throw new NoSuchElementException();
-//
-//            FileDataInput segment = getSegment(nextpos);
-//            try
-//            {
-//                nextpos = nextpos + segment.bytesRemaining();
-//            }
-//            catch (IOException e)
-//            {
-//                throw new FSReadError(e, path());
-//            }
-//            return segment;
-//        }
-//
-//        public void remove() { throw new UnsupportedOperationException(); }
-//    }
-//
-//=======
-//>>>>>>> 5bb80362d2d0533884f5a3af8892e6ff62d0bfff
     @Override
     public String toString() {
         return getClass().getSimpleName() + "(path='" + path() + '\'' +
                ", length=" + length +
                ')';
-}
+    }
 }

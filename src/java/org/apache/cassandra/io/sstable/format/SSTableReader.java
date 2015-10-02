@@ -30,12 +30,14 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Ordering;
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.RateLimiter;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.clearspring.analytics.stream.cardinality.CardinalityMergeException;
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
+
 import org.apache.cassandra.cache.InstrumentingCache;
 import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
@@ -128,6 +130,7 @@ import static org.apache.cassandra.db.Directories.SECONDARY_INDEX_NAME_SEPARATOR
  *
  * TODO: fill in details about Tracker and lifecycle interactions for tools, and for compaction strategies
  */
+@SuppressWarnings("rawtypes")
 public abstract class SSTableReader extends SSTable implements SelfRefCounted<SSTableReader>
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableReader.class);
@@ -482,6 +485,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             logger.trace("INDEX LOAD TIME for {}: {} ms.", descriptor, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
 
             sstable.setup(trackHotness);
+            //如果不注释掉，当直接调用SSTableReader.open(descriptor)时这里会抛异常(如果写文件时事先排好序了就不抛异常了)
+            //否则只能用openNoValidation
             if (validate)
                 sstable.validate();
 
@@ -819,6 +824,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                 while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
                 {
                     ByteBuffer key = ByteBufferUtil.readWithShortLength(primaryIndex);
+                    @SuppressWarnings("unused")
                     RowIndexEntry indexEntry = rowIndexSerializer.deserialize(primaryIndex);
                     DecoratedKey decoratedKey = decorateKey(key);
                     if (first == null)

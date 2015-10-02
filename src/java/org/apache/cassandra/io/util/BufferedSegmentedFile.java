@@ -39,17 +39,6 @@ public class BufferedSegmentedFile extends SegmentedFile
         }
     }
 
-//<<<<<<< HEAD
-//    //每次获取一个文件片段时实际上还是用RandomAccessReader打开同一个文件，只不过要seek到不到位置
-//    public FileDataInput getSegment(long position)
-//    {
-//        RandomAccessReader reader = RandomAccessReader.open(channel, bufferSize, -1L);
-//        reader.seek(position);
-//        return reader;
-//    }
-//
-//=======
-//>>>>>>> 5bb80362d2d0533884f5a3af8892e6ff62d0bfff
     public BufferedSegmentedFile sharedCopy()
     {
         return new BufferedSegmentedFile(this);

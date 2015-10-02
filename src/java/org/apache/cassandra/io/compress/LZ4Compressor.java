@@ -19,7 +19,6 @@ package org.apache.cassandra.io.compress;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -27,7 +26,6 @@ import java.util.Set;
 import com.google.common.annotations.VisibleForTesting;
 import net.jpountz.lz4.LZ4Exception;
 import net.jpountz.lz4.LZ4Factory;
-import org.apache.cassandra.schema.CompressionParams;
 
 public class LZ4Compressor implements ICompressor
 {

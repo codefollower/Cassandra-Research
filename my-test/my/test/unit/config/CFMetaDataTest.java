@@ -86,7 +86,7 @@ public class CFMetaDataTest {
 
         return md;
     }
-    
+
     public static Descriptor getDescriptor() {
         cfs = Keyspace.open(ksName).getColumnFamilyStore(tableName);
         String file = cfs.getSSTablePath(cfs.getDirectories().getDirectoryForNewSSTables());
@@ -244,11 +244,11 @@ public class CFMetaDataTest {
             this.writer = sw;
 
             write();
-            // try {
-            // read();
-            // } catch (Exception e) {
-            // e.printStackTrace();
-            // }
+            try {
+                read();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         protected void assertInProgress() throws Exception {

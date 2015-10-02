@@ -49,6 +49,7 @@ import org.apache.cassandra.utils.concurrent.Transactional;
  * TableWriter.create() is the primary way to create a writer for a particular format.
  * The format information is part of the Descriptor.
  */
+@SuppressWarnings("rawtypes")
 public abstract class SSTableWriter extends SSTable implements Transactional
 {
     protected long repairedAt;
@@ -164,7 +165,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
      *
      * @throws FSWriteError if a write to the dataFile fails
      */
-    public abstract RowIndexEntry append(UnfilteredRowIterator iterator);
+    public abstract RowIndexEntry<?> append(UnfilteredRowIterator iterator);
 
     public abstract long getFilePointer();
 

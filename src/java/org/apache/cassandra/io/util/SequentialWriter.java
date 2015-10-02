@@ -294,6 +294,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
 
     protected long current()
     {
+        //buffer这个字段会重置，但是bufferOffset会记录累计下来的写入buffer的字节数
         return bufferOffset + (buffer == null ? 0 : buffer.position());
     }
 

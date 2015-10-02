@@ -37,6 +37,7 @@ import org.apache.cassandra.utils.ChecksumType;
 /**
  * Legacy bigtable format
  */
+@SuppressWarnings({ "rawtypes"})
 public class BigFormat implements SSTableFormat
 {
     public static final BigFormat instance = new BigFormat();

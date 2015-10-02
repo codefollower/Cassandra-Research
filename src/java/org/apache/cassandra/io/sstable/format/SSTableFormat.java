@@ -18,20 +18,16 @@
 package org.apache.cassandra.io.sstable.format;
 
 import com.google.common.base.CharMatcher;
-import com.google.common.collect.ImmutableList;
+
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.db.LegacyLayout;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.SerializationHeader;
-import org.apache.cassandra.db.compaction.CompactionController;
 import org.apache.cassandra.io.sstable.format.big.BigFormat;
-import org.apache.cassandra.io.util.FileDataInput;
-
-import java.util.Iterator;
 
 /**
  * Provides the accessors to data on disk.
  */
+@SuppressWarnings({ "rawtypes"})
 public interface SSTableFormat
 {
     static boolean enableSSTableDevelopmentTestMode = Boolean.valueOf(System.getProperty("cassandra.test.sstableformatdevelopment","false"));
@@ -43,7 +39,7 @@ public interface SSTableFormat
     SSTableWriter.Factory getWriterFactory();
     SSTableReader.Factory getReaderFactory();
 
-    RowIndexEntry.IndexSerializer<?> getIndexSerializer(CFMetaData cfm, Version version, SerializationHeader header);
+    RowIndexEntry.IndexSerializer getIndexSerializer(CFMetaData cfm, Version version, SerializationHeader header);
 
     public static enum Type
     {

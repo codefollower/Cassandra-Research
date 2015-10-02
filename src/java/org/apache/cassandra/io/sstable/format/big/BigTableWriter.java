@@ -22,7 +22,6 @@ import java.util.Map;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
-import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
@@ -110,7 +109,7 @@ public class BigTableWriter extends SSTableWriter
         return (lastWrittenKey == null) ? 0 : dataFile.position();
     }
 
-    private void afterAppend(DecoratedKey decoratedKey, long dataEnd, RowIndexEntry index) throws IOException
+    private void afterAppend(DecoratedKey decoratedKey, long dataEnd, RowIndexEntry<?> index) throws IOException
     {
         metadataCollector.addKey(decoratedKey.getKey());
         lastWrittenKey = decoratedKey;
@@ -132,10 +131,9 @@ public class BigTableWriter extends SSTableWriter
      *
      * @throws FSWriteError if a write to the dataFile fails
      */
-    public RowIndexEntry append(UnfilteredRowIterator iterator)
+    public RowIndexEntry<?> append(UnfilteredRowIterator iterator)
     {
         DecoratedKey key = iterator.partitionKey();
-        //System.out.println(key.getToken() + "" + AsciiType.instance.getString(key.getKey()));
         if (key.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT)
         {
             logger.error("Key size {} exceeds maximum of {}, skipping row", key.getKey().remaining(), FBUtilities.MAX_UNSIGNED_SHORT);
@@ -154,7 +152,7 @@ public class BigTableWriter extends SSTableWriter
             ColumnIndex index = ColumnIndex.writeAndBuildIndex(withStats, dataFile, header, descriptor.version);
 
             //返回的RowIndexEntry用于Index.db文件
-            RowIndexEntry entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
+            RowIndexEntry<?> entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
 
             long endPosition = dataFile.position();
             long rowSize = endPosition - startPosition;
@@ -171,7 +169,7 @@ public class BigTableWriter extends SSTableWriter
 
     private void maybeLogLargePartitionWarning(DecoratedKey key, long rowSize)
     {
-        if (rowSize > DatabaseDescriptor.getCompactionLargePartitionWarningThreshold())
+        if (rowSize > DatabaseDescriptor.getCompactionLargePartitionWarningThreshold()) //默认是100M
         {
             String keyString = metadata.getKeyValidator().getString(key.getKey());
             logger.warn("Writing large partition {}/{}:{} ({} bytes)", metadata.ksName, metadata.cfName, keyString, rowSize);
@@ -298,6 +296,8 @@ public class BigTableWriter extends SSTableWriter
         return new TransactionalProxy();
     }
 
+    //调用顺序是: doPrepare -> doCommit -> doPostCleanup
+    //或者doAbort -> doPostCleanup
     class TransactionalProxy extends SSTableWriter.TransactionalProxy
     {
         // finalise our state on disk, including renaming
@@ -406,7 +406,8 @@ public class BigTableWriter extends SSTableWriter
             return summary.getLastReadableBoundary();
         }
 
-        public void append(DecoratedKey key, RowIndexEntry indexEntry, long dataEnd) throws IOException
+        @SuppressWarnings("unchecked")
+        public void append(DecoratedKey key, RowIndexEntry<?> indexEntry, long dataEnd) throws IOException
         {
             bf.add(key);
             long indexStart = indexFile.position();
@@ -470,7 +471,7 @@ public class BigTableWriter extends SSTableWriter
 
             // truncate index file
             long position = iwriter.indexFile.position();
-            iwriter.indexFile.setDescriptor(descriptor).prepareToCommit();
+            iwriter.indexFile.setDescriptor(descriptor).prepareToCommit(); //会把索引数据同步到硬盘
             FileUtils.truncate(iwriter.indexFile.getPath(), position);
 
             // save summary

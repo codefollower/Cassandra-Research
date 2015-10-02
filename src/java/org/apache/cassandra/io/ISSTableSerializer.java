@@ -23,6 +23,7 @@ import java.io.IOException;
 import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
+//未使用
 public interface ISSTableSerializer<T>
 {
     /**

@@ -1,0 +1,15 @@
+BigTableReader -> SSTableReader -> SSTable
+
+SSTableReader.open获得一个SSTableReader实例
+
+通过SSTableReader.getScanner获得BigTableScanner
+
+然后在BigTableScanner.KeyScanningIterator中扫描每个Partition
+
+扫描每个Partition时没加任何条件时用SSTableIdentityIterator，SSTableIdentityIterator再委派给SSTableSimpleIterator
+
+扫描每个Partition时如果加了DataRange，调用SSTableReader.iterator
+然后得到org.apache.cassandra.db.columniterator.AbstractSSTableIterator的两个字类之一:
+org.apache.cassandra.db.columniterator.SSTableIterator
+org.apache.cassandra.db.columniterator.SSTableReversedIterator
+
