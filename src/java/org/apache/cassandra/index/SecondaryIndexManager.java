@@ -27,6 +27,7 @@ import java.util.stream.Stream;
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Futures;
@@ -579,13 +580,17 @@ public class SecondaryIndexManager implements IndexRegistry
         if (indexes.isEmpty() || command.rowFilter().isEmpty())
             return null;
 
-        List<Index> searchableIndexes = new ArrayList<>();
+        Set<Index> searchableIndexes = new HashSet<>();
         for (RowFilter.Expression expression : command.rowFilter())
         {
             if (expression.isCustom())
             {
+                // Only a single custom expression is allowed per query and, if present,
+                // we want to always favour the index specified in such an expression
                 RowFilter.CustomExpression customExpression = (RowFilter.CustomExpression)expression;
-                searchableIndexes.add(indexes.get(customExpression.getTargetIndex().name));
+                logger.trace("Command contains a custom index expression, using target index {}", customExpression.getTargetIndex().name);
+                Tracing.trace("Command contains a custom index expression, using target index {}", customExpression.getTargetIndex().name);
+                return indexes.get(customExpression.getTargetIndex().name);
             }
             else
             {
@@ -603,9 +608,9 @@ public class SecondaryIndexManager implements IndexRegistry
         }
 
         Index selected = searchableIndexes.size() == 1
-                         ? searchableIndexes.get(0)
+                         ? Iterables.getOnlyElement(searchableIndexes)
                          : searchableIndexes.stream()
-                                            .max((a, b) -> Longs.compare(a.getEstimatedResultRows(),
+                                            .min((a, b) -> Longs.compare(a.getEstimatedResultRows(),
                                                                          b.getEstimatedResultRows()))
                                             .orElseThrow(() -> new AssertionError("Could not select most selective index"));
 
