@@ -32,17 +32,43 @@ public class ParameterizedClass
     {
         this.class_name = class_name;
         this.parameters = parameters;
+        
+        //我加上的
+        Object v;
+        Map<String, String> map = new LinkedHashMap<>();
+        for (Object k : parameters.keySet()) {
+            v = parameters.get(k);
+            if (v != null)
+                map.put(k.toString(), v.toString());
+        }
+        
+        this.parameters = map;
     }
 
     @SuppressWarnings("unchecked")
     public ParameterizedClass(Map<String, ?> p)
     {
-      //例如在cassandra.yaml中定义
-      //seed_provider:
-      //    - class_name: org.apache.cassandra.locator.SimpleSeedProvider
-      //      parameters:
-      //          - seeds: "127.0.0.1"
-      //p.get("parameters")是一个List，List.get(0)才是Map<String, String>
+//      例如在cassandra.yaml中定义
+//      seed_provider:
+//          - class_name: org.apache.cassandra.locator.SimpleSeedProvider
+//            parameters:
+//                - seeds: "127.0.0.1"
+//      p.get("parameters")是一个List，List.get(0)才是Map<String, String>
+//        
+//      这种方式有bug，取到的值有可能不是String类型
+//      例如下面这个配置
+//        commitlog_compression:
+//            - class_name: LZ4Compressor
+//              parameters:
+//                  - chunk_length_in_kb: 64
+//      就抛出
+//      Caused by: java.lang.ClassCastException: java.lang.Integer cannot be cast to java.lang.CharSequence
+//        at org.apache.cassandra.schema.CompressionParams.copyOptions(CompressionParams.java:276) ~[main/:na]
+//        at org.apache.cassandra.schema.CompressionParams.createCompressor(CompressionParams.java:266) ~[main/:na]
+//        at org.apache.cassandra.db.commitlog.CommitLog.<init>(CommitLog.java:103) ~[main/:na]
+//        at org.apache.cassandra.db.commitlog.CommitLog.construct(CommitLog.java:84) ~[main/:na]
+//        at org.apache.cassandra.db.commitlog.CommitLog.<clinit>(CommitLog.java:63) ~[main/:na]
+//        ... 19 common frames omitted
         this((String)p.get("class_name"),
              p.containsKey("parameters") ? (Map<String, String>)((List<?>)p.get("parameters")).get(0) : null);
     }

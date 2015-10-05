@@ -55,7 +55,7 @@ import static org.apache.cassandra.utils.FBUtilities.updateChecksumInt;
  * Commit Log tracks every write operation into the system. The aim of the commit log is to be able to
  * successfully recover data that was not stored to disk via the Memtable.
  */
-//对org.apache.cassandra.db.commitlog包中的类进行debug，直接打断点就可以了，Cassandra启动时会触发
+//启动时会先调用recover，修改记录时调用add
 public class CommitLog implements CommitLogMBean
 {
     private static final Logger logger = LoggerFactory.getLogger(CommitLog.class);
@@ -64,10 +64,10 @@ public class CommitLog implements CommitLogMBean
 
     // we only permit records HALF the size of a commit log, to ensure we don't spin allocating many mostly
     // empty segments when writing large records
-//<<<<<<< HEAD
-//    //CommitLogSegmentSize默认32M，每条记录的大于(非原始大小)不能超过16M
-//    private final long MAX_MUTATION_SIZE = DatabaseDescriptor.getCommitLogSegmentSize() >> 1;
-//=======
+    //如果max_mutation_size_in_kb未设置，
+    //在DatabaseDescriptor.applyConfig中会默认使用commitlog_segment_size_in_mb(一半)，
+    //commitlog_segment_size_in_mb默认32M，每条记录的大于(非原始大小)不能超过16M
+    //为什么不加static？
     private final long MAX_MUTATION_SIZE = DatabaseDescriptor.getMaxMutationSize();
 
     public final CommitLogSegmentManager allocator;
@@ -276,33 +276,12 @@ public class CommitLog implements CommitLogMBean
         try (BufferedDataOutputStreamPlus dos = new DataOutputBufferFixed(buffer))
         {
             // checksummed length
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////            dos.writeInt((int) size); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的length
-////            checksum.update(buffer, buffer.position() - 4, 4);
-////            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的head checksum
-////=======
-//            dos.writeInt((int) size);
-//
-//            ByteBuffer copy = buffer.duplicate();
-//            copy.position(buffer.position() - 4);
-//            copy.limit(buffer.position());
-//            checksum.update(copy);
-//=======
-            dos.writeInt(size);
+            dos.writeInt(size); //也是修改buffer的position
             updateChecksumInt(checksum, size);
             buffer.putInt((int) checksum.getValue());
 
             // checksummed mutation
             Mutation.serializer.serialize(mutation, dos, MessagingService.current_version);
-//<<<<<<< HEAD
-////<<<<<<< HEAD
-////            checksum.update(buffer, start, (int) size);
-////            buffer.putInt(checksum.getCrc()); //对应CommitLogSegment.ENTRY_OVERHEAD_SIZE注释中提到的tail checksum
-////=======
-//            copy.limit(copy.position() + (int) size);
-//            checksum.update(copy);
-//=======
             updateChecksum(checksum, buffer, buffer.position() - size, size);
             buffer.putInt((int) checksum.getValue());
         }

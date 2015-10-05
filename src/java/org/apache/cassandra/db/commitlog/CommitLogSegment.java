@@ -38,9 +38,6 @@ import com.codahale.metrics.Timer;
 
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
@@ -61,8 +58,6 @@ import static org.apache.cassandra.utils.FBUtilities.updateChecksumInt;
  */
 public abstract class CommitLogSegment
 {
-    private static final Logger logger = LoggerFactory.getLogger(CommitLogSegment.class);
-
     private final static long idBase;
     private final static AtomicInteger nextId = new AtomicInteger(1);
     static
@@ -264,62 +259,6 @@ public abstract class CommitLogSegment
         int nextMarker = allocate(SYNC_MARKER_SIZE);
         if (nextMarker < 0)
         {
-//<<<<<<< HEAD
-//            // check we have more work to do
-//            //这行有并发bug，会在org.apache.cassandra.db.commitlog.CommitLogSegment.Allocation.awaitDiskSync()中阻塞
-//            if (allocatePosition.get() <= lastSyncedOffset + SYNC_MARKER_SIZE)
-//            //if (allocatePosition.get() < lastSyncedOffset + SYNC_MARKER_SIZE)
-//                return;
-//
-//            // allocate a new sync marker; this is both necessary in itself, but also serves to demarcate
-//            // the point at which we can safely consider records to have been completely written to
-//            int nextMarker;
-//            nextMarker = allocate(SYNC_MARKER_SIZE);
-//            boolean close = false;
-//            if (nextMarker < 0)
-//            {
-//                // ensure no more of this CLS is writeable, and mark ourselves for closing
-//                discardUnusedTail();
-//                close = true;
-//
-//                // wait for modifications guards both discardedTailFrom, and any outstanding appends
-//                waitForModifications();
-//
-//                if (discardedTailFrom < buffer.capacity() - SYNC_MARKER_SIZE)
-//                {
-//                    // if there's room in the discard section to write an empty header, use that as the nextMarker
-//                    nextMarker = discardedTailFrom;
-//                }
-//                else
-//                {
-//                    // not enough space left in the buffer, so mark the next sync marker as the EOF position
-//                    nextMarker = buffer.capacity();
-//                }
-//            }
-//            else
-//            {
-//                waitForModifications();
-//            }
-//
-//            assert nextMarker > lastSyncedOffset;
-//
-//            // write previous sync marker to point to next sync marker
-//            // we don't chain the crcs here to ensure this method is idempotent if it fails
-//            int offset = lastSyncedOffset;
-//            final PureJavaCrc32 crc = new PureJavaCrc32();
-//            crc.updateInt((int) (id & 0xFFFFFFFFL));
-//            crc.updateInt((int) (id >>> 32));
-//            crc.updateInt(offset);
-//            buffer.putInt(offset, nextMarker);
-//            buffer.putInt(offset + 4, crc.getCrc());
-//
-//            // zero out the next sync marker so replayer can cleanly exit
-//            if (nextMarker < buffer.capacity())
-//            {
-//                buffer.putInt(nextMarker, 0);
-//                buffer.putInt(nextMarker + 4, 0);
-//            }
-//=======
             // Ensure no more of this CLS is writeable, and mark ourselves for closing.
             discardUnusedTail();
             close = true;

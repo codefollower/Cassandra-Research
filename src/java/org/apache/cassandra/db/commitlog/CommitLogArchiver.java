@@ -78,15 +78,10 @@ public class CommitLogArchiver
 
     public static CommitLogArchiver construct()
     {
+        //getClass().getClassLoader().getResource("commitlog_archiving.properties"); //我加上的，看看这文件在哪
         Properties commitlog_commands = new Properties();
         try (InputStream stream = CommitLogArchiver.class.getClassLoader().getResourceAsStream("commitlog_archiving.properties"))
         {
-//<<<<<<< HEAD
-//            stream = getClass().getClassLoader().getResourceAsStream("commitlog_archiving.properties");
-//            getClass().getClassLoader().getResource("commitlog_archiving.properties"); //我加上的，看看这文件在哪
-//
-//=======
-//>>>>>>> c1aff4fa61e09396de56cfa365c56dbe256393ee
             if (stream == null)
             {
                 logger.trace("No commitlog_archiving properties found; archive + pitr will be disabled");

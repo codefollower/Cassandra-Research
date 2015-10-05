@@ -98,7 +98,7 @@ public abstract class AbstractCommitLogService
                         // sleep any time we have left before the next one is due
                         long now = System.currentTimeMillis();
                         long sleep = syncStarted + pollIntervalMillis - now;
-                        if (sleep < 0)
+                        if (sleep < 0) //commitLog.sync花了太久的时间，超过下一轮的pollIntervalMillis了
                         {
                             // if we have lagged noticeably, update our lag counter
                             if (firstLagAt == 0)
@@ -112,13 +112,6 @@ public abstract class AbstractCommitLogService
                         syncCount++;
                         totalSyncDuration += now - syncStarted;
 
-//<<<<<<< HEAD
-//                        if (firstLagAt > 0 && now - firstLagAt >= LAG_REPORT_INTERVAL)
-//                        {   //我把它屏蔽了
-//                            logger.warn(String.format("Out of %d commit log syncs over the past %ds with average duration of %.2fms, %d have exceeded the configured commit interval by an average of %.2fms",
-//                                                      syncCount, (now - firstLagAt) / 1000, (double) totalSyncDuration / syncCount, lagCount, (double) syncExceededIntervalBy / lagCount));
-//                            firstLagAt = 0;
-//=======
                         if (firstLagAt > 0)
                         {
                             //Only reset the lag tracking if it actually logged this time

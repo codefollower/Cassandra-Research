@@ -90,7 +90,7 @@ public class CompressedSegment extends CommitLogSegment
         return buf;
     }
 
-    static long startMillis = System.currentTimeMillis();
+    static long startMillis = System.currentTimeMillis(); //未使用
 
     @Override
     void write(int startMarker, int nextMarker)

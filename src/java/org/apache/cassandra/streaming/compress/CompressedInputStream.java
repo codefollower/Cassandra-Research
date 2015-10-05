@@ -76,6 +76,7 @@ public class CompressedInputStream extends InputStream
         this.dataBuffer = new ArrayBlockingQueue<byte[]>(Math.min(info.chunks.length, 1024));
         this.crcCheckChanceSupplier = crcCheckChanceSupplier;
 
+        //在下面调用dataBuffer.take()会阻塞，直到这里的线程读到数据为止
         new Thread(new Reader(source, info, dataBuffer)).start();
     }
 

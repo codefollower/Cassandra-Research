@@ -72,7 +72,7 @@ public class CommitLogSegmentManager
     private final ConcurrentLinkedQueue<CommitLogSegment> activeSegments = new ConcurrentLinkedQueue<>();
 
     /** The segment we are currently allocating commit log records to */
-    private volatile CommitLogSegment allocatingFrom = null; //只通过allocatingFromUpdater更新
+    private volatile CommitLogSegment allocatingFrom = null;
 
     private final WaitQueue hasAvailableSegments = new WaitQueue();
 

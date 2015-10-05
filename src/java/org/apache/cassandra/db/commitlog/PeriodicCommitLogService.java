@@ -31,6 +31,11 @@ class PeriodicCommitLogService extends AbstractCommitLogService
 
     protected void maybeWaitForSync(CommitLogSegment.Allocation alloc)
     {
+        //因为Long.MAX_VALUE > Long.MAX_VALUE + 1
+        //lastSyncedAt是long类型，当lastSyncedAt为Long.MAX_VALUE时，
+        //再加一个int类型的blockWhenSyncLagsMillis时还是小于Long.MAX_VALUE；
+        //当lastSyncedAt + blockWhenSyncLagsMillis正好等于Long.MAX_VALUE时，就不阻塞了
+        //也就是这个if只有lastSyncedAt + blockWhenSyncLagsMillis正好等于Long.MAX_VALUE时才是false
         if (waitForSyncToCatchUp(Long.MAX_VALUE))
         {
             // wait until periodic sync() catches up with its schedule
@@ -53,6 +58,8 @@ class PeriodicCommitLogService extends AbstractCommitLogService
      */
     private boolean waitForSyncToCatchUp(long started)
     {
+        //如果当前时间第10毫秒，上次同步时间是在第5毫秒，同步间隔是10毫秒，说时当前时间还是同步周期内，就不用阻塞了
+        //如果当前时间第16毫秒，超过了同步周期，需要阻塞
         return started > lastSyncedAt + blockWhenSyncLagsMillis;
     }
 }

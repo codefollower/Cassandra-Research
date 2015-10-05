@@ -84,7 +84,7 @@ public class MemoryMappedSegment extends CommitLogSegment
         // zero out the next sync marker so replayer can cleanly exit
         if (nextMarker <= buffer.capacity() - SYNC_MARKER_SIZE)
         {
-            buffer.putInt(nextMarker, 0);
+            buffer.putInt(nextMarker, 0); //这里的nextMarker就是下一次writeSyncMarker中的startMarker，会在下一次回填
             buffer.putInt(nextMarker + 4, 0);
         }
 

@@ -18,19 +18,14 @@
 package org.apache.cassandra.streaming.compress;
 
 import java.io.IOException;
-import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-
-import com.google.common.base.Function;
 
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.ChannelProxy;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.streaming.StreamWriter;
@@ -72,6 +67,9 @@ public class CompressedStreamWriter extends StreamWriter
                     final long bytesTransferredFinal = bytesTransferred;
                     final int toTransfer = (int) Math.min(CHUNK_SIZE, length - bytesTransferred);
                     limiter.acquire(toTransfer);
+                    //把fc中的数据写到out，
+                    //因为用了闭包，所以用bytesTransferredFinal(好比是内部类，所以必须是final类型的变量)
+                    //(这句话是错的，在Eclipse中去掉final，也没有提升错误)
                     long lastWrite = out.applyToChannel((wbc) -> fc.transferTo(section.left + bytesTransferredFinal, toTransfer, wbc));
                     bytesTransferred += lastWrite;
                     progress += lastWrite;
@@ -100,7 +98,7 @@ public class CompressedStreamWriter extends StreamWriter
         {
             if (lastSection != null)
             {
-                if (chunk.offset == lastSection.right)
+                if (chunk.offset == lastSection.right) //前后两个chunk是相连的，合并成一个
                 {
                     // extend previous section to end of this chunk
                     lastSection = Pair.create(lastSection.left, chunk.offset + chunk.length + 4); // 4 bytes for CRC
@@ -113,6 +111,8 @@ public class CompressedStreamWriter extends StreamWriter
             }
             else
             {
+                //生成一个包含开始和结束位置的Pair，
+                //注意：这里的位置都是压缩文件中的原有位置，并不是代表解压后的数据位置
                 lastSection = Pair.create(chunk.offset, chunk.offset + chunk.length + 4);
             }
         }

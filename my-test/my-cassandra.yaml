@@ -11,7 +11,13 @@ commitlog_sync: batch
 commitlog_sync_batch_window_in_ms: 50
 
 #commitlog_sync: periodic
-#commitlog_sync_period_in_ms: 10000
+#commitlog_sync_period_in_ms: 50000
+
+#commitlog_compression:
+#   - class_name: LZ4Compressor
+#     parameters:
+#        - chunk_length_in_kb: 64
+#         - crc_check_chance: 1.0
 
 #partitioner: org.apache.cassandra.dht.ByteOrderedPartitioner
 partitioner: org.apache.cassandra.dht.Murmur3Partitioner
