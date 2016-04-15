@@ -244,10 +244,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     void scheduleFlush()
     {
-//<<<<<<< HEAD
-//        //默认是1小时刷新一次，在CFMetaData.newSystemMetadata(String, String, String, CellNameType)里设了默认值
-//        int period = metadata.getMemtableFlushPeriod();
-//=======
+        //默认是1小时刷新一次
         int period = metadata.params.memtableFlushPeriodInMs;
         if (period > 0)
         {
@@ -543,7 +540,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                                          boolean loadSSTables)
     {
         // get the max generation number, to prevent generation conflicts
-        //在这里debug打条件断点columnFamily.equals("keysindextest")
         Directories directories = new Directories(metadata, initialDirectories);
         Directories.SSTableLister lister = directories.sstableLister(Directories.OnTxnErr.IGNORE).includeBackups(true);
         List<Integer> generations = new ArrayList<Integer>();
